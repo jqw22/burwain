@@ -21,15 +21,17 @@ All money is stored in pence. The club year runs 1 March to the end of February.
 - **payments** and **payment_lines** record what was paid for. When a payment is marked `paid`, the memberships/boat storage it covers become `active` and income lines (plus any Stripe/GoCardless fee as a cost) are posted to **transactions** automatically.
 - **medical_records** are visible to the member; admins read them only through `get_medical_record()`, which logs every view in **medical_access_log**.
 
-## Views for the app
+## Report functions for the app
 
-| View | Who | Shows |
+Called from the app as RPCs, e.g. `supabase.rpc('member_directory')`.
+
+| Function | Who | Shows |
 | --- | --- | --- |
-| `member_directory` | any member | Name, phone, email of current adult members who haven't opted out |
-| `membership_history` | member (own household), finance, admin | Each year's type, price, payment and linked income transaction |
-| `finance_member_status` | finance, admin | Names, membership type and payment status (no personal details) |
-| `income_statement` | finance, admin | Totals by club year, category and membership type |
-| `qualifications_expiring` | admin | Qualifications expiring in the next 60 days |
+| `member_directory()` | any member | Name, phone, email of current adult members who haven't opted out |
+| `membership_history()` | member (own household), finance, admin | Each year's type, price, payment and linked income transaction |
+| `finance_member_status()` | finance, admin | Names, membership type and payment status (no personal details) |
+| `income_statement()` | finance, admin | Totals by club year, category and membership type |
+| `qualifications_expiring()` | admin | Qualifications expiring in the next 60 days |
 
 ## Spreadsheet import mapping
 
