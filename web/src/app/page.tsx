@@ -90,6 +90,21 @@ export default async function HomePage() {
               {waiting > 0 && <span className="ml-2 rounded bg-amber-50 px-2 py-0.5 text-sm text-amber-900">{waiting} waiting</span>}
             </li>
             <li>
+              <Link href="/admin/types" className="text-sky-800 underline">
+                Membership types
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/emails" className="text-sky-800 underline">
+                Email templates
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/import" className="text-sky-800 underline">
+                Import spreadsheet
+              </Link>
+            </li>
+            <li>
               {/* Temporary: the public join form will be linked from the club website later. */}
               <Link href="/join" className="text-sky-800 underline">
                 Public join form
