@@ -24,8 +24,8 @@ select t.id, a.id from membership_types t, activities a
     or (t.code = 'SUP' and a.name = 'Paddleboarding');
 
 insert into club_years (label, starts_on, ends_on) values
-  ('2026/27', '2026-03-01', '2027-02-28'),
-  ('2027/28', '2027-03-01', '2028-02-29');
+  ('2026', '2026-01-01', '2026-12-31'),
+  ('2027', '2027-01-01', '2027-12-31');
 
 insert into boat_storage_options (name, price_pence, members_rate, description) values
   ('Dinghy storage (members)', 3500, true,  'Per sailing dinghy, including road trailer.'),

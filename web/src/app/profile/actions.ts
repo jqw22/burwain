@@ -19,7 +19,7 @@ export async function saveDetails(form: FormData) {
       emergency_contact_mobile: text(form, "emergency_contact_mobile"),
     })
     .eq("id", personId);
-  redirect(error ? "/profile?error=details" : "/profile?saved=details");
+  redirect(error ? "/profile?edit=contact&error=details#contact" : "/profile?saved=details#contact");
 }
 
 export async function savePreferences(form: FormData) {
@@ -31,40 +31,40 @@ export async function savePreferences(form: FormData) {
       directory_opt_out: form.get("directory_listed") !== "on",
     })
     .eq("id", personId);
-  redirect(error ? "/profile?error=preferences" : "/profile?saved=preferences");
+  redirect(error ? "/profile?edit=preferences&error=preferences#preferences" : "/profile?saved=preferences#preferences");
 }
 
 export async function saveMedical(form: FormData) {
   const { supabase, personId } = await requireMe();
   const details = text(form, "details");
   if (details && form.get("consent") !== "on") {
-    redirect("/profile?error=consent");
+    redirect("/profile?edit=medical&error=consent#medical");
   }
   const { error } = details
     ? await supabase
         .from("medical_records")
         .upsert({ person_id: personId, details, consent_given_at: new Date().toISOString(), updated_by: personId })
     : await supabase.from("medical_records").delete().eq("person_id", personId);
-  redirect(error ? "/profile?error=medical" : "/profile?saved=medical");
+  redirect(error ? "/profile?edit=medical&error=medical#medical" : "/profile?saved=medical#medical");
 }
 
 export async function addQualification(form: FormData) {
   const { supabase, personId } = await requireMe();
   const name = text(form, "name");
-  if (!name) redirect("/profile?error=qualification");
+  if (!name) redirect("/profile?edit=qualifications&error=qualification#qualifications");
   const { error } = await supabase.from("qualifications").insert({
     person_id: personId,
     name,
     awarded_on: text(form, "awarded_on"),
     expires_on: text(form, "expires_on"),
   });
-  redirect(error ? "/profile?error=qualification" : "/profile?saved=qualification");
+  redirect(`/profile?edit=qualifications&${error ? "error" : "saved"}=qualification#qualifications`);
 }
 
 export async function removeQualification(form: FormData) {
   const { supabase } = await requireMe();
   const { error } = await supabase.from("qualifications").delete().eq("id", String(form.get("id")));
-  redirect(error ? "/profile?error=qualification" : "/profile?saved=qualification");
+  redirect(`/profile?edit=qualifications&${error ? "error" : "saved"}=qualification#qualifications`);
 }
 
 // Family (the main contact only; row-level security enforces this).
@@ -81,14 +81,14 @@ export async function saveAddress(form: FormData) {
       postcode: text(form, "postcode")?.toUpperCase() ?? null,
     })
     .eq("id", String(form.get("household_id")));
-  redirect(error ? "/profile?error=address" : "/profile?saved=address");
+  redirect(error ? "/profile?edit=address&error=address#address" : "/profile?saved=address#address");
 }
 
 export async function addFamilyMember(form: FormData) {
   const { supabase } = await requireMe();
   const first = text(form, "first_name");
   const last = text(form, "last_name");
-  if (!first || !last) redirect("/profile?error=add");
+  if (!first || !last) redirect("/profile?edit=family&error=add#family");
   const { error } = await supabase.from("people").insert({
     household_id: String(form.get("household_id")),
     first_name: first,
@@ -97,7 +97,7 @@ export async function addFamilyMember(form: FormData) {
     email: text(form, "email")?.toLowerCase() ?? null,
     mobile: text(form, "mobile"),
   });
-  redirect(error ? "/profile?error=add" : "/profile?saved=add");
+  redirect(error ? "/profile?edit=family&error=add#family" : "/profile?edit=family&saved=add#family");
 }
 
 export async function saveFamilyMember(form: FormData) {

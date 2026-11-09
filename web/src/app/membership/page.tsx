@@ -146,9 +146,9 @@ export default async function MembershipPage({ searchParams }: PageProps<"/membe
                       {m.payer_person_id === personId && ["awaiting_payment", "pending_approval"].includes(m.status) && (
                         <form action={cancelMembership}>
                           <input type="hidden" name="id" value={m.id} />
-                          <button type="submit" className="text-sm text-slate-600 underline">
+                          <SaveButton variant="link" pendingText="Cancelling…">
                             Cancel
-                          </button>
+                          </SaveButton>
                         </form>
                       )}
                     </li>

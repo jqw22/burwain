@@ -183,9 +183,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
           <form method="get" className="space-y-2">
             <p className="text-sm text-slate-600">Every time someone views medical information it is recorded, with who looked and when.</p>
             <input type="hidden" name="medical" value="show" />
-            <button type="submit" className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">
-              Show medical information
-            </button>
+            <SaveButton variant="secondary">Show medical information</SaveButton>
           </form>
         )}
       </Card>

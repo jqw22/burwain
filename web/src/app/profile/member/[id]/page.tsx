@@ -128,9 +128,9 @@ export default async function FamilyMemberPage({ params, searchParams }: PagePro
                 <form action={removeFamilyQualification}>
                   <input type="hidden" name="id" value={q.id} />
                   <input type="hidden" name="person_id" value={m.id} />
-                  <button type="submit" className="text-sm text-slate-600 underline">
+                  <SaveButton variant="link" pendingText="Removing…">
                     Remove
-                  </button>
+                  </SaveButton>
                 </form>
               </li>
             ))}

@@ -1,5 +1,5 @@
 import { AdminNav, NotAllowed, STATUS_LABEL } from "@/components/admin";
-import { Card, Notice } from "@/components/fields";
+import { Card, Notice, SaveButton } from "@/components/fields";
 import { meWithRole, pounds, ukDate } from "@/lib/me";
 import { approveMembership, recordPayment } from "./actions";
 
@@ -86,9 +86,7 @@ export default async function MembershipsPage({ searchParams }: PageProps<"/admi
             ))}
           </select>
         </label>
-        <button type="submit" className="rounded border border-slate-300 bg-white px-4 py-2 hover:bg-slate-50">
-          Show
-        </button>
+        <SaveButton variant="secondary">Show</SaveButton>
       </form>
 
       <dl className="grid gap-4 sm:grid-cols-3">
@@ -123,13 +121,9 @@ export default async function MembershipsPage({ searchParams }: PageProps<"/admi
                   <form action={approveMembership}>
                     <input type="hidden" name="id" value={r.id} />
                     <input type="hidden" name="year" value={year?.id} />
-                    <button
-                      type="submit"
-                      aria-label={`Approve ${r.membership_type} for ${r.people}`}
-                      className="rounded bg-sky-800 px-3 py-1 text-sm font-medium text-white hover:bg-sky-900"
-                    >
+                    <SaveButton aria-label={`Approve ${r.membership_type} for ${r.people}`} pendingText="Approving…">
                       Approve
-                    </button>
+                    </SaveButton>
                   </form>
                 )}
               </li>
@@ -218,9 +212,7 @@ export default async function MembershipsPage({ searchParams }: PageProps<"/admi
                       className="mt-1 block rounded border border-slate-300 bg-white px-3 py-2"
                     />
                   </label>
-                  <button type="submit" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
-                    Record payment
-                  </button>
+                  <SaveButton pendingText="Recording…">Record payment</SaveButton>
                 </div>
                 <p className="text-xs text-slate-500">
                   Card and Direct Debit payments will be recorded automatically once online payments are switched on.
