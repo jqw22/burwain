@@ -37,10 +37,11 @@ export default async function HomePage() {
     );
   }
 
-  const [{ data: me }, { data: historyData }, { data: isAdmin }] = await Promise.all([
+  const [{ data: me }, { data: historyData }, { data: isAdmin }, { data: isFinance }] = await Promise.all([
     supabase.from("people").select("id, first_name, last_name").eq("id", personId).single<Person>(),
     supabase.rpc("membership_history"),
     supabase.rpc("has_role", { r: "admin" }),
+    supabase.rpc("has_role", { r: "finance" }),
   ]);
 
   const history = (historyData ?? []) as HistoryRow[];
@@ -67,20 +68,29 @@ export default async function HomePage() {
           Renew or add a membership
         </a>
       </section>
-      {isAdmin && (
+      {(isAdmin || isFinance) && (
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="font-semibold">Club admin</h2>
           <ul className="mt-2 space-y-1">
+            {isAdmin && (
+              <li>
+                <Link href="/admin/members" className="text-sky-800 underline">
+                  Members
+                </Link>
+              </li>
+            )}
             <li>
-              <Link href="/admin/members" className="text-sky-800 underline">
-                Members
+              <Link href="/admin/memberships" className="text-sky-800 underline">
+                Memberships and payments
               </Link>
             </li>
-            <li>
-              <Link href="/admin/import" className="text-sky-800 underline">
-                Import members from the spreadsheet
-              </Link>
-            </li>
+            {isAdmin && (
+              <li>
+                <Link href="/admin/import" className="text-sky-800 underline">
+                  Import members from the spreadsheet
+                </Link>
+              </li>
+            )}
           </ul>
         </section>
       )}
