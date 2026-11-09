@@ -71,7 +71,7 @@ export async function adminAddMember(_prev: AddState, form: FormData): Promise<A
     person.whatsapp = form.get(key("whatsapp")) === "on";
     person.medical_consent = form.get(key("medical_consent")) === "on";
     person.news_consent = form.get(key("news_consent")) === "on";
-    person.directory_opt_out = form.get(key("directory_opt_out")) === "on";
+    person.directory_opt_out = form.get(key("directory_listed")) !== "on";
     person.qualifications = form
       .getAll(key("qual_name"))
       .map((name, j) => ({

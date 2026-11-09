@@ -305,8 +305,8 @@ test("an admin approves an Associate membership and finance records a cheque for
     insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
   `);
   const page = await adminPage(browser);
-  await page.getByRole("link", { name: "Memberships and payments" }).click();
-  await expect(page.getByRole("heading", { name: "Memberships and payments" })).toBeVisible();
+  await page.getByRole("link", { name: "Payments", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Payments", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Awaiting committee approval" })).toBeVisible();
   await shot(page, "admin-memberships-approval");
 
@@ -337,17 +337,23 @@ test("an admin adds new members: joining a family, a new family paying cash, and
 
   // Charlie joins Sam's family and is covered by the Family membership.
   await page.goto("/admin/members");
-  await page.getByRole("link", { name: "Add new member" }).click();
+  await page.getByRole("link", { name: "Add new member" }).first().click();
   await page.waitForLoadState("networkidle");
   const form = page.getByRole("form", { name: "Add new member" });
+  // Membership type starts blank; the rest of the form appears once it's chosen.
+  await expect(form.getByLabel("Membership type")).toHaveValue("");
+  await expect(form.getByLabel("First name")).toHaveCount(0);
+  await form.getByLabel("Membership type").selectOption({ label: "Join existing family / dual membership" });
   await form.getByLabel("First name").fill("Charlie");
   await form.getByLabel("Last name").fill(`Tester${run}`);
   await form.getByLabel("Date of birth").fill("2018-04-02");
-  await form.getByLabel("Joining a family already in the club").check();
+  await expect(form.getByLabel("Address line 1")).toHaveCount(0);
   const familyLabel = await form.getByLabel("Which family?").locator("option", { hasText: `Tester${run}, Sam` }).textContent();
   await form.getByLabel("Which family?").selectOption({ label: familyLabel! });
   await form.getByRole("button", { name: "Add member" }).click();
   await expect(page.getByText("New member added.")).toBeVisible();
+  // Sam's family has a Family membership, so more people can join it.
+  await expect(page.getByRole("link", { name: "Add a new member to this family" })).toBeVisible();
   expect(
     sql(`select count(*) from membership_people mp join people p on p.id = mp.person_id
           join memberships m on m.id = mp.membership_id join membership_types t on t.id = m.membership_type_id
@@ -357,17 +363,22 @@ test("an admin adds new members: joining a family, a new family paying cash, and
   // Nora starts a new family on Club Membership and pays cash. A missing postcode is explained first.
   await page.goto("/admin/members/new");
   await page.waitForLoadState("networkidle");
-  await form.getByLabel("First name").fill("Nora");
-  await form.getByLabel("Last name").fill(`New${run}`);
-  await form.getByLabel(/^Email/).fill(`nora-${run}@example.test`);
-  await form.getByLabel("Address line 1").fill("7 Harbour St");
-  await form.getByLabel("Postcode").fill("bb11 3dd");
-  await form.getByLabel("Club year").selectOption({ index: 0 });
   const typeLabel = await form.getByLabel("Membership type").locator("option", { hasText: /^Club Membership: £/ }).textContent();
   await form.getByLabel("Membership type").selectOption({ label: typeLabel! });
+  await form.getByLabel("Club year").selectOption({ index: 0 });
+  const details = page.getByRole("region", { name: "Their details" });
+  await details.getByLabel("First name").fill("Nora");
+  await details.getByLabel("Last name").fill(`New${run}`);
+  // The address sits in the details box, under the name.
+  await details.getByLabel("Address line 1").fill("7 Harbour St");
+  await details.getByLabel("Postcode").fill("bb11 3dd");
+  await details.getByLabel(/^Email/).fill(`nora-${run}@example.test`);
+  // Both preferences start ticked.
+  await expect(details.getByLabel("Happy to receive club news by email")).toBeChecked();
+  await expect(details.getByLabel("Happy to be added to the club directory")).toBeChecked();
   await form.getByLabel("Payment received").selectOption("cash");
   await form.getByLabel("Medical details").fill("Type 1 diabetes.");
-  await form.getByLabel(/agrees to the club holding this information/).check();
+  await form.getByLabel("The member agrees to the club holding this information").check();
   await form.getByRole("textbox", { name: /^Qualification/ }).fill("RYA Powerboat Level 2");
   await form.getByLabel("Expires").fill("2029-05-01");
   await form.getByLabel("Happy to receive club news by email").check();
@@ -378,15 +389,17 @@ test("an admin adds new members: joining a family, a new family paying cash, and
     sql(`select p.first_joined_on = current_date, h.postcode, h.lead_person_id = p.id
            from people p join households h on h.id = p.household_id where p.email = 'nora-${run}@example.test'`),
   ).toBe("t|BB11 3DD|t");
+  // Club Membership covers one person, so no one else can join Nora's family.
+  await expect(page.getByRole("link", { name: "Add a new member to this family" })).toHaveCount(0);
   expect(
     sql(`select m.status from memberships m join membership_people mp on mp.membership_id = m.id
           join people p on p.id = mp.person_id where p.email = 'nora-${run}@example.test'`),
   ).toBe("active");
   expect(
-    sql(`select r.details, q.name, q.expires_on, p.news_consent from people p
+    sql(`select r.details, q.name, q.expires_on, p.news_consent, p.directory_opt_out from people p
            join medical_records r on r.person_id = p.id join qualifications q on q.person_id = p.id
           where p.email = 'nora-${run}@example.test'`),
-  ).toBe("Type 1 diabetes.|RYA Powerboat Level 2|2029-05-01|t");
+  ).toBe("Type 1 diabetes.|RYA Powerboat Level 2|2029-05-01|t|f");
 
   // A whole family joins on a Family membership: membership type first, then up to 4 people.
   await page.goto("/admin/members/new");
@@ -417,6 +430,7 @@ test("an admin adds new members: joining a family, a new family paying cash, and
   // The same email can't be added twice; what was typed stays in the form.
   await page.goto("/admin/members/new");
   await page.waitForLoadState("networkidle");
+  await form.getByLabel("Membership type").selectOption({ label: typeLabel! });
   await form.getByLabel("First name").fill("Nora");
   await form.getByLabel("Last name").fill(`Again${run}`);
   await form.getByLabel(/^Email/).fill(`nora-${run}@example.test`);

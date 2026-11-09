@@ -6,7 +6,7 @@ import { adminAddMember, type AddState } from "./actions";
 
 export type Year = { id: string; label: string; is_renewal: boolean };
 export type Type = { id: string; name: string; cover: string; annual_price_pence: number; sibling_order: number | null };
-export type Family = { id: string; label: string };
+export type Family = { id: string; label: string; shared: boolean };
 
 const select = "mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2";
 const addButton =
@@ -16,6 +16,11 @@ const MAX_FAMILY = 4;
 function pounds(pence: number) {
   return `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
 }
+
+const JOIN = "join";
+
+// True once the form has been submitted (and came back with an error).
+const submitted = (values: Record<string, string>) => "people_count" in values;
 
 export function AddMemberForm({
   years,
@@ -36,17 +41,20 @@ export function AddMemberForm({
 }) {
   const [state, action] = useActionState<AddState, FormData>(adminAddMember, {});
   const v = state.values ?? {};
-  const [family, setFamily] = useState(v.family ?? (householdId ? "existing" : "new"));
-  const [typeId, setTypeId] = useState(v.type_id ?? "");
+  // Starts blank. "Join an existing family" adds someone to a family already in the club.
+  const [choice, setChoice] = useState(v.type_choice ?? (householdId ? JOIN : ""));
   const [yearId, setYearId] = useState(v.club_year_id ?? years[0]?.id ?? "");
   const [extra, setExtra] = useState(Math.max(Number(v.people_count ?? 1) - 1, 0));
   const renewalYear = years.find((y) => y.id === yearId)?.is_renewal ?? false;
   const priceFor = (t: Type) => Math.round((t.annual_price_pence * (renewalYear ? 12 : months)) / 12);
-  const cover = types.find((t) => t.id === typeId)?.cover;
+  const joining = choice === JOIN;
+  const type = types.find((t) => t.id === choice);
+  const cover = type?.cover;
+  // A junior joins a family already in the club, because a parent must be a member too.
+  const existingFamily = joining || cover === "junior";
 
   // Only Dual and Family memberships take more than one person: Dual is 2, Family up to 4.
-  const people =
-    cover === "dual" ? (family === "existing" ? 1 : 2) : cover === "family" ? Math.min(1 + extra, MAX_FAMILY) : 1;
+  const people = cover === "dual" ? 2 : cover === "family" ? Math.min(1 + extra, MAX_FAMILY) : 1;
 
   return (
     <form action={action} className="space-y-6" aria-label="Add new member">
@@ -55,24 +63,16 @@ export function AddMemberForm({
           {state.error}
         </p>
       )}
-      <input type="hidden" name="people_count" value={people} />
+      <input type="hidden" name="people_count" value={choice ? people : 0} />
+      <input type="hidden" name="family" value={existingFamily ? "existing" : "new"} />
+      <input type="hidden" name="type_id" value={type?.id ?? ""} />
 
       <Card title="Membership">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className="text-sm font-medium">Club year</span>
-            <select name="club_year_id" value={yearId} onChange={(e) => setYearId(e.target.value)} className={select}>
-              {years.map((y) => (
-                <option key={y.id} value={y.id}>
-                  {y.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
             <span className="text-sm font-medium">Membership type</span>
-            <select name="type_id" value={typeId} onChange={(e) => setTypeId(e.target.value)} className={select}>
-              <option value="">None of their own (for example covered by a Family membership)</option>
+            <select name="type_choice" required value={choice} onChange={(e) => setChoice(e.target.value)} className={select}>
+              <option value="">Choose…</option>
               {types
                 .filter((t) => !t.sibling_order || t.sibling_order === 1)
                 .map((t) => (
@@ -80,18 +80,53 @@ export function AddMemberForm({
                     {t.cover === "junior" ? "Junior" : t.name}: {pounds(priceFor(t))}
                   </option>
                 ))}
+              <option value={JOIN}>Join existing family / dual membership</option>
             </select>
             <span className="mt-1 block text-xs text-slate-500">
-              {renewalYear
-                ? "Full price for next year."
-                : months < 12
-                  ? `Pro rata for the ${months} month${months === 1 ? "" : "s"} left this year.`
-                  : "Full price for this year."}{" "}
               Dual covers 2 adults and Family up to {MAX_FAMILY} people. Every other type covers one person.
             </span>
           </label>
+          {!joining && (
+            <label className="block">
+              <span className="text-sm font-medium">Club year</span>
+              <select name="club_year_id" value={yearId} onChange={(e) => setYearId(e.target.value)} className={select}>
+                {years.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.label}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-xs text-slate-500">
+                {renewalYear
+                  ? "Full price for next year."
+                  : months < 12
+                    ? `Pro rata for the ${months} month${months === 1 ? "" : "s"} left this year.`
+                    : "Full price for this year."}
+              </span>
+            </label>
+          )}
         </div>
-        {canRecordPayment && typeId && (
+
+        {existingFamily && (
+          <label className="mt-4 block">
+            <span className="text-sm font-medium">Which family?</span>
+            <select name="household_id" required defaultValue={v.household_id ?? householdId ?? ""} className={select}>
+              <option value="">Choose a family</option>
+              {families.filter((f) => !joining || f.shared).map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">
+              {joining
+                ? "They're covered by the family's Family or Dual membership, and share its address."
+                : "A junior joins their parent's family and shares its address."}
+            </span>
+          </label>
+        )}
+
+        {canRecordPayment && type && (
           <div className="mt-4 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium">Payment received</span>
@@ -107,60 +142,16 @@ export function AddMemberForm({
         )}
       </Card>
 
-      <Card title="Family and address">
-        <fieldset className="space-y-2">
-          <legend className="sr-only">Family</legend>
-          <label className="flex items-center gap-2">
-            <input type="radio" name="family" value="new" checked={family === "new"} onChange={() => setFamily("new")} />
-            A new family (the first person below is its main contact)
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="radio" name="family" value="existing" checked={family === "existing"} onChange={() => setFamily("existing")} />
-            Joining a family already in the club
-          </label>
-        </fieldset>
-        {family === "new" ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Field label="Address line 1" name="address_line1" required defaultValue={v.address_line1} />
-            <Field label="Address line 2" name="address_line2" defaultValue={v.address_line2} />
-            <Field label="Town" name="address_line3" defaultValue={v.address_line3} />
-            <Field label="County" name="address_line4" defaultValue={v.address_line4} />
-            <Field label="Postcode" name="postcode" required defaultValue={v.postcode} />
-          </div>
-        ) : (
-          <label className="mt-4 block">
-            <span className="text-sm font-medium">Which family?</span>
-            <select name="household_id" required defaultValue={v.household_id ?? householdId ?? ""} className={select}>
-              <option value="">Choose a family</option>
-              {families.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-            <span className="mt-1 block text-xs text-slate-500">
-              {cover === "dual"
-                ? "Dual covers this person and the family's main contact."
-                : "If the family has a Family membership, they're covered by it unless you choose a membership above."}
-            </span>
-          </label>
-        )}
-      </Card>
-
-      {Array.from({ length: people }, (_, i) => (
-        <PersonFields
-          key={i}
-          index={i}
-          title={
-            people === 1
-              ? "Their details"
-              : i === 0 && family === "new"
-                ? "Person 1 (main contact)"
-                : `Person ${i + 1}`
-          }
-          values={v}
-        />
-      ))}
+      {choice &&
+        Array.from({ length: people }, (_, i) => (
+          <PersonFields
+            key={i}
+            index={i}
+            title={people === 1 ? "Their details" : i === 0 ? "Person 1 (main contact)" : `Person ${i + 1}`}
+            values={v}
+            withAddress={i === 0 && !existingFamily}
+          />
+        ))}
 
       {cover === "family" && people < MAX_FAMILY && (
         <button type="button" className={addButton} onClick={() => setExtra(extra + 1)}>
@@ -173,15 +164,27 @@ export function AddMemberForm({
         </button>
       )}
 
-      <div>
-        <SaveButton pendingText="Adding…">{people > 1 ? `Add ${people} members` : "Add member"}</SaveButton>
-      </div>
+      {choice && (
+        <div>
+          <SaveButton pendingText="Adding…">{people > 1 ? `Add ${people} members` : "Add member"}</SaveButton>
+        </div>
+      )}
     </form>
   );
 }
 
 // Everything Your details collects for one person: details, medical information, qualifications, preferences.
-function PersonFields({ index, title, values }: { index: number; title: string; values: Record<string, string> }) {
+function PersonFields({
+  index,
+  title,
+  values,
+  withAddress,
+}: {
+  index: number;
+  title: string;
+  values: Record<string, string>;
+  withAddress: boolean;
+}) {
   const k = (f: string) => `p${index}_${f}`;
   const v = (f: string) => values[k(f)];
   const [quals, setQuals] = useState(1);
@@ -194,6 +197,16 @@ function PersonFields({ index, title, values }: { index: number; title: string; 
           <div className="hidden sm:block" />
           <Field label="First name" name={k("first_name")} required defaultValue={v("first_name")} />
           <Field label="Last name" name={k("last_name")} required defaultValue={v("last_name")} />
+          {withAddress && (
+            <>
+              <Field label="Address line 1" name="address_line1" required defaultValue={values.address_line1} />
+              <Field label="Address line 2" name="address_line2" defaultValue={values.address_line2} />
+              <Field label="Town" name="address_line3" defaultValue={values.address_line3} />
+              <Field label="County" name="address_line4" defaultValue={values.address_line4} />
+              <Field label="Postcode" name="postcode" required defaultValue={values.postcode} />
+              <div className="hidden sm:block" />
+            </>
+          )}
           <Field label="Date of birth" name={k("date_of_birth")} type="date" defaultValue={v("date_of_birth")} hint="Needed for junior and U21 memberships." />
           <Field label="Email" name={k("email")} type="email" defaultValue={v("email")} hint="Adults: they log in with this email." />
           <Field label="Mobile" name={k("mobile")} type="tel" defaultValue={v("mobile")} />
@@ -219,7 +232,7 @@ function PersonFields({ index, title, values }: { index: number; title: string; 
             </span>
           </label>
           <Checkbox
-            label="The member (or their parent) agrees to the club holding this information"
+            label="The member agrees to the club holding this information"
             name={k("medical_consent")}
             defaultChecked={v("medical_consent") === "on"}
           />
@@ -243,11 +256,16 @@ function PersonFields({ index, title, values }: { index: number; title: string; 
 
         <div className="space-y-2 border-t border-slate-100 pt-4">
           <h3 className="font-medium">Communication preferences</h3>
-          <Checkbox label="Happy to receive club news by email" name={k("news_consent")} defaultChecked={v("news_consent") === "on"} />
+          {/* Both ticked to start with; after a failed save, keep what was chosen. */}
           <Checkbox
-            label="Leave out of the member directory"
-            name={k("directory_opt_out")}
-            defaultChecked={v("directory_opt_out") === "on"}
+            label="Happy to receive club news by email"
+            name={k("news_consent")}
+            defaultChecked={submitted(values) ? v("news_consent") === "on" : true}
+          />
+          <Checkbox
+            label="Happy to be added to the club directory"
+            name={k("directory_listed")}
+            defaultChecked={submitted(values) ? v("directory_listed") === "on" : true}
           />
         </div>
       </div>

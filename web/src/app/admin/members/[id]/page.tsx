@@ -34,7 +34,7 @@ const SAVED: Record<string, string> = {
   medical: "Medical information saved.",
   qualification: "Qualifications updated.",
   preferences: "Preferences saved.",
-  added: "New member added. Their membership, if you chose one, is on the Memberships and payments page.",
+  added: "New member added. Their membership, if you chose one, is on the Payments page.",
 };
 const ERRORS: Record<string, string> = {
   details: "We couldn't save those details. Please check them and try again.",
@@ -79,6 +79,19 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
     supabase.from("qualifications").select("id, name, awarded_on, expires_on").eq("person_id", id).order("expires_on"),
     supabase.from("user_roles").select("role").eq("person_id", id),
   ]);
+
+  // Only Family and Dual memberships take extra family members, so new members can only join those families.
+  const { data: sharedData } = household
+    ? await supabase
+        .from("memberships")
+        .select("id, membership_types!inner(cover), club_years!inner(ends_on)")
+        .eq("household_id", household.id)
+        .neq("status", "cancelled")
+        .in("membership_types.cover", ["family", "dual"])
+        .gte("club_years.ends_on", new Date().toISOString().slice(0, 10))
+        .limit(1)
+    : { data: [] };
+  const canAddToFamily = (sharedData ?? []).length > 0;
 
   const base = `/admin/members/${id}`;
   const editing = typeof query.edit === "string" ? query.edit : null;
@@ -144,7 +157,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
           </ul>
         )}
         <Link href="/admin/memberships" className={`mt-3 inline-block ${LINK}`}>
-          Memberships and payments
+          Payments
         </Link>
       </Card>
 
@@ -225,9 +238,11 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
                 <FormButtons base={base} section="family">Save main contact</FormButtons>
               </form>
             ) : (
-              <Link href={`/admin/members/new?household=${household.id}`} className={`mt-3 inline-block ${LINK}`}>
-                Add a new member to this family
-              </Link>
+              canAddToFamily && (
+                <Link href={`/admin/members/new?household=${household.id}`} className={`mt-3 inline-block ${LINK}`}>
+                  Add a new member to this family
+                </Link>
+              )
             )}
           </>
         )}

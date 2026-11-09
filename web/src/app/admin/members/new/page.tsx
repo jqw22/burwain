@@ -22,6 +22,14 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
     supabase.from("people").select("id, first_name, last_name, household_id").is("archived_at", null).not("household_id", "is", null),
     supabase.rpc("has_role", { r: "finance" }),
   ]);
+  // Families holding a Family or Dual membership this year or next: the only ones new members can join.
+  const { data: shared } = await supabase
+    .from("memberships")
+    .select("household_id, membership_types!inner(cover), club_years!inner(ends_on)")
+    .neq("status", "cancelled")
+    .in("membership_types.cover", ["family", "dual"])
+    .gte("club_years.ends_on", new Date().toISOString().slice(0, 10));
+  const sharing = new Set(((shared ?? []) as { household_id: string | null }[]).map((m) => m.household_id));
   const yearList = (years ?? []) as Year[];
   const current = yearList.find((y) => !y.is_renewal);
   const { data: quote } = current
@@ -36,6 +44,7 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
       const lead = members.find((p) => p.id === h.lead_person_id) ?? members[0];
       return {
         id: h.id,
+        shared: sharing.has(h.id),
         label: lead
           ? `${lead.last_name}, ${lead.first_name}${members.length > 1 ? ` and ${members.length - 1} more` : ""}${h.postcode ? ` (${h.postcode})` : ""}`
           : `No one yet${h.postcode ? ` (${h.postcode})` : ""}`,
