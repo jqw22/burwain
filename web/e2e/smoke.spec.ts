@@ -21,3 +21,10 @@ test("a login link without a code goes back to the login page", async ({ page })
   await page.goto("/auth/callback");
   await expect(page).toHaveURL(/\/login\?error=link$/);
 });
+
+for (const path of ["/profile", "/family", "/family/00000000-0000-0000-0000-000000000000"]) {
+  test(`${path} needs a login`, async ({ page }) => {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/login$/);
+  });
+}
