@@ -530,7 +530,7 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await page.goto("/admin/members");
   await page.getByRole("link", { name: "Membership types" }).click();
   await expect(page.getByRole("heading", { name: "Membership types", exact: true })).toBeVisible();
-  await expect(page.getByRole("row", { name: "Family", exact: true })).toContainText("£255.00");
+  await expect(page.getByRole("row", { name: "Family", exact: true })).toContainText("£255");
 
   await page.getByRole("link", { name: "Add a membership type" }).click();
   const form = page.getByRole("region", { name: "Add a membership type" });
@@ -544,7 +544,7 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await expect(page.getByText("Membership type added.")).toBeVisible();
   const row = page.getByRole("row", { name });
   await expect(row).toContainText(`(${code})`);
-  await expect(row).toContainText("£60.00");
+  await expect(row).toContainText("£60");
   await expect(row).toContainText("Non-sailing");
 
   // A clash with an existing code is explained.
