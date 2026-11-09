@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
 type Person = { id: string; first_name: string; last_name: string };
@@ -71,14 +72,14 @@ export default async function HomePage() {
           <h2 className="font-semibold">Club admin</h2>
           <ul className="mt-2 space-y-1">
             <li>
-              <a href="/admin/members" className="text-sky-800 underline">
+              <Link href="/admin/members" className="text-sky-800 underline">
                 Members
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="/admin/import" className="text-sky-800 underline">
+              <Link href="/admin/import" className="text-sky-800 underline">
                 Import members from the spreadsheet
-              </a>
+              </Link>
             </li>
           </ul>
         </section>
