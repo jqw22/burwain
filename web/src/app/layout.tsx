@@ -19,6 +19,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/profile" className="text-sm text-slate-700 hover:text-sky-900">
               Your details
             </Link>
+            <Link href="/directory" className="text-sm text-slate-700 hover:text-sky-900">
+              Directory
+            </Link>
           </nav>
         </header>
         <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">{children}</main>

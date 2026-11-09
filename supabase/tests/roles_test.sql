@@ -109,7 +109,8 @@ do $$ begin
   assert (select details from get_medical_record('20000000-0000-0000-0000-00000000000a')) = 'Asthma', 'admin can read medical';
   assert (select count(*) from medical_access_log) = 1, 'medical view logged';
   assert (select count(*) from audit_log) > 0, 'superadmin sees change log';
-  assert (select count(*) from member_directory()) = 1, 'directory lists adults only (Alice, not junior Bob)';
+  assert (select count(*) from member_directory()) = 2, 'directory lists adults with a membership (Alice and Eve, not junior Bob), paid or not';
+  assert (select membership from member_directory() where first_name = 'Eve') = 'Associate Membership, Club Membership', 'directory shows membership type';
 end $$;
 
 \echo 'Member (Alice): history linked to income'
@@ -285,5 +286,31 @@ end $$;
 select pg_temp.expect_error($q$select create_my_household('x', null, null, null, null)$q$, 'already in a family');
 select pg_temp.expect_error($q$update people set household_id = '10000000-0000-0000-0000-000000000001' where first_name = 'Carol'$q$, 'Only an admin');
 reset role;
+
+\echo 'Family membership covers people added to the family later'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into people (household_id, first_name, last_name, date_of_birth)
+values ('10000000-0000-0000-0000-000000000001', 'Nia', 'Newborn', '2026-06-01');
+do $$ begin
+  assert (select count(*) from membership_people mp join memberships m on m.id = mp.membership_id
+           join membership_types t on t.id = m.membership_type_id join people p on p.id = mp.person_id
+          where p.first_name = 'Nia' and t.code = 'F') = 1, 'Nia joins the family''s Family membership';
+end $$;
+reset role;
+
+\echo 'A Family membership taken out before setting up a family follows the family'
+reset request.jwt.claim.sub;
+insert into people (id, first_name, last_name, date_of_birth) values ('20000000-0000-0000-0000-0000000000a1', 'Gil', 'Solo', '1975-01-01');
+insert into memberships (id, club_year_id, membership_type_id, payer_person_id, status, price_pence)
+values ('40000000-0000-0000-0000-0000000000a1', current_club_year_id(), (select id from membership_types where code = 'F'), '20000000-0000-0000-0000-0000000000a1', 'active', 25500);
+insert into membership_people values ('40000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1');
+insert into households (id, lead_person_id) values ('10000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1');
+update people set household_id = '10000000-0000-0000-0000-0000000000a1' where id = '20000000-0000-0000-0000-0000000000a1';
+insert into people (household_id, first_name, last_name) values ('10000000-0000-0000-0000-0000000000a1', 'Hal', 'Solo');
+do $$ begin
+  assert (select household_id from memberships where id = '40000000-0000-0000-0000-0000000000a1') = '10000000-0000-0000-0000-0000000000a1', 'membership moved to the new family';
+  assert (select count(*) from membership_people where membership_id = '40000000-0000-0000-0000-0000000000a1') = 2, 'Hal is covered by the Family membership';
+end $$;
 
 \echo 'All database tests passed'
