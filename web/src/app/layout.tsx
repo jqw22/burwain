@@ -14,16 +14,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <header className="border-b border-slate-200 bg-white">
           <nav className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-4">
             <Link href="/" className="font-semibold text-sky-900">
-              Burwain Members
+              Home
             </Link>
             <Link href="/membership" className="text-sm text-slate-700 hover:text-sky-900">
               Membership
             </Link>
             <Link href="/profile" className="text-sm text-slate-700 hover:text-sky-900">
               Your details
-            </Link>
-            <Link href="/family" className="text-sm text-slate-700 hover:text-sky-900">
-              Family
             </Link>
           </nav>
         </header>

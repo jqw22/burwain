@@ -84,13 +84,6 @@ export default async function HomePage() {
                 Memberships and payments
               </Link>
             </li>
-            {isAdmin && (
-              <li>
-                <Link href="/admin/import" className="text-sky-800 underline">
-                  Import members from the spreadsheet
-                </Link>
-              </li>
-            )}
           </ul>
         </section>
       )}
