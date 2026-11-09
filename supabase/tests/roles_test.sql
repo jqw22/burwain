@@ -272,4 +272,18 @@ select pg_temp.expect_error($q$insert into qualifications (person_id, name) valu
 select pg_temp.expect_error($q$insert into medical_records (person_id, details, consent_given_at) values ('20000000-0000-0000-0000-00000000000a', 'x', now())$q$, 'row-level security');
 reset role;
 
+\echo 'Setting up a family group (member not in one yet)'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+do $$ declare hh uuid; begin
+  hh := create_my_household('9 Shore Rd', null, 'Burnley', null, 'bb9 9zz');
+  assert (select household_id from people where first_name = 'Carol') = hh, 'Carol is in her new family';
+  assert (select lead_person_id from households where id = hh) = (select id from people where first_name = 'Carol'), 'Carol is the main contact';
+  assert (select postcode from households where id = hh) = 'BB9 9ZZ', 'postcode tidied';
+  insert into people (household_id, first_name, last_name) values (hh, 'Kit', 'Finance');
+end $$;
+select pg_temp.expect_error($q$select create_my_household('x', null, null, null, null)$q$, 'already in a family');
+select pg_temp.expect_error($q$update people set household_id = '10000000-0000-0000-0000-000000000001' where first_name = 'Carol'$q$, 'Only an admin');
+reset role;
+
 \echo 'All database tests passed'

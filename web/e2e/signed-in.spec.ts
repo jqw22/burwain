@@ -290,6 +290,25 @@ test("an admin approves an Associate membership and finance records a cheque for
   await shot(page, "admin-memberships");
 });
 
+test("someone not in a family group sets one up and adds a family member", async ({ browser }) => {
+  // Ada (the admin) was added on her own, with no family group.
+  const page = await adminPage(browser);
+  await page.getByRole("link", { name: "Your details" }).click();
+  const family = page.getByRole("region", { name: "Your family" });
+  await page.waitForLoadState("networkidle");
+  await family.getByLabel("Address line 1").fill("5 Marina Way");
+  await family.getByLabel("Postcode").fill("bb10 2cc");
+  await family.getByRole("button", { name: "Set up my family" }).click();
+  await expect(page.getByText("Your family group is set up.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Home address" }).getByLabel("Postcode")).toHaveValue("BB10 2CC");
+
+  const add = page.getByRole("region", { name: "Add a family member" });
+  await add.getByLabel("First name").fill("Ben");
+  await add.getByLabel("Last name").fill(`Admin${run}`);
+  await add.getByRole("button", { name: "Add to family" }).click();
+  await expect(page.getByRole("region", { name: "Your family" }).getByText(`Ben Admin${run}`)).toBeVisible();
+});
+
 test("a member can't open the memberships and payments page", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/admin/memberships");

@@ -5,6 +5,7 @@ import { PERSON_FIELDS, ageOn, pounds, requireMe, ukDate, type Person } from "@/
 import {
   addFamilyMember,
   addQualification,
+  createHousehold,
   removeQualification,
   saveAddress,
   saveDetails,
@@ -19,6 +20,7 @@ const SAVED: Record<string, string> = {
   qualification: "Your qualifications have been updated.",
   address: "Your address has been saved.",
   add: "Family member added.",
+  household: "Your family group is set up. You can now add family members.",
 };
 const ERRORS: Record<string, string> = {
   details: "We couldn't save your details. Please check them and try again.",
@@ -28,6 +30,7 @@ const ERRORS: Record<string, string> = {
   qualification: "We couldn't update your qualifications. Please check the name and dates.",
   address: "We couldn't save the address. Please try again.",
   add: "We couldn't add that person. Please give a first and last name.",
+  household: "We couldn't set up your family group. Please try again.",
 };
 
 type Qualification = { id: string; name: string; awarded_on: string | null; expires_on: string | null };
@@ -162,9 +165,20 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
       <div id="family" className="space-y-6">
         <Card title="Your family">
           {!household ? (
-            <p className="text-slate-700">
-              You&apos;re not part of a family group yet. Please contact the membership secretary to set one up.
-            </p>
+            <form action={createHousehold} className="grid gap-4 sm:grid-cols-2">
+              <p className="text-slate-700 sm:col-span-2">
+                You&apos;re not in a family group yet. Add your home address to set one up. You&apos;ll be the main
+                contact and can then add your family.
+              </p>
+              <Field label="Address line 1" name="address_line1" required autoComplete="address-line1" />
+              <Field label="Address line 2" name="address_line2" autoComplete="address-line2" />
+              <Field label="Town" name="address_line3" autoComplete="address-level2" />
+              <Field label="County" name="address_line4" autoComplete="address-level1" />
+              <Field label="Postcode" name="postcode" required autoComplete="postal-code" />
+              <div className="sm:col-span-2">
+                <SaveButton>Set up my family</SaveButton>
+              </div>
+            </form>
           ) : (
             <>
               {family.length === 0 ? (
