@@ -11,10 +11,6 @@ jobs:
     defaults:
       run:
         working-directory: web
-    env:
-      # Placeholder values: the smoke tests never reach Supabase.
-      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_placeholder
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,6 +21,31 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+
+      # A throwaway copy of Supabase with all migrations and the seed, plus a test mailbox (Mailpit).
+      - name: Start local Supabase
+        working-directory: .
+        run: npx -y supabase@3.0.0 start -x studio,imgproxy,vector,logflare,edge-runtime,realtime,storage-api,postgres-meta,supavisor
+      - name: Point the app at local Supabase
+        working-directory: .
+        run: |
+          npx -y supabase@3.0.0 status -o env > /tmp/sb.env
+          . /tmp/sb.env
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$PUBLISHABLE_KEY"
+            echo "E2E_DB_URL=$DB_URL"
+            echo "E2E_MAILPIT_URL=${MAILPIT_URL:-http://127.0.0.1:54324}"
+            echo "E2E_SCREENSHOTS=${{ github.workspace }}/web/screenshots"
+          } >> "$GITHUB_ENV"
+
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e -- --trace off
+      - run: mkdir -p screenshots && npm run test:e2e -- --trace off
+      - name: Screenshots of the signed-in pages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: web/screenshots
+          if-no-files-found: ignore
