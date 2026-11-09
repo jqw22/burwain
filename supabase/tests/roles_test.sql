@@ -187,4 +187,34 @@ do $$ declare m uuid; begin
 end $$;
 reset role;
 
+\echo 'Spreadsheet import (admins only)'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select import_members('[]', (select id from club_years where label = '2026/27'))$q$, 'Admins only');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select pg_temp.expect_error($q$select import_members('[{"household_key":"x","first_name":"A","last_name":"B","member_class":"ZZ"}]', (select id from club_years where label = '2026/27'))$q$, 'Unknown member class: ZZ');
+do $$ declare
+  rows jsonb := '[
+    {"household_key":"bb11aa|3 shore lane","first_name":"Jo","last_name":"Import","date_of_birth":"1975-04-04","email":"Jo@Example.com","mobile":"0790","whatsapp":true,"address_line1":"3 Shore Lane","postcode":"bb1 1aa","member_class":"F"},
+    {"household_key":"bb11aa|3 shore lane","first_name":"Kit","last_name":"Import","date_of_birth":"2015-06-06","member_class":"F"},
+    {"household_key":"bb11aa|3 shore lane","first_name":"Lou","last_name":"Import","date_of_birth":"1977-01-01","member_class":"f"},
+    {"household_key":"bb22bb|9 hill","first_name":"Max","last_name":"Solo","date_of_birth":"1960-02-02","email":"max@example.com","member_class":"IS"},
+    {"household_key":"bb22bb|9 hill","first_name":"Ned","last_name":"Solo","date_of_birth":"2012-02-02","member_class":"J1"},
+    {"household_key":"x|alice","first_name":"Alice","last_name":"Lead","date_of_birth":"1980-01-01","member_class":"IS"}
+  ]';
+  res jsonb;
+begin
+  res := import_members(rows, (select id from club_years where label = '2026/27'));
+  assert res = '{"households": 2, "people": 5, "skipped": 1, "memberships": 3}', 'import summary: ' || res;
+  assert (select count(*) from people where last_name = 'Import' and household_id is not null) = 3, 'family grouped';
+  assert (select p.first_name from households h join people p on p.id = h.lead_person_id where h.postcode = 'BB1 1AA') = 'Jo', 'oldest adult is main contact';
+  assert (select count(*) from membership_people mp join memberships m on m.id = mp.membership_id
+           join membership_types t on t.id = m.membership_type_id where t.code = 'F' and m.status = 'active'
+           and m.club_year_id = (select id from club_years where label = '2026/27')) = 3, 'one Family membership covers all three';
+  assert (select email from people where first_name = 'Jo') = 'jo@example.com', 'email lower-cased for login';
+  res := import_members(rows, (select id from club_years where label = '2026/27'));
+  assert res = '{"households": 0, "people": 0, "skipped": 6, "memberships": 0}', 're-run is harmless: ' || res;
+end $$;
+reset role;
+
 \echo 'All database tests passed'

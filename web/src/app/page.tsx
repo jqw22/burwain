@@ -36,9 +36,10 @@ export default async function HomePage() {
     );
   }
 
-  const [{ data: me }, { data: historyData }] = await Promise.all([
+  const [{ data: me }, { data: historyData }, { data: isAdmin }] = await Promise.all([
     supabase.from("people").select("id, first_name, last_name").eq("id", personId).single<Person>(),
     supabase.rpc("membership_history"),
+    supabase.rpc("has_role", { r: "admin" }),
   ]);
 
   const history = (historyData ?? []) as HistoryRow[];
@@ -65,6 +66,14 @@ export default async function HomePage() {
           Renew or add a membership
         </a>
       </section>
+      {isAdmin && (
+        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="font-semibold">Club admin</h2>
+          <a href="/admin/import" className="mt-2 inline-block text-sky-800 underline">
+            Import members from the spreadsheet
+          </a>
+        </section>
+      )}
       <SignOut />
     </div>
   );
