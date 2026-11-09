@@ -217,4 +217,27 @@ begin
 end $$;
 reset role;
 
+\echo 'Manual payments (finance) and the memberships list'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select record_manual_payment(array(select id from memberships where status = 'awaiting_payment' limit 1), 'cash', current_date)$q$, 'Only finance');
+do $$ begin
+  assert (select count(*) from club_memberships((select id from club_years where label = '2026/27'))) = 0, 'members see nothing in the finance list';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.expect_error($q$select record_manual_payment(array(select id from memberships where status = 'awaiting_payment' limit 1), 'card', current_date)$q$, 'recorded automatically');
+select pg_temp.expect_error($q$select record_manual_payment(array(select id from memberships where status = 'active' limit 1), 'cash', current_date)$q$, 'awaiting payment');
+do $$ declare
+  m uuid := (select m.id from memberships m join membership_types t on t.id = m.membership_type_id where t.code = 'C' and m.status = 'awaiting_payment' limit 1);
+  before bigint := (select coalesce(sum(total_pence), 0) from income_statement() where direction = 'in');
+begin
+  assert m is not null, 'Eve''s Club membership is awaiting payment';
+  assert (select people from club_memberships((select id from club_years where label = '2026/27')) where id = m) = 'Eve Other', 'finance sees names in the list';
+  perform record_manual_payment(array[m], 'cheque', current_date);
+  assert (select status::text from memberships where id = m) = 'active', 'marked paid';
+  assert (select coalesce(sum(total_pence), 0) from income_statement() where direction = 'in') = before + 1500, 'income posted';
+  assert (select method::text from club_memberships((select id from club_years where label = '2026/27')) where id = m) = 'cheque', 'payment method shown';
+end $$;
+reset role;
+
 \echo 'All database tests passed'

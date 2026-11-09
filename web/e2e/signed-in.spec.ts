@@ -45,7 +45,7 @@ test.beforeAll(() => {
   `);
   sql(`
     with a as (insert into people (first_name, last_name, date_of_birth, email) values ('Ada', 'Admin${run}', '1970-01-01', '${adminEmail}') returning id)
-    insert into user_roles (person_id, role) select id, 'admin' from a;
+    insert into user_roles (person_id, role) select id, r::app_role from a, unnest(array['admin', 'finance']) r;
   `);
   // Rows inserted above aren't visible to an update in the same statement, so set the lead separately.
   sql(`update households h set lead_person_id = p.id from people p where p.household_id = h.id and p.email = '${leadEmail}'`);
@@ -219,6 +219,46 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await expect(page.getByText("Mild asthma, inhaler in kit bag.")).toBeVisible();
   expect(sql(`select count(*) from medical_access_log l join people p on p.id = l.person_id where p.email = '${leadEmail}'`)).toBe("1");
   await shot(page, "admin-member");
+});
+
+test("an admin approves an Associate membership and finance records a cheque for it", async ({ browser }) => {
+  // Alex has asked for an Associate membership, which needs approval.
+  sql(`
+    with m as (
+      insert into memberships (club_year_id, membership_type_id, payer_person_id, household_id, status, price_pence)
+      select current_club_year_id(), (select id from membership_types where code = 'A'), p.id, p.household_id, 'pending_approval', 3000
+        from people p where p.email = 'alex-${run}@example.test' returning id, payer_person_id
+    )
+    insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
+  `);
+  const page = await adminPage(browser);
+  await page.getByRole("link", { name: "Memberships and payments" }).click();
+  await expect(page.getByRole("heading", { name: "Memberships and payments" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Awaiting committee approval" })).toBeVisible();
+  await shot(page, "admin-memberships-approval");
+
+  await page.getByRole("button", { name: `Approve Associate Membership for Alex Tester${run}` }).click();
+  await expect(page.getByText("Membership approved.")).toBeVisible();
+
+  await page.getByRole("checkbox", { name: `Mark Associate Membership for Alex Tester${run} as paid` }).check();
+  await page.getByLabel("Paid by").selectOption("cheque");
+  await page.getByRole("button", { name: "Record payment" }).click();
+  await expect(page.getByText("Payment recorded.")).toBeVisible();
+  const row = page.getByRole("row", { name: new RegExp(`Associate Membership .*Alex Tester${run}`) });
+  await expect(row).toContainText("Paid");
+  await expect(row).toContainText("cheque");
+  expect(
+    sql(`select m.status from memberships m join membership_people mp on mp.membership_id = m.id
+          join people p on p.id = mp.person_id join membership_types t on t.id = m.membership_type_id
+         where p.email = 'alex-${run}@example.test' and t.code = 'A'`),
+  ).toBe("active");
+  await shot(page, "admin-memberships");
+});
+
+test("a member can't open the memberships and payments page", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/admin/memberships");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 
 test("a member can't open the admin members page", async ({ browser }) => {
