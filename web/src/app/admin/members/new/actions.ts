@@ -7,6 +7,8 @@ import { peopleFromForm } from "@/lib/member-form";
 // Database messages an admin can act on. Anything else gets a general message.
 const KNOWN: [string, string][] = [
   ["First and last name", "name"],
+  ["Date of birth is needed", "dob"],
+  ["in the future", "dob_future"],
   ["consent", "consent"],
   ["Dual or Family", "many"],
   ["Up to 4", "four"],
@@ -28,6 +30,8 @@ export type AddState = { error?: string; values?: Record<string, string> };
 
 const MESSAGES: Record<string, string> = {
   name: "Please give a first and last name for everyone.",
+  dob: "Please give a date of birth for everyone.",
+  dob_future: "A date of birth can't be in the future.",
   consent: "Medical information needs the member's consent: tick the box under it.",
   many: "Only Dual and Family memberships cover more than one person.",
   four: "A Family membership covers up to 4 people.",

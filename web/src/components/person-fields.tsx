@@ -47,7 +47,7 @@ export function PersonFields({
               <div className="hidden sm:block" />
             </>
           )}
-          <Field label="Date of birth" name={k("date_of_birth")} type="date" defaultValue={v("date_of_birth")} hint="Needed for junior and U21 memberships." />
+          <Field label="Date of birth" name={k("date_of_birth")} type="date" required defaultValue={v("date_of_birth")} hint="Needed for everyone, for age limits and so children aren't listed in the club directory." />
           <Field label="Email" name={k("email")} type="email" defaultValue={v("email")} hint={you ? "Adults: we'll contact you here, and it becomes your login." : "Adults: they log in with this email."} />
           <Field label="Mobile" name={k("mobile")} type="tel" defaultValue={v("mobile")} />
           <div className="self-end pb-2">

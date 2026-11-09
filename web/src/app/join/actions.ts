@@ -12,6 +12,8 @@ export type JoinState = {
 
 const KNOWN: [string, string][] = [
   ["First and last name", "Please give a first and last name for everyone."],
+  ["Date of birth is needed", "Please give a date of birth for everyone."],
+  ["in the future", "A date of birth can't be in the future."],
   ["email address is needed", "Please give an email address for the first person. We'll use it to get in touch."],
   ["already uses that email", "That email already belongs to a member. Please log in instead, or contact the membership secretary."],
   ["already an application", "We already have an application waiting for that email. We'll be in touch soon."],
