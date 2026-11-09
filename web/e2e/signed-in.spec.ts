@@ -144,7 +144,7 @@ test("a member updates their own details, medical info and qualifications", asyn
   await shot(page, "profile");
 });
 
-test("the family lead sees the family on Your details, adds a junior and their medical info", async ({ browser }) => {
+test("the family lead sees the family on Your details, adds a junior and manages family members' details", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/profile");
   const family = page.getByRole("region", { name: "Your family" });
@@ -172,6 +172,15 @@ test("the family lead sees the family on Your details, adds a junior and their m
   await expect(page.getByLabel("Medical details")).toHaveValue("Hay fever.");
   expect(sql(`select details from medical_records r join people p on p.id = r.person_id where p.first_name = 'Robin' and p.last_name = 'Tester${run}'`)).toBe("Hay fever.");
   await shot(page, "family-member-medical");
+
+  // The main contact manages adults in the family too: a qualification for Alex.
+  await page.goto("/profile");
+  await page.getByRole("link", { name: `Edit Alex Tester${run}` }).click();
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("textbox", { name: /^Qualification/ }).fill("Powerboat Level 2");
+  await page.getByRole("button", { name: "Add qualification" }).click();
+  await expect(page.getByText("Qualifications updated.")).toBeVisible();
+  await expect(page.getByText("Powerboat Level 2")).toBeVisible();
 
   // The old Family page now opens Your details.
   await page.goto("/family");

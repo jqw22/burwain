@@ -1,17 +1,29 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
-import { PERSON_FIELDS, requireMe, type Person } from "@/lib/me";
-import { saveFamilyMedical, saveFamilyMember } from "../../actions";
+import { PERSON_FIELDS, requireMe, ukDate, type Person } from "@/lib/me";
+import {
+  addFamilyQualification,
+  removeFamilyQualification,
+  saveFamilyMedical,
+  saveFamilyMember,
+  saveFamilyPreferences,
+} from "../../actions";
+
+type Qualification = { id: string; name: string; awarded_on: string | null; expires_on: string | null };
 
 const SAVED: Record<string, string> = {
   details: "Details saved.",
   medical: "Medical information saved.",
+  qualification: "Qualifications updated.",
+  preferences: "Preferences saved.",
 };
 const ERRORS: Record<string, string> = {
-  details: "We couldn't save those changes. Only the main contact can edit family members.",
+  details: "We couldn't save those changes. Please check them and try again.",
   medical: "We couldn't save the medical information. Please try again.",
   consent: "Please tick the consent box so the club can hold this medical information.",
+  qualification: "We couldn't update the qualifications. Please check the name and dates.",
+  preferences: "We couldn't save the preferences. Please try again.",
 };
 
 export default async function FamilyMemberPage({ params, searchParams }: PageProps<"/profile/member/[id]">) {
@@ -19,14 +31,22 @@ export default async function FamilyMemberPage({ params, searchParams }: PagePro
   const query = await searchParams;
   const { supabase } = await requireMe();
   // Row-level security only returns people in your own household.
-  const [{ data: m }, { data: canMedical }] = await Promise.all([
+  const [{ data: m }, { data: canManage }, { data: medical }, { data: qualsData }] = await Promise.all([
     supabase.from("people").select(PERSON_FIELDS).eq("id", id).maybeSingle<Person>(),
-    supabase.rpc("can_manage_family_medical", { p_person: id }),
+    supabase.rpc("can_manage_family_member", { p_person: id }),
+    supabase.from("medical_records").select("details").eq("person_id", id).maybeSingle<{ details: string | null }>(),
+    supabase.from("qualifications").select("id, name, awarded_on, expires_on").eq("person_id", id).order("expires_on"),
   ]);
   if (!m) notFound();
-  const { data: medical } = canMedical
-    ? await supabase.from("medical_records").select("details").eq("person_id", id).maybeSingle<{ details: string | null }>()
-    : { data: null };
+  if (!canManage) {
+    return (
+      <Card title="Main contact only">
+        <p className="text-slate-700">Only your family&apos;s main contact can change other family members&apos; details.</p>
+      </Card>
+    );
+  }
+  const quals = (qualsData ?? []) as Qualification[];
+  const today = new Date().toISOString().slice(0, 10);
 
   const saved = typeof query.saved === "string" ? SAVED[query.saved] : undefined;
   const error = typeof query.error === "string" ? ERRORS[query.error] : undefined;
@@ -63,10 +83,8 @@ export default async function FamilyMemberPage({ params, searchParams }: PagePro
       </Card>
 
       <Card title="Medical information">
-        {canMedical ? (
-          <>
             <p className="mb-4 text-sm text-slate-600">
-              Anything the club should know about {m.first_name} in an emergency. Only your family and club admins can
+              Anything the club should know about {m.first_name} in an emergency. Only your family&apos;s main contact, {m.first_name} and club admins can
               see this, and every time an admin views it is recorded. Leave it empty and save to remove it.
             </p>
             <form action={saveFamilyMedical} className="space-y-3">
@@ -87,12 +105,65 @@ export default async function FamilyMemberPage({ params, searchParams }: PagePro
               />
               <SaveButton>Save medical information</SaveButton>
             </form>
-          </>
+          
+      </Card>
+
+      <Card title="Qualifications">
+        {quals.length ? (
+          <ul className="mb-4 divide-y divide-slate-100">
+            {quals.map((q) => (
+              <li key={q.id} className="flex items-center justify-between py-2">
+                <span>
+                  {q.name}
+                  <span className="block text-sm text-slate-500">
+                    {q.awarded_on ? `Awarded ${ukDate(q.awarded_on)}` : "Award date not given"}
+                    {q.expires_on && (
+                      <span className={q.expires_on < today ? "text-red-700" : undefined}>
+                        {" "}
+                        · {q.expires_on < today ? "Expired" : "Expires"} {ukDate(q.expires_on)}
+                      </span>
+                    )}
+                  </span>
+                </span>
+                <form action={removeFamilyQualification}>
+                  <input type="hidden" name="id" value={q.id} />
+                  <input type="hidden" name="person_id" value={m.id} />
+                  <button type="submit" className="text-sm text-slate-600 underline">
+                    Remove
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <p className="text-sm text-slate-600">
-            {m.first_name} has their own login, so they add their own medical information when they sign in. (For juniors, the family&apos;s main contact can add it.)
-          </p>
+          <p className="mb-4 text-sm text-slate-600">No qualifications recorded yet.</p>
         )}
+        <form action={addFamilyQualification} className="grid gap-4 sm:grid-cols-3">
+          <input type="hidden" name="id" value={m.id} />
+          <Field label="Qualification" name="name" required hint="For example RYA Stage 1" />
+          <Field label="Awarded" name="awarded_on" type="date" />
+          <Field label="Expires" name="expires_on" type="date" />
+          <div className="sm:col-span-3">
+            <SaveButton>Add qualification</SaveButton>
+          </div>
+        </form>
+      </Card>
+
+      <Card title="Communication preferences">
+        <form action={saveFamilyPreferences} className="space-y-3">
+          <input type="hidden" name="id" value={m.id} />
+          <Checkbox
+            label="Send club news and newsletters by email. They can unsubscribe at any time."
+            name="news_consent"
+            defaultChecked={m.news_consent}
+          />
+          <Checkbox
+            label="Show their name, phone and email in the member directory (adults only)"
+            name="directory_listed"
+            defaultChecked={!m.directory_opt_out}
+          />
+          <SaveButton>Save preferences</SaveButton>
+        </form>
       </Card>
     </div>
   );

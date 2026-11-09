@@ -186,7 +186,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
                             className="text-sm text-sky-800 underline"
                             aria-label={`Edit ${m.first_name} ${m.last_name}`}
                           >
-                            Edit details and medical
+                            Edit
                           </Link>
                         )}
                       </li>

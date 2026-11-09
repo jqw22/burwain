@@ -130,3 +130,37 @@ export async function saveFamilyMedical(form: FormData) {
     : await supabase.from("medical_records").delete().eq("person_id", id);
   redirect(`/profile/member/${id}?${error ? "error" : "saved"}=medical`);
 }
+
+export async function addFamilyQualification(form: FormData) {
+  const { supabase } = await requireMe();
+  const id = String(form.get("id"));
+  const name = text(form, "name");
+  if (!name) redirect(`/profile/member/${id}?error=qualification`);
+  const { error } = await supabase.from("qualifications").insert({
+    person_id: id,
+    name,
+    awarded_on: text(form, "awarded_on"),
+    expires_on: text(form, "expires_on"),
+  });
+  redirect(`/profile/member/${id}?${error ? "error" : "saved"}=qualification`);
+}
+
+export async function removeFamilyQualification(form: FormData) {
+  const { supabase } = await requireMe();
+  const id = String(form.get("person_id"));
+  const { error } = await supabase.from("qualifications").delete().eq("id", String(form.get("id")));
+  redirect(`/profile/member/${id}?${error ? "error" : "saved"}=qualification`);
+}
+
+export async function saveFamilyPreferences(form: FormData) {
+  const { supabase } = await requireMe();
+  const id = String(form.get("id"));
+  const { error } = await supabase
+    .from("people")
+    .update({
+      news_consent: form.get("news_consent") === "on",
+      directory_opt_out: form.get("directory_listed") !== "on",
+    })
+    .eq("id", id);
+  redirect(`/profile/member/${id}?${error ? "error" : "saved"}=preferences`);
+}
