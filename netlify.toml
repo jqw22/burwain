@@ -1,0 +1,11 @@
+# Netlify builds the web app from the web/ folder. Netlify detects Next.js and adds its Next.js runtime itself.
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Public values: the publishable key is meant to be used in browsers. Row-level security protects the data.
+  NEXT_PUBLIC_SUPABASE_URL = "https://wjbogbpeqdurehbkatmf.supabase.co"
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_WbpCRTybHW02yrKoPBX1BQ_KAZV3dFg"
