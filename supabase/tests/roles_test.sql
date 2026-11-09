@@ -316,13 +316,14 @@ end $$;
 \echo 'Admins add new members: new family, existing family, membership and payment'
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
-select pg_temp.expect_error($q$select admin_add_member('{"first_name":"X","last_name":"Y","address_line1":"1 A","postcode":"BB1"}')$q$, 'Only an admin');
+select pg_temp.expect_error($q$select admin_add_member('{"people":[{"first_name":"X","last_name":"Y"}],"address_line1":"1 A","postcode":"BB1"}')$q$, 'Only an admin');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
-select pg_temp.expect_error($q$select admin_add_member('{"first_name":"X","last_name":"Y"}')$q$, 'address line 1');
-select pg_temp.expect_error($q$select admin_add_member('{"first_name":"X","last_name":"Y","address_line1":"1 A","postcode":"BB1","email":"A@example.com"}')$q$, 'already uses that email');
+select pg_temp.expect_error($q$select admin_add_member('{"people":[{"first_name":"X","last_name":"Y"}]}')$q$, 'address line 1');
+select pg_temp.expect_error($q$select admin_add_member('{"people":[{"first_name":"X","last_name":"Y","email":"A@example.com"}],"address_line1":"1 A","postcode":"BB1"}')$q$, 'already uses that email');
 do $$ declare ivy uuid; jo uuid; hh uuid; m uuid; begin
-  ivy := admin_add_member(jsonb_build_object('first_name', 'Ivy', 'last_name', 'New', 'date_of_birth', '1985-03-03',
-           'email', 'Ivy@Example.com', 'address_line1', '5 Bay Rd', 'postcode', 'bb5 5aa',
+  ivy := admin_add_member(jsonb_build_object('people', jsonb_build_array(jsonb_build_object('first_name', 'Ivy', 'last_name', 'New', 'date_of_birth', '1985-03-03',
+           'email', 'Ivy@Example.com', 'news_consent', true, 'medical_details', 'Asthma', 'medical_consent', true,
+           'qualifications', jsonb_build_array(jsonb_build_object('name', 'RYA Level 2', 'expires_on', '2030-01-01')))), 'address_line1', '5 Bay Rd', 'postcode', 'bb5 5aa',
            'type_id', (select id from membership_types where code = 'A'),
            'club_year_id', (select id from club_years where label = '2027'),
            'payment_method', 'cash', 'paid_on', '2026-11-01'));
@@ -331,18 +332,21 @@ do $$ declare ivy uuid; jo uuid; hh uuid; m uuid; begin
   assert (select postcode from households where id = hh) = 'BB5 5AA', 'postcode tidied';
   assert (select email from people where id = ivy) = 'ivy@example.com', 'email lower case';
   assert (select first_joined_on from people where id = ivy) = club_today(), 'first joined today';
+  assert (select news_consent and news_consent_at is not null from people where id = ivy), 'news consent recorded';
+  assert (select details from get_medical_record(ivy)) = 'Asthma', 'medical saved';
+  assert (select name from qualifications where person_id = ivy) = 'RYA Level 2', 'qualification saved';
   select m.id into m from memberships m join membership_people mp on mp.membership_id = m.id where mp.person_id = ivy;
   assert (select status::text from memberships where id = m) = 'active', 'Associate added by admin skips approval and is paid';
   assert (select payer_person_id from memberships where id = m) = ivy, 'Ivy pays';
 
   -- Jo joins Alice's family on a Junior membership: not left on the Family membership too.
-  jo := admin_add_member(jsonb_build_object('first_name', 'Jo', 'last_name', 'Lead', 'date_of_birth', '2015-01-01',
+  jo := admin_add_member(jsonb_build_object('people', jsonb_build_array(jsonb_build_object('first_name', 'Jo', 'last_name', 'Lead', 'date_of_birth', '2015-01-01')),
            'household_id', '10000000-0000-0000-0000-000000000001'));
   assert (select count(*) from membership_people mp join memberships m on m.id = mp.membership_id
            join membership_types t on t.id = m.membership_type_id where mp.person_id = jo and t.code = 'F') >= 1,
          'Jo is covered by the family membership when no type is chosen';
   -- Lou gets a Junior membership of their own instead of Family cover.
-  jo := admin_add_member(jsonb_build_object('first_name', 'Lou', 'last_name', 'Lead', 'date_of_birth', '2016-01-01',
+  jo := admin_add_member(jsonb_build_object('people', jsonb_build_array(jsonb_build_object('first_name', 'Lou', 'last_name', 'Lead', 'date_of_birth', '2016-01-01')),
            'household_id', '10000000-0000-0000-0000-000000000001',
            'type_id', (select id from membership_types where code = 'J1'),
            'club_year_id', (select id from club_years where label = '2026')));
@@ -378,6 +382,40 @@ select m.id as eve_c from memberships m join membership_types t on t.id = m.memb
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 select pg_temp.expect_error(format('select renew_my_membership(%L, (select id from club_years where label = %L))', :'eve_c', '2027'), 'main contact');
+reset role;
+reset request.jwt.claim.sub;
+
+\echo 'Admins add a whole family on a Family membership, and change medical information'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select pg_temp.expect_error($q$select admin_add_member(jsonb_build_object('address_line1', '1 A', 'postcode', 'BB1',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'A', 'last_name', 'B'), jsonb_build_object('first_name', 'C', 'last_name', 'D'))))$q$, 'Dual or Family');
+select pg_temp.expect_error($q$select admin_add_member(jsonb_build_object('address_line1', '1 A', 'postcode', 'BB1',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'A', 'last_name', 'B', 'medical_details', 'x'))))$q$, 'consent');
+select pg_temp.expect_error($q$select admin_add_member(jsonb_build_object('address_line1', '1 A', 'postcode', 'BB1',
+  'type_id', (select id from membership_types where code = 'C'), 'club_year_id', (select id from club_years where label = '2026'),
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'A', 'last_name', 'B'), jsonb_build_object('first_name', 'C', 'last_name', 'D'))))$q$, 'exactly one');
+do $$ declare first uuid; hh uuid; m uuid; begin
+  first := admin_add_member(jsonb_build_object('address_line1', '8 Weir Rd', 'postcode', 'BB8 8WW',
+    'type_id', (select id from membership_types where code = 'F'), 'club_year_id', (select id from club_years where label = '2027'),
+    'people', jsonb_build_array(
+      jsonb_build_object('first_name', 'Pat', 'last_name', 'Weir', 'date_of_birth', '1979-01-01'),
+      jsonb_build_object('first_name', 'Quin', 'last_name', 'Weir', 'date_of_birth', '1981-01-01'),
+      jsonb_build_object('first_name', 'Ray', 'last_name', 'Weir', 'date_of_birth', '2014-01-01', 'directory_opt_out', true))));
+  select household_id into hh from people where id = first;
+  assert (select count(*) from people where household_id = hh) = 3, 'three people in the new family';
+  assert (select lead_person_id from households where id = hh) = first, 'first person is main contact';
+  select id into m from memberships where household_id = hh;
+  assert (select count(*) from membership_people where membership_id = m) = 3, 'Family covers all three';
+  assert (select payer_person_id from memberships where id = m) = first, 'main contact pays';
+  assert (select directory_opt_out from people where first_name = 'Ray' and last_name = 'Weir'), 'preference saved';
+  perform admin_save_medical(first, 'Penicillin allergy');
+  assert (select details from get_medical_record(first)) = 'Penicillin allergy', 'admin adds medical';
+  perform admin_save_medical(first, 'None');
+  assert (select details from get_medical_record(first)) = 'None', 'admin changes medical';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select admin_save_medical('20000000-0000-0000-0000-00000000000e', 'x')$q$, 'Only an admin');
 reset role;
 reset request.jwt.claim.sub;
 

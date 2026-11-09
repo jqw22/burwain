@@ -5,10 +5,20 @@ export const LINK =
   "rounded px-1 text-sm text-sky-800 underline underline-offset-2 hover:bg-sky-50 hover:text-sky-950 " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500";
 
-export function EditLink({ section, label, text = "Edit" }: { section: string; label: string; text?: string }) {
+export function EditLink({
+  section,
+  label,
+  text = "Edit",
+  base = "/profile",
+}: {
+  section: string;
+  label: string;
+  text?: string;
+  base?: string;
+}) {
   return (
     <Link
-      href={`/profile?edit=${section}#${section}`}
+      href={`${base}?edit=${section}#${section}`}
       scroll={false}
       className={LINK}
       aria-label={text === "Edit" ? `Edit ${label}` : undefined}
@@ -23,16 +33,18 @@ export function FormButtons({
   children,
   cancelText = "Cancel",
   wide,
+  base = "/profile",
 }: {
   section: string;
   children: React.ReactNode;
   cancelText?: string;
   wide?: boolean;
+  base?: string;
 }) {
   return (
     <div className={`flex items-center gap-4 ${wide ? "sm:col-span-3" : "sm:col-span-2"}`}>
       <SaveButton>{children}</SaveButton>
-      <Link href={`/profile#${section}`} scroll={false} className={LINK}>
+      <Link href={`${base}#${section}`} scroll={false} className={LINK}>
         {cancelText}
       </Link>
     </div>

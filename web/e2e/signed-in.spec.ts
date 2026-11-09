@@ -260,6 +260,10 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await shot(page, "admin-members");
 
   await page.getByRole("link", { name: `Tester${run}, Sam` }).click();
+  // Same boxes as Your details, read-only until Edit is clicked.
+  await expect(page.getByRole("region", { name: "Contact details" })).toContainText("07700 900123");
+  await page.getByRole("link", { name: "Edit contact details" }).click();
+  await page.waitForLoadState("networkidle");
   await page.getByLabel("First joined").fill("2015-04-01");
   await page.getByRole("button", { name: "Save details" }).click();
   await expect(page.getByText("Details saved.")).toBeVisible();
@@ -268,6 +272,25 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await page.getByRole("button", { name: "Show medical information" }).click();
   await expect(page.getByText("Mild asthma, inhaler in kit bag.")).toBeVisible();
   expect(sql(`select count(*) from medical_access_log l join people p on p.id = l.person_id where p.email = '${leadEmail}'`)).toBe("1");
+
+  // Admins can edit medical information (a logged view), qualifications and preferences too.
+  await page.getByRole("link", { name: "Edit medical information" }).click();
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Medical details").fill("Mild asthma, inhaler in kit bag. Carries an EpiPen.");
+  await page.getByRole("button", { name: "Save medical information" }).click();
+  await expect(page.getByText("Medical information saved.")).toBeVisible();
+  await expect(page.getByText("Carries an EpiPen.")).toBeVisible();
+  await page.getByRole("link", { name: "Edit qualifications" }).click();
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("textbox", { name: /^Qualification/ }).fill("First Aid");
+  await page.getByRole("button", { name: "Add qualification" }).click();
+  await expect(page.getByText("Qualifications updated.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Qualifications" })).toContainText("First Aid");
+  await page.getByRole("link", { name: "Edit communication preferences" }).click();
+  await page.getByLabel("Club news and newsletters by email").check();
+  await page.getByRole("button", { name: "Save preferences" }).click();
+  await expect(page.getByText("Preferences saved.")).toBeVisible();
+  expect(sql(`select news_consent, news_consent_at is not null from people where email = '${leadEmail}'`)).toBe("t|t");
   await shot(page, "admin-member");
 });
 
@@ -305,7 +328,7 @@ test("an admin approves an Associate membership and finance records a cheque for
   await shot(page, "admin-memberships");
 });
 
-test("an admin adds new members: one joining an existing family, one starting a new family and paying cash", async ({ browser }) => {
+test("an admin adds new members: joining a family, a new family paying cash, and a whole family", async ({ browser }) => {
   const page = await adminPage(browser);
   // Members not in a family can't set one up themselves any more.
   await page.getByRole("link", { name: "Your details" }).click();
@@ -343,6 +366,11 @@ test("an admin adds new members: one joining an existing family, one starting a 
   const typeLabel = await form.getByLabel("Membership type").locator("option", { hasText: /^Club Membership: £/ }).textContent();
   await form.getByLabel("Membership type").selectOption({ label: typeLabel! });
   await form.getByLabel("Payment received").selectOption("cash");
+  await form.getByLabel("Medical details").fill("Type 1 diabetes.");
+  await form.getByLabel(/agrees to the club holding this information/).check();
+  await form.getByRole("textbox", { name: /^Qualification/ }).fill("RYA Powerboat Level 2");
+  await form.getByLabel("Expires").fill("2029-05-01");
+  await form.getByLabel("Happy to receive club news by email").check();
   await shot(page, "admin-add-member");
   await form.getByRole("button", { name: "Add member" }).click();
   await expect(page.getByText("New member added.")).toBeVisible();
@@ -354,6 +382,37 @@ test("an admin adds new members: one joining an existing family, one starting a 
     sql(`select m.status from memberships m join membership_people mp on mp.membership_id = m.id
           join people p on p.id = mp.person_id where p.email = 'nora-${run}@example.test'`),
   ).toBe("active");
+  expect(
+    sql(`select r.details, q.name, q.expires_on, p.news_consent from people p
+           join medical_records r on r.person_id = p.id join qualifications q on q.person_id = p.id
+          where p.email = 'nora-${run}@example.test'`),
+  ).toBe("Type 1 diabetes.|RYA Powerboat Level 2|2029-05-01|t");
+
+  // A whole family joins on a Family membership: membership type first, then up to 4 people.
+  await page.goto("/admin/members/new");
+  await page.waitForLoadState("networkidle");
+  const familyType = await form.getByLabel("Membership type").locator("option", { hasText: /^Family: £/ }).textContent();
+  await form.getByLabel("Membership type").selectOption({ label: familyType! });
+  await form.getByLabel("Address line 1").fill("9 Reservoir Lane");
+  await form.getByLabel("Postcode").fill("bb12 4ee");
+  await page.getByRole("button", { name: "Add another person to this Family membership" }).click();
+  await page.getByRole("button", { name: "Add another person to this Family membership" }).click();
+  const names = [["Fay", "1984-02-02"], ["Gus", "1983-03-03"], ["Hope", "2015-06-06"]];
+  for (const [i, [first, dob]] of names.entries()) {
+    const person = page.getByRole("region", { name: i === 0 ? "Person 1 (main contact)" : `Person ${i + 1}` });
+    await person.getByLabel("First name").fill(first);
+    await person.getByLabel("Last name").fill(`Fam${run}`);
+    await person.getByLabel("Date of birth").fill(dob);
+  }
+  await shot(page, "admin-add-family");
+  await form.getByRole("button", { name: "Add 3 members" }).click();
+  await expect(page.getByText("New member added.")).toBeVisible();
+  expect(
+    sql(`select count(distinct p.household_id), count(*), bool_and(t.code = 'F')
+           from people p join membership_people mp on mp.person_id = p.id
+           join memberships m on m.id = mp.membership_id join membership_types t on t.id = m.membership_type_id
+          where p.last_name = 'Fam${run}'`),
+  ).toBe("1|3|t");
 
   // The same email can't be added twice; what was typed stays in the form.
   await page.goto("/admin/members/new");
@@ -364,7 +423,7 @@ test("an admin adds new members: one joining an existing family, one starting a 
   await form.getByLabel("Address line 1").fill("7 Harbour St");
   await form.getByLabel("Postcode").fill("bb11 3dd");
   await form.getByRole("button", { name: "Add member" }).click();
-  await expect(page.getByText("Someone already uses that email.")).toBeVisible();
+  await expect(page.getByText(`Someone already uses nora-${run}@example.test.`)).toBeVisible();
   await expect(form.getByLabel("Last name")).toHaveValue(`Again${run}`);
 });
 
