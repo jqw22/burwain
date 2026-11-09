@@ -73,15 +73,22 @@ export default async function HomePage() {
           <h2 className="font-semibold">Club admin</h2>
           <ul className="mt-2 space-y-1">
             {isAdmin && (
-              <li>
-                <Link href="/admin/members" className="text-sky-800 underline">
-                  Members
-                </Link>
-              </li>
+              <>
+                <li>
+                  <Link href="/admin/members" className="text-sky-800 underline">
+                    Members
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/admin/members/new" className="text-sky-800 underline">
+                    Add new member
+                  </Link>
+                </li>
+              </>
             )}
             <li>
               <Link href="/admin/memberships" className="text-sky-800 underline">
-                Memberships and payments
+                Payments
               </Link>
             </li>
           </ul>

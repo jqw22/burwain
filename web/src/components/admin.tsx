@@ -13,7 +13,7 @@ export function AdminNav({ current }: { current: "members" | "new" | "membership
   const links = [
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "new", href: "/admin/members/new", label: "Add new member" },
-    { key: "memberships", href: "/admin/memberships", label: "Memberships and payments" },
+    { key: "memberships", href: "/admin/memberships", label: "Payments" },
     { key: "import", href: "/admin/import", label: "Import spreadsheet" },
   ] as const;
   return (
