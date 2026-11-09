@@ -164,3 +164,15 @@ export async function saveFamilyPreferences(form: FormData) {
     .eq("id", id);
   redirect(`/profile/member/${id}?${error ? "error" : "saved"}=preferences`);
 }
+
+export async function createHousehold(form: FormData) {
+  const { supabase } = await requireMe();
+  const { error } = await supabase.rpc("create_my_household", {
+    p_address_line1: text(form, "address_line1") ?? "",
+    p_address_line2: text(form, "address_line2") ?? "",
+    p_address_line3: text(form, "address_line3") ?? "",
+    p_address_line4: text(form, "address_line4") ?? "",
+    p_postcode: text(form, "postcode") ?? "",
+  });
+  redirect(error ? "/profile?error=household#family" : "/profile?saved=household#family");
+}
