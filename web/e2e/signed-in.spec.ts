@@ -523,6 +523,60 @@ test("members see a directory of adult members, without payment status", async (
   await shot(page, "directory");
 });
 
+test("an admin adds a membership type, changes its price and makes it inactive", async ({ browser }) => {
+  const name = `Windsurf ${run}`;
+  const code = `W${run.slice(-5).toUpperCase()}`;
+  const page = await adminPage(browser);
+  await page.goto("/admin/members");
+  await page.getByRole("link", { name: "Membership types" }).click();
+  await expect(page.getByRole("heading", { name: "Membership types", exact: true })).toBeVisible();
+  await expect(page.getByRole("row", { name: "Family", exact: true })).toContainText("£255.00");
+
+  await page.getByRole("link", { name: "Add a membership type" }).click();
+  const form = page.getByRole("region", { name: "Add a membership type" });
+  await form.getByLabel("Name").fill(name);
+  await form.getByLabel("Short code").fill(code.toLowerCase());
+  await form.getByLabel("Description").fill("Windsurfing only, own board.");
+  await form.getByLabel("Price for a full year (£)").fill("60");
+  await form.getByLabel("Category").selectOption("non_sailing");
+  await shot(page, "admin-types-add");
+  await form.getByRole("button", { name: "Add membership type" }).click();
+  await expect(page.getByText("Membership type added.")).toBeVisible();
+  const row = page.getByRole("row", { name });
+  await expect(row).toContainText(`(${code})`);
+  await expect(row).toContainText("£60.00");
+  await expect(row).toContainText("Non-sailing");
+
+  // A clash with an existing code is explained.
+  await row.getByRole("link", { name: `Edit ${name}` }).click();
+  const edit = page.getByRole("region", { name: `Edit ${name}` });
+  await edit.getByLabel("Short code").fill("F");
+  await edit.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Another membership type already uses that short code.")).toBeVisible();
+  await page.getByRole("region", { name: `Edit ${name}` }).getByLabel("Price for a full year (£)").fill("65.50");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Membership type saved.")).toBeVisible();
+  await expect(page.getByRole("row", { name })).toContainText("£65.50");
+
+  // Offered on Add new member while active, not once inactive.
+  await page.goto("/admin/members/new");
+  await expect(page.getByLabel("Membership type").locator("option", { hasText: name })).toHaveCount(1);
+  await page.goto("/admin/types");
+  await page.getByRole("button", { name: `Make inactive: ${name}` }).click();
+  await expect(page.getByText("Membership type is now inactive.")).toBeVisible();
+  await expect(page.getByRole("region", { name: /^Inactive/ }).getByRole("row", { name })).toBeVisible();
+  expect(sql(`select is_open from membership_types where code = '${code}'`)).toBe("f");
+  await shot(page, "admin-types");
+  await page.goto("/admin/members/new");
+  await expect(page.getByLabel("Membership type").locator("option", { hasText: name })).toHaveCount(0);
+});
+
+test("a member can't open the membership types page", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/admin/types");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+});
+
 test("a member can't open the memberships and payments page", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/admin/memberships");

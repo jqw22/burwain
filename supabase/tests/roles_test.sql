@@ -477,4 +477,30 @@ select pg_temp.expect_error(format('select accept_application(%L)', :'app_submit
 reset role;
 reset request.jwt.claim.sub;
 
+-- Membership types: club admins add, edit and switch them off; members can't; nobody deletes one in use.
+insert into auth.users values ('00000000-0000-0000-0000-0000000000a7');
+insert into people (id, auth_user_id, first_name, last_name, date_of_birth, email)
+values ('20000000-0000-0000-0000-0000000000a7', '00000000-0000-0000-0000-0000000000a7', 'Adam', 'Admin', '1975-01-01', 'adam@example.com');
+insert into user_roles (person_id, role) values ('20000000-0000-0000-0000-0000000000a7', 'admin');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$insert into membership_types (code, name, category, cover, annual_price_pence) values ('W', 'Windsurf', 'non_sailing', 'individual', 5000)$q$, 'row-level security');
+do $$ begin
+  update membership_types set annual_price_pence = 1 where code = 'C';
+  assert (select annual_price_pence from membership_types where code = 'C') = 3000, 'members can''t change prices';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ begin
+  insert into membership_types (code, name, category, cover, annual_price_pence, sort_order) values ('W', 'Windsurf', 'non_sailing', 'individual', 5000, 120);
+  update membership_types set annual_price_pence = 5500, is_open = false where code = 'W';
+  assert (select annual_price_pence = 5500 and not is_open from membership_types where code = 'W'), 'admin edits and makes inactive';
+  assert not exists (select 1 from join_options() where type_name = 'Windsurf'), 'inactive type not offered on Join';
+  delete from membership_types where code = 'W';
+  assert exists (select 1 from membership_types where code = 'W'), 'admins can''t delete types';
+end $$;
+select pg_temp.expect_error($q$insert into membership_types (code, name, category, cover, annual_price_pence) values ('bad code', 'X', 'non_sailing', 'individual', 0)$q$, 'membership_types_code_format');
+select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'W'), array['20000000-0000-0000-0000-0000000000a7'::uuid], (select id from club_years where label = '2026'))$q$, 'not available');
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'
