@@ -520,4 +520,19 @@ end $$;
 reset role;
 reset request.jwt.claim.sub;
 
+-- Renewal reminders go to whoever renews, only for memberships not yet renewed; admins only.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select * from renewal_reminder_recipients((select id from club_years where label = '2027'))$q$, 'Admins only');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ declare y uuid := (select id from club_years where label = '2027'); begin
+  assert not exists (select 1 from renewal_reminder_recipients(y) where email = 'a@example.com'), 'Alice is already covered for 2027';
+  assert not exists (select 1 from renewal_reminder_recipients(y) where email = 'e@example.com'), 'Eve has renewed (Club covers her for 2027)';
+  assert (select membership_types from renewal_reminder_recipients(y) where first_name = 'Max') = 'Individual Sailing, Junior', 'Max renews for himself and his junior';
+  assert not exists (select 1 from renewal_reminder_recipients(y) where first_name = 'Bob'), 'juniors aren''t emailed';
+  assert (select count(*) from renewal_reminder_recipients(y) r group by r.person_id order by 1 desc limit 1) = 1, 'one row per person';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'
