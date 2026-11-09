@@ -35,3 +35,27 @@ export function text(form: FormData, name: string): string | null {
   const v = String(form.get(name) ?? "").trim();
   return v === "" ? null : v;
 }
+
+// The signed-in member plus whether they hold a role (superadmins pass every check).
+export async function meWithRole(role: "admin" | "finance") {
+  const me = await requireMe();
+  const { data } = await me.supabase.rpc("has_role", { r: role });
+  return { ...me, allowed: Boolean(data) };
+}
+
+export function ageOn(dob: string | null, on = new Date()) {
+  if (!dob) return null;
+  const d = new Date(dob);
+  let age = on.getFullYear() - d.getFullYear();
+  if (on < new Date(on.getFullYear(), d.getMonth(), d.getDate())) age -= 1;
+  return age;
+}
+
+export function ukDate(iso: string | null) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function pounds(pence: number) {
+  return `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
+}

@@ -83,7 +83,20 @@ async function leadPage(browser: import("@playwright/test").Browser) {
   }
   return lead.newPage();
 }
-test.afterAll(async () => lead?.close());
+let admin: BrowserContext;
+async function adminPage(browser: import("@playwright/test").Browser) {
+  if (!admin) {
+    admin = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
+    await signIn(await admin.newPage(), adminEmail);
+  }
+  const page = await admin.newPage();
+  await page.goto("/");
+  return page;
+}
+test.afterAll(async () => {
+  await lead?.close();
+  await admin?.close();
+});
 
 async function shot(page: Page, name: string) {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
@@ -169,8 +182,8 @@ test("a member adds a membership, sees what to pay, and cancels it", async ({ br
   await expect(page.getByText(/To pay:/)).toHaveCount(0);
 });
 
-test("an admin imports the member spreadsheet after checking a preview", async ({ page }) => {
-  await signIn(page, adminEmail);
+test("an admin imports the member spreadsheet after checking a preview", async ({ browser }) => {
+  const page = await adminPage(browser);
   await page.getByRole("link", { name: "Import members from the spreadsheet" }).click();
   await page.getByLabel("Member spreadsheet (.xlsx)").setInputFiles("e2e/fixtures/members.xlsx");
   await page.getByRole("button", { name: "Check spreadsheet" }).click();
@@ -185,6 +198,33 @@ test("an admin imports the member spreadsheet after checking a preview", async (
   // The fixture is the same every run, so later runs skip people already imported.
   expect(sql(`select count(*) from people where last_name = 'Fixture' and household_id is not null`)).toBe("3");
   expect(sql(`select count(distinct household_id) from people where last_name = 'Fixture'`)).toBe("1");
+});
+
+test("an admin finds a member, edits them and views their medical details", async ({ browser }) => {
+  const page = await adminPage(browser);
+  await page.getByRole("link", { name: "Members", exact: true }).click();
+  await page.getByLabel("Search members").fill(`Tester${run}`);
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByText(/4 people matching/)).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toContainText("F: Paid");
+  await shot(page, "admin-members");
+
+  await page.getByRole("link", { name: `Tester${run}, Sam` }).click();
+  await page.getByLabel("First joined").fill("2015-04-01");
+  await page.getByRole("button", { name: "Save details" }).click();
+  await expect(page.getByText("Details saved.")).toBeVisible();
+  expect(sql(`select first_joined_on from people where email = '${leadEmail}'`)).toBe("2015-04-01");
+
+  await page.getByRole("button", { name: "Show medical information" }).click();
+  await expect(page.getByText("Mild asthma, inhaler in kit bag.")).toBeVisible();
+  expect(sql(`select count(*) from medical_access_log l join people p on p.id = l.person_id where p.email = '${leadEmail}'`)).toBe("1");
+  await shot(page, "admin-member");
+});
+
+test("a member can't open the admin members page", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/admin/members");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 
 test("a member can't open the import page", async ({ browser }) => {
