@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Card } from "@/components/fields";
 import { requireMe } from "@/lib/me";
 
@@ -12,13 +11,7 @@ export default async function DirectoryPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Member directory</h1>
-      <p className="text-slate-700">
-        Adult members this year who are happy to be listed. To hide your own details, untick the directory option in{" "}
-        <Link href="/profile?edit=preferences#preferences" className="text-sky-800 underline">
-          your communication preferences
-        </Link>
-        .
-      </p>
+      <p className="text-slate-700">Adult members this year.</p>
       <Card title={`${entries.length} ${entries.length === 1 ? "member" : "members"}`}>
         {entries.length === 0 ? (
           <p className="text-slate-600">No one is listed yet.</p>
