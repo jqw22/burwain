@@ -178,3 +178,31 @@ export async function createHousehold(form: FormData) {
   });
   redirect(error ? "/profile?error=household#family" : "/profile?saved=household#family");
 }
+
+// Database messages about memberships we can explain. Anything else gets a general message.
+const MEMBERSHIP_ERRORS: [string, string][] = [
+  ["Choose who", "who"],
+  ["own household", "household"],
+  ["covers exactly one", "one"],
+  ["covers exactly two", "two"],
+  ["age limit", "age"],
+  ["junior needs an adult", "adult"],
+  ["already has", "duplicate"],
+  ["not open", "closed"],
+  ["not available", "unavailable"],
+];
+function membershipError(message: string) {
+  return MEMBERSHIP_ERRORS.find(([needle]) => message.includes(needle))?.[1] ?? "renew";
+}
+
+// Renew this year's memberships for next year: same types and people. Adults come first in the form,
+// because a junior needs an adult member in the family.
+export async function renewMemberships(form: FormData) {
+  const { supabase } = await requireMe();
+  const yearId = String(form.get("club_year_id") ?? "");
+  for (const id of form.getAll("renew").map(String)) {
+    const { error } = await supabase.rpc("renew_my_membership", { p_membership: id, p_club_year_id: yearId });
+    if (error) redirect(`/profile?error=${membershipError(error.message)}#renew`);
+  }
+  redirect("/profile?saved=renewed#renew");
+}

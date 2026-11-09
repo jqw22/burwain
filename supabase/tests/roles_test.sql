@@ -313,4 +313,72 @@ do $$ begin
   assert (select count(*) from membership_people where membership_id = '40000000-0000-0000-0000-0000000000a1') = 2, 'Hal is covered by the Family membership';
 end $$;
 
+\echo 'Admins add new members: new family, existing family, membership and payment'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.expect_error($q$select admin_add_member('{"first_name":"X","last_name":"Y","address_line1":"1 A","postcode":"BB1"}')$q$, 'Only an admin');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select pg_temp.expect_error($q$select admin_add_member('{"first_name":"X","last_name":"Y"}')$q$, 'address line 1');
+select pg_temp.expect_error($q$select admin_add_member('{"first_name":"X","last_name":"Y","address_line1":"1 A","postcode":"BB1","email":"A@example.com"}')$q$, 'already uses that email');
+do $$ declare ivy uuid; jo uuid; hh uuid; m uuid; begin
+  ivy := admin_add_member(jsonb_build_object('first_name', 'Ivy', 'last_name', 'New', 'date_of_birth', '1985-03-03',
+           'email', 'Ivy@Example.com', 'address_line1', '5 Bay Rd', 'postcode', 'bb5 5aa',
+           'type_id', (select id from membership_types where code = 'A'),
+           'club_year_id', (select id from club_years where label = '2027'),
+           'payment_method', 'cash', 'paid_on', '2026-11-01'));
+  select household_id into hh from people where id = ivy;
+  assert (select lead_person_id from households where id = hh) = ivy, 'Ivy is main contact of her new family';
+  assert (select postcode from households where id = hh) = 'BB5 5AA', 'postcode tidied';
+  assert (select email from people where id = ivy) = 'ivy@example.com', 'email lower case';
+  assert (select first_joined_on from people where id = ivy) = club_today(), 'first joined today';
+  select m.id into m from memberships m join membership_people mp on mp.membership_id = m.id where mp.person_id = ivy;
+  assert (select status::text from memberships where id = m) = 'active', 'Associate added by admin skips approval and is paid';
+  assert (select payer_person_id from memberships where id = m) = ivy, 'Ivy pays';
+
+  -- Jo joins Alice's family on a Junior membership: not left on the Family membership too.
+  jo := admin_add_member(jsonb_build_object('first_name', 'Jo', 'last_name', 'Lead', 'date_of_birth', '2015-01-01',
+           'household_id', '10000000-0000-0000-0000-000000000001'));
+  assert (select count(*) from membership_people mp join memberships m on m.id = mp.membership_id
+           join membership_types t on t.id = m.membership_type_id where mp.person_id = jo and t.code = 'F') >= 1,
+         'Jo is covered by the family membership when no type is chosen';
+  -- Lou gets a Junior membership of their own instead of Family cover.
+  jo := admin_add_member(jsonb_build_object('first_name', 'Lou', 'last_name', 'Lead', 'date_of_birth', '2016-01-01',
+           'household_id', '10000000-0000-0000-0000-000000000001',
+           'type_id', (select id from membership_types where code = 'J1'),
+           'club_year_id', (select id from club_years where label = '2026')));
+  assert (select string_agg(t.code, ',') from membership_people mp join memberships m on m.id = mp.membership_id
+           join membership_types t on t.id = m.membership_type_id
+          where mp.person_id = jo and m.club_year_id = (select id from club_years where label = '2026')) = 'J2',
+         'Lou has only a second-sibling Junior membership for 2026';
+  assert (select payer_person_id from memberships m join membership_people mp on mp.membership_id = m.id
+           join membership_types t on t.id = m.membership_type_id where mp.person_id = jo and t.code = 'J2')
+         = '20000000-0000-0000-0000-00000000000a', 'the family main contact pays';
+  assert (select lead_person_id from households where id = '10000000-0000-0000-0000-000000000001') = '20000000-0000-0000-0000-00000000000a', 'Alice stays main contact';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+
+\echo 'Members renew this year''s memberships for next year, and only those'
+-- club_today is 2026-12-05, so 2027 renewals are open. Eve holds C and A for 2026.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
+do $$ declare c uuid; n uuid; begin
+  select m.id into c from memberships m join membership_types t on t.id = m.membership_type_id
+   where m.payer_person_id = '20000000-0000-0000-0000-00000000000e' and t.code = 'C' and m.club_year_id = (select id from club_years where label = '2026') and m.status <> 'cancelled';
+  n := renew_my_membership(c, (select id from club_years where label = '2027'));
+  assert (select t.code from memberships m join membership_types t on t.id = m.membership_type_id where m.id = n) = 'C', 'same type';
+  assert (select price_pence from memberships where id = n) = 3000, 'full price for next year';
+  assert (select array_agg(person_id) from membership_people where membership_id = n) = array['20000000-0000-0000-0000-00000000000e'::uuid], 'same people';
+end $$;
+select pg_temp.expect_error($q$select renew_my_membership((select m.id from memberships m join membership_types t on t.id = m.membership_type_id where t.code = 'C' and m.club_year_id = (select id from club_years where label = '2027') and m.payer_person_id = '20000000-0000-0000-0000-00000000000e'), (select id from club_years where label = '2027'))$q$, 'this year');
+reset role;
+select m.id as eve_c from memberships m join membership_types t on t.id = m.membership_type_id
+ where t.code = 'C' and m.club_year_id = (select id from club_years where label = '2026')
+   and m.payer_person_id = '20000000-0000-0000-0000-00000000000e' and m.status <> 'cancelled' \gset
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error(format('select renew_my_membership(%L, (select id from club_years where label = %L))', :'eve_c', '2027'), 'main contact');
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'

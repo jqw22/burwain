@@ -64,9 +64,9 @@ export default async function HomePage() {
             ))}
           </ul>
         )}
-        <a href="/membership" className="mt-3 inline-block text-sky-800 underline">
-          Renew or add a membership
-        </a>
+        <Link href="/profile#renew" className="mt-3 inline-block text-sky-800 underline">
+          See or renew your membership
+        </Link>
       </section>
       {(isAdmin || isFinance) && (
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">

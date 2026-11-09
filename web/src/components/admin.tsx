@@ -9,9 +9,10 @@ export function NotAllowed({ who = "club admins" }: { who?: string }) {
   );
 }
 
-export function AdminNav({ current }: { current: "members" | "memberships" | "import" }) {
+export function AdminNav({ current }: { current: "members" | "new" | "memberships" | "import" }) {
   const links = [
     { key: "members", href: "/admin/members", label: "Members" },
+    { key: "new", href: "/admin/members/new", label: "Add new member" },
     { key: "memberships", href: "/admin/memberships", label: "Memberships and payments" },
     { key: "import", href: "/admin/import", label: "Import spreadsheet" },
   ] as const;

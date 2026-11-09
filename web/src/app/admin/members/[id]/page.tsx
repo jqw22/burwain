@@ -17,7 +17,11 @@ type Household = {
 type History = { person_id: string; club_year: string; membership_type: string; status: string; price_pence: number; paid_on: string | null; method: string | null };
 type Qual = { id: string; name: string; awarded_on: string | null; expires_on: string | null };
 
-const SAVED: Record<string, string> = { details: "Details saved.", address: "Address and main contact saved." };
+const SAVED: Record<string, string> = {
+  details: "Details saved.",
+  address: "Address and main contact saved.",
+  added: "New member added. Their membership, if you chose one, is on the Memberships and payments page.",
+};
 
 export default async function AdminMemberPage({ params, searchParams }: PageProps<"/admin/members/[id]">) {
   const { id } = await params;
