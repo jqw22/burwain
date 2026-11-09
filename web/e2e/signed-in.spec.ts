@@ -571,6 +571,60 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await expect(page.getByLabel("Membership type").locator("option", { hasText: name })).toHaveCount(0);
 });
 
+test("an admin edits the renewal reminder email with a live preview, and adds another template", async ({ browser }) => {
+  const page = await adminPage(browser);
+  await page.goto("/admin/members");
+  await page.getByRole("link", { name: "Email templates" }).click();
+  await expect(page.getByRole("heading", { name: "Email templates", exact: true })).toBeVisible();
+  await expect(page.getByRole("row", { name: "Renewal reminder" })).toContainText("Renewal reminder");
+
+  await page.getByRole("link", { name: "Edit Renewal reminder" }).click();
+  const form = page.getByRole("form", { name: "Edit Renewal reminder" });
+  const preview = page.getByRole("region", { name: "Preview" });
+  // The preview fills in example member details as you type.
+  await expect(preview).toContainText("Hello Sam,");
+  await form.getByLabel("Subject").fill(`Renew for {renewal_year}, {first_name} ${run}`);
+  await expect(preview).toContainText(`Renew for ${new Date().getFullYear() + 1}, Sam ${run}`);
+  await shot(page, "admin-email-template");
+
+  // A misspelt placeholder is caught.
+  await form.getByLabel("Message").fill("Hello {firstname}");
+  await expect(form.getByRole("alert")).toContainText("{firstname}");
+  await form.getByRole("button", { name: "Save template" }).click();
+  await expect(page.getByText("Some placeholders weren't recognised.")).toBeVisible();
+
+  const again = page.getByRole("form", { name: "Edit Renewal reminder" });
+  await again.getByLabel("Subject").fill(`Renew for {renewal_year}, {first_name} ${run}`);
+  await again.getByLabel("Message").fill("Hello {first_name},\n\nPlease renew here: {renewal_link}");
+  await again.getByRole("button", { name: "Save template" }).click();
+  await expect(page.getByText("Email template saved.")).toBeVisible();
+  await expect(page.getByRole("row", { name: "Renewal reminder" })).toContainText(`Renew for {renewal_year}, {first_name} ${run}`);
+
+  // Only one template can be the renewal reminder.
+  await page.getByRole("link", { name: "Add an email template" }).click();
+  const add = page.getByRole("form", { name: "Add an email template" });
+  await add.getByLabel("Template name").fill(`Open day ${run}`);
+  await add.getByLabel("Used for").selectOption("renewal_reminder");
+  await add.getByLabel("Subject").fill("Open day");
+  await add.getByLabel("Message").fill("Hello {first_name}, come along!");
+  await add.getByRole("button", { name: "Add template" }).click();
+  await expect(page.getByText("Another template is already the renewal reminder.")).toBeVisible();
+  const retry = page.getByRole("form", { name: "Add an email template" });
+  await retry.getByLabel("Template name").fill(`Open day ${run}`);
+  await retry.getByLabel("Subject").fill("Open day");
+  await retry.getByLabel("Message").fill("Hello {first_name}, come along!");
+  await retry.getByRole("button", { name: "Add template" }).click();
+  await expect(page.getByText("Email template added.")).toBeVisible();
+  await expect(page.getByRole("row", { name: `Open day ${run}` })).toContainText("General");
+  await shot(page, "admin-email-templates");
+});
+
+test("a member can't open the email templates page", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/admin/emails");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+});
+
 test("a member can't open the membership types page", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/admin/types");

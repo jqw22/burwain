@@ -503,4 +503,21 @@ select pg_temp.expect_error($q$select start_membership((select id from membershi
 reset role;
 reset request.jwt.claim.sub;
 
+-- Email templates: admins only; a starter renewal reminder is there to edit.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ begin
+  assert (select count(*) from email_templates) = 0, 'members can''t see email templates';
+end $$;
+select pg_temp.expect_error($q$insert into email_templates (name, subject, body) values ('X', 'Y', 'Z')$q$, 'row-level security');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ begin
+  assert (select purpose from email_templates where name = 'Renewal reminder') = 'renewal_reminder', 'starter template';
+  update email_templates set subject = 'Renew now, {first_name}' where name = 'Renewal reminder';
+  insert into email_templates (name, subject, body) values ('Open day', 'Come along', 'Hello {first_name}');
+  assert (select count(*) from email_templates) = 2, 'admin adds templates';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'
