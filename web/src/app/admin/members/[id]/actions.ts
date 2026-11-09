@@ -3,10 +3,15 @@
 import { redirect } from "next/navigation";
 import { meWithRole, text } from "@/lib/me";
 
+// Each save goes back to the box it came from, with a message inside it.
+function back(id: string, key: "saved" | "error", section: string, anchor: string, editAgain = false): never {
+  redirect(`/admin/members/${id}?${key}=${section}${editAgain ? `&edit=${anchor}` : ""}#${anchor}`);
+}
+
 export async function adminSaveMember(form: FormData) {
   const { supabase, allowed } = await meWithRole("admin");
   const id = String(form.get("id"));
-  if (!allowed) redirect(`/admin/members/${id}?error=save`);
+  if (!allowed) back(id, "error", "details", "contact", true);
   const { error } = await supabase
     .from("people")
     .update({
@@ -22,13 +27,13 @@ export async function adminSaveMember(form: FormData) {
       first_joined_on: text(form, "first_joined_on"),
     })
     .eq("id", id);
-  redirect(`/admin/members/${id}?${error ? "error" : "saved"}=details`);
+  back(id, error ? "error" : "saved", "details", "contact", Boolean(error));
 }
 
 export async function adminSaveAddress(form: FormData) {
   const { supabase, allowed } = await meWithRole("admin");
   const id = String(form.get("person_id"));
-  if (!allowed) redirect(`/admin/members/${id}?error=save`);
+  if (!allowed) back(id, "error", "address", "address", true);
   const { error } = await supabase
     .from("households")
     .update({
@@ -37,8 +42,66 @@ export async function adminSaveAddress(form: FormData) {
       address_line3: text(form, "address_line3"),
       address_line4: text(form, "address_line4"),
       postcode: text(form, "postcode")?.toUpperCase() ?? null,
-      lead_person_id: text(form, "lead_person_id"),
     })
     .eq("id", String(form.get("household_id")));
-  redirect(`/admin/members/${id}?${error ? "error" : "saved"}=address`);
+  back(id, error ? "error" : "saved", "address", "address", Boolean(error));
+}
+
+export async function adminSaveLead(form: FormData) {
+  const { supabase, allowed } = await meWithRole("admin");
+  const id = String(form.get("person_id"));
+  if (!allowed) back(id, "error", "lead", "family", true);
+  const { error } = await supabase
+    .from("households")
+    .update({ lead_person_id: text(form, "lead_person_id") })
+    .eq("id", String(form.get("household_id")));
+  back(id, error ? "error" : "saved", "lead", "family", Boolean(error));
+}
+
+export async function adminSaveMedical(form: FormData) {
+  const { supabase, allowed } = await meWithRole("admin");
+  const id = String(form.get("id"));
+  if (!allowed) back(id, "error", "medical", "medical", true);
+  const { error } = await supabase.rpc("admin_save_medical", { p_person: id, p_details: text(form, "details") ?? "" });
+  redirect(`/admin/members/${id}?${error ? "error=medical&edit=medical" : "saved=medical&medical=show"}#medical`);
+}
+
+export async function adminAddQualification(form: FormData) {
+  const { supabase, allowed } = await meWithRole("admin");
+  const id = String(form.get("id"));
+  const name = text(form, "name");
+  if (!allowed || !name) back(id, "error", "qualification", "qualifications", true);
+  const { error } = await supabase.from("qualifications").insert({
+    person_id: id,
+    name,
+    awarded_on: text(form, "awarded_on"),
+    expires_on: text(form, "expires_on"),
+  });
+  back(id, error ? "error" : "saved", "qualification", "qualifications", true);
+}
+
+export async function adminRemoveQualification(form: FormData) {
+  const { supabase, allowed } = await meWithRole("admin");
+  const id = String(form.get("person_id"));
+  if (!allowed) back(id, "error", "qualification", "qualifications", true);
+  const { error } = await supabase.from("qualifications").delete().eq("id", String(form.get("id")));
+  back(id, error ? "error" : "saved", "qualification", "qualifications", true);
+}
+
+export async function adminSavePreferences(form: FormData) {
+  const { supabase, allowed } = await meWithRole("admin");
+  const id = String(form.get("id"));
+  if (!allowed) back(id, "error", "preferences", "preferences", true);
+  const consent = form.get("news_consent") === "on";
+  const { data: before } = await supabase.from("people").select("news_consent").eq("id", id).single<{ news_consent: boolean }>();
+  const { error } = await supabase
+    .from("people")
+    .update({
+      news_consent: consent,
+      // Record when consent was given (admins bypass the trigger that normally does this).
+      ...(before?.news_consent !== consent ? { news_consent_at: consent ? new Date().toISOString() : null } : {}),
+      directory_opt_out: form.get("directory_listed") !== "on",
+    })
+    .eq("id", id);
+  back(id, error ? "error" : "saved", "preferences", "preferences", Boolean(error));
 }

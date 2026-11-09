@@ -2,8 +2,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { NotAllowed, STATUS_LABEL } from "@/components/admin";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
+import { EditLink, FormButtons, Item, LINK } from "@/app/profile/ui";
 import { ageOn, meWithRole, PERSON_FIELDS, pounds, ukDate, type Person } from "@/lib/me";
-import { adminSaveAddress, adminSaveMember } from "./actions";
+import {
+  adminAddQualification,
+  adminRemoveQualification,
+  adminSaveAddress,
+  adminSaveLead,
+  adminSaveMedical,
+  adminSaveMember,
+  adminSavePreferences,
+} from "./actions";
 
 type Household = {
   id: string;
@@ -16,13 +25,35 @@ type Household = {
 };
 type History = { person_id: string; club_year: string; membership_type: string; status: string; price_pence: number; paid_on: string | null; method: string | null };
 type Qual = { id: string; name: string; awarded_on: string | null; expires_on: string | null };
+type Relative = { id: string; first_name: string; last_name: string; date_of_birth: string | null; whatsapp: boolean };
 
 const SAVED: Record<string, string> = {
   details: "Details saved.",
-  address: "Address and main contact saved.",
+  address: "Address saved.",
+  lead: "Main contact saved.",
+  medical: "Medical information saved.",
+  qualification: "Qualifications updated.",
+  preferences: "Preferences saved.",
   added: "New member added. Their membership, if you chose one, is on the Memberships and payments page.",
 };
+const ERRORS: Record<string, string> = {
+  details: "We couldn't save those details. Please check them and try again.",
+  address: "We couldn't save the address. Please try again.",
+  lead: "We couldn't change the main contact. Please try again.",
+  medical: "We couldn't save the medical information. Please try again.",
+  qualification: "We couldn't update the qualifications. Please check the name and dates.",
+  preferences: "We couldn't save the preferences. Please try again.",
+};
+const SECTION: Record<string, string> = {
+  details: "contact",
+  address: "address",
+  lead: "family",
+  medical: "medical",
+  qualification: "qualifications",
+  preferences: "preferences",
+};
 
+// An admin's view of one member: the same boxes as Your details, each opened for editing with its Edit link.
 export default async function AdminMemberPage({ params, searchParams }: PageProps<"/admin/members/[id]">) {
   const { id } = await params;
   const query = await searchParams;
@@ -37,23 +68,52 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
       ? supabase.from("households").select("*").eq("id", m.household_id).maybeSingle<Household>()
       : Promise.resolve({ data: null }),
     m.household_id
-      ? supabase.from("people").select("id, first_name, last_name, date_of_birth").eq("household_id", m.household_id).is("archived_at", null).order("date_of_birth")
+      ? supabase
+          .from("people")
+          .select("id, first_name, last_name, date_of_birth, whatsapp")
+          .eq("household_id", m.household_id)
+          .is("archived_at", null)
+          .order("date_of_birth")
       : Promise.resolve({ data: [] }),
     supabase.rpc("membership_history"),
     supabase.from("qualifications").select("id, name, awarded_on, expires_on").eq("person_id", id).order("expires_on"),
     supabase.from("user_roles").select("role").eq("person_id", id),
   ]);
 
-  // Viewing medical details is logged, so it only happens when an admin asks for it.
-  const showMedical = query.medical === "show";
+  const base = `/admin/members/${id}`;
+  const editing = typeof query.edit === "string" ? query.edit : null;
+  // Viewing medical details is logged, so it only happens when an admin asks to see or edit them.
+  const showMedical = query.medical === "show" || editing === "medical";
   const medical = showMedical
     ? ((await supabase.rpc("get_medical_record", { p_person: id })).data as { details: string | null; updated_at: string }[] | null)?.[0]
     : undefined;
 
   const age = ageOn(m.date_of_birth);
+  const today = new Date().toISOString().slice(0, 10);
   const myHistory = ((history ?? []) as History[]).filter((h) => h.person_id === id);
-  const familyRows = (family ?? []) as { id: string; first_name: string; last_name: string; date_of_birth: string | null }[];
-  const saved = typeof query.saved === "string" ? SAVED[query.saved] : undefined;
+  const relatives = (family ?? []) as Relative[];
+  const qualifications = (quals ?? []) as Qual[];
+  const addressLines = household
+    ? [household.address_line1, household.address_line2, household.address_line3, household.address_line4, household.postcode].filter(Boolean)
+    : [];
+
+  const savedKey = typeof query.saved === "string" ? query.saved : "";
+  const errorKey = typeof query.error === "string" ? query.error : "";
+  const messages = (section: string) => (
+    <>
+      {SECTION[savedKey] === section && (
+        <div className="mb-4">
+          <Notice message={SAVED[savedKey]} />
+        </div>
+      )}
+      {SECTION[errorKey] === section && (
+        <p className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-red-800" role="alert">
+          {ERRORS[errorKey]}
+        </p>
+      )}
+    </>
+  );
+  const edit = (section: string, label: string) => editing !== section && <EditLink base={base} section={section} label={label} />;
 
   return (
     <div className="space-y-6">
@@ -67,82 +127,9 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
       {(roles ?? []).length > 0 && (
         <p className="text-sm text-slate-600">Roles: {(roles as { role: string }[]).map((r) => r.role).join(", ")}</p>
       )}
-      <Notice message={saved} />
-      {query.error && (
-        <p className="rounded bg-red-50 p-3 text-red-800" role="alert">
-          We couldn&apos;t save those changes. Please check the details and try again.
-        </p>
-      )}
+      {savedKey === "added" && <Notice message={SAVED.added} />}
 
-      <Card title="Details">
-        <form action={adminSaveMember} className="grid gap-4 sm:grid-cols-2">
-          <input type="hidden" name="id" value={m.id} />
-          <Field label="Title" name="title" defaultValue={m.title} />
-          <div />
-          <Field label="First name" name="first_name" defaultValue={m.first_name} required />
-          <Field label="Last name" name="last_name" defaultValue={m.last_name} required />
-          <Field label="Date of birth" name="date_of_birth" type="date" defaultValue={m.date_of_birth} />
-          <Field label="First joined" name="first_joined_on" type="date" defaultValue={m.first_joined_on} hint="Only admins can change this." />
-          <Field label="Email" name="email" type="email" defaultValue={m.email} hint="Also their login." />
-          <Field label="Mobile" name="mobile" type="tel" defaultValue={m.mobile} />
-          <div className="sm:col-span-2">
-            <Checkbox label="Happy to be contacted on WhatsApp" name="whatsapp" defaultChecked={m.whatsapp} />
-          </div>
-          <Field label="Emergency contact name" name="emergency_contact_name" defaultValue={m.emergency_contact_name} />
-          <Field label="Emergency contact mobile" name="emergency_contact_mobile" type="tel" defaultValue={m.emergency_contact_mobile} />
-          <p className="text-sm text-slate-600 sm:col-span-2">
-            Club news by email: {m.news_consent ? "yes" : "no"}. Member directory: {m.directory_opt_out ? "opted out" : "listed"}. Only the member can change these.
-          </p>
-          <div className="sm:col-span-2">
-            <SaveButton>Save details</SaveButton>
-          </div>
-        </form>
-      </Card>
-
-      <Card title="Family and address">
-        {!household ? (
-          <p className="text-slate-600">Not in a family group.</p>
-        ) : (
-          <form action={adminSaveAddress} className="grid gap-4 sm:grid-cols-2">
-            <input type="hidden" name="person_id" value={m.id} />
-            <input type="hidden" name="household_id" value={household.id} />
-            <ul className="space-y-1 sm:col-span-2">
-              {familyRows.map((f) => (
-                <li key={f.id}>
-                  {f.id === m.id ? (
-                    <strong>{f.first_name} {f.last_name}</strong>
-                  ) : (
-                    <Link href={`/admin/members/${f.id}`} className="text-sky-800 underline">
-                      {f.first_name} {f.last_name}
-                    </Link>
-                  )}
-                  {f.id === household.lead_person_id && <span className="ml-2 text-sm text-slate-500">main contact</span>}
-                </li>
-              ))}
-            </ul>
-            <label className="block sm:col-span-2">
-              <span className="text-sm font-medium">Main contact</span>
-              <select name="lead_person_id" defaultValue={household.lead_person_id ?? ""} className="mt-1 block rounded border border-slate-300 bg-white px-3 py-2">
-                {familyRows.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.first_name} {f.last_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Field label="Address line 1" name="address_line1" defaultValue={household.address_line1} />
-            <Field label="Address line 2" name="address_line2" defaultValue={household.address_line2} />
-            <Field label="Town" name="address_line3" defaultValue={household.address_line3} />
-            <Field label="County" name="address_line4" defaultValue={household.address_line4} />
-            <Field label="Postcode" name="postcode" defaultValue={household.postcode} />
-            <div className="sm:col-span-2">
-              <SaveButton>Save address</SaveButton>
-            </div>
-          </form>
-        )}
-      </Card>
-
-      <Card title="Membership history">
+      <Card id="membership" title="Membership">
         {myHistory.length === 0 ? (
           <p className="text-slate-600">No memberships yet.</p>
         ) : (
@@ -156,26 +143,144 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
             ))}
           </ul>
         )}
+        <Link href="/admin/memberships" className={`mt-3 inline-block ${LINK}`}>
+          Memberships and payments
+        </Link>
       </Card>
 
-      <Card title="Qualifications">
-        {(quals ?? []).length === 0 ? (
-          <p className="text-slate-600">None recorded.</p>
+      <Card id="contact" title="Contact details" action={edit("contact", "contact details")}>
+        {messages("contact")}
+        {editing === "contact" ? (
+          <form action={adminSaveMember} className="grid gap-4 sm:grid-cols-2">
+            <input type="hidden" name="id" value={m.id} />
+            <Field label="Title" name="title" defaultValue={m.title} />
+            <div className="hidden sm:block" />
+            <Field label="First name" name="first_name" defaultValue={m.first_name} required />
+            <Field label="Last name" name="last_name" defaultValue={m.last_name} required />
+            <Field label="Date of birth" name="date_of_birth" type="date" defaultValue={m.date_of_birth} />
+            <Field label="First joined" name="first_joined_on" type="date" defaultValue={m.first_joined_on} hint="Only admins can change this." />
+            <Field label="Email" name="email" type="email" defaultValue={m.email} hint="Also their login." />
+            <Field label="Mobile" name="mobile" type="tel" defaultValue={m.mobile} />
+            <div className="sm:col-span-2">
+              <Checkbox label="Happy to be contacted on WhatsApp" name="whatsapp" defaultChecked={m.whatsapp} />
+            </div>
+            <Field label="Emergency contact name" name="emergency_contact_name" defaultValue={m.emergency_contact_name} />
+            <Field label="Emergency contact mobile" name="emergency_contact_mobile" type="tel" defaultValue={m.emergency_contact_mobile} />
+            <FormButtons base={base} section="contact">Save details</FormButtons>
+          </form>
         ) : (
-          <ul className="space-y-1">
-            {(quals as Qual[]).map((q) => (
-              <li key={q.id}>
-                {q.name}
-                {q.expires_on && <span className="ml-2 text-sm text-slate-600">expires {ukDate(q.expires_on)}</span>}
-              </li>
-            ))}
-          </ul>
+          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+            <Item label="Name" value={[m.title, m.first_name, m.last_name].filter(Boolean).join(" ")} />
+            <Item label="Date of birth" value={m.date_of_birth && ukDate(m.date_of_birth)} />
+            <Item label="Email (also their login)" value={m.email} />
+            <Item label="Mobile" value={m.mobile} />
+            <Item label="Happy to be contacted on WhatsApp" value={m.whatsapp ? "Yes" : "No"} />
+            <Item label="Emergency contact" value={[m.emergency_contact_name, m.emergency_contact_mobile].filter(Boolean).join(", ")} />
+            <Item label="First joined" value={m.first_joined_on && ukDate(m.first_joined_on)} />
+          </dl>
         )}
       </Card>
 
-      <Card title="Medical information">
-        {showMedical ? (
-          medical ? (
+      <Card id="family" title="Family" action={household && edit("family", "main contact")}>
+        {messages("family")}
+        {!household ? (
+          <p className="text-slate-600">Not in a family group.</p>
+        ) : (
+          <>
+            <ul className="divide-y divide-slate-100">
+              {relatives.map((f) => {
+                const a = ageOn(f.date_of_birth);
+                return (
+                  <li key={f.id} className="flex items-center justify-between py-2">
+                    <span>
+                      {f.first_name} {f.last_name}
+                      {f.id === household.lead_person_id && <span className="ml-2 text-sm text-slate-500">main contact</span>}
+                      {a !== null && a < 18 && <span className="ml-2 text-sm text-slate-500">junior, {a}</span>}
+                      <span className="block text-sm text-slate-500">WhatsApp: {f.whatsapp ? "yes" : "no"}</span>
+                    </span>
+                    {f.id !== m.id && (
+                      <Link href={`/admin/members/${f.id}`} className={LINK} aria-label={`Open ${f.first_name} ${f.last_name}`}>
+                        Open
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {editing === "family" ? (
+              <form action={adminSaveLead} className="mt-4 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
+                <input type="hidden" name="person_id" value={m.id} />
+                <input type="hidden" name="household_id" value={household.id} />
+                <label className="block">
+                  <span className="text-sm font-medium">Main contact</span>
+                  <select name="lead_person_id" defaultValue={household.lead_person_id ?? ""} className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2">
+                    {relatives.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.first_name} {f.last_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="hidden sm:block" />
+                <FormButtons base={base} section="family">Save main contact</FormButtons>
+              </form>
+            ) : (
+              <Link href={`/admin/members/new?household=${household.id}`} className={`mt-3 inline-block ${LINK}`}>
+                Add a new member to this family
+              </Link>
+            )}
+          </>
+        )}
+      </Card>
+
+      {household && (
+        <Card id="address" title="Home address" action={edit("address", "home address")}>
+          {messages("address")}
+          {editing === "address" ? (
+            <form action={adminSaveAddress} className="grid gap-4 sm:grid-cols-2">
+              <input type="hidden" name="person_id" value={m.id} />
+              <input type="hidden" name="household_id" value={household.id} />
+              <Field label="Address line 1" name="address_line1" defaultValue={household.address_line1} />
+              <Field label="Address line 2" name="address_line2" defaultValue={household.address_line2} />
+              <Field label="Town" name="address_line3" defaultValue={household.address_line3} />
+              <Field label="County" name="address_line4" defaultValue={household.address_line4} />
+              <Field label="Postcode" name="postcode" defaultValue={household.postcode} />
+              <FormButtons base={base} section="address">Save address</FormButtons>
+            </form>
+          ) : addressLines.length ? (
+            <address className="not-italic text-slate-800">
+              {addressLines.map((l, i) => (
+                <div key={i}>{l}</div>
+              ))}
+            </address>
+          ) : (
+            <p className="text-slate-600">No address recorded.</p>
+          )}
+        </Card>
+      )}
+
+      <Card id="medical" title="Medical information" action={edit("medical", "medical information")}>
+        {messages("medical")}
+        <p className="mb-4 text-sm text-slate-600">
+          Every time someone views medical information it is recorded, with who looked and when. Opening it to edit counts as a view.
+        </p>
+        {editing === "medical" ? (
+          <form action={adminSaveMedical} className="space-y-3">
+            <input type="hidden" name="id" value={m.id} />
+            <label className="block">
+              <span className="text-sm font-medium">Medical details</span>
+              <textarea
+                name="details"
+                rows={4}
+                defaultValue={medical?.details ?? ""}
+                className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2"
+              />
+              <span className="mt-1 block text-xs text-slate-500">Only add this with the member&apos;s (or their parent&apos;s) agreement.</span>
+            </label>
+            <FormButtons base={base} section="medical">Save medical information</FormButtons>
+          </form>
+        ) : showMedical ? (
+          medical?.details ? (
             <div className="space-y-2">
               <p className="whitespace-pre-wrap">{medical.details}</p>
               <p className="text-xs text-slate-500">Last updated {ukDate(medical.updated_at)}. Your view has been recorded.</p>
@@ -184,11 +289,74 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
             <p className="text-slate-600">No medical information recorded. Your view has been recorded.</p>
           )
         ) : (
-          <form method="get" className="space-y-2">
-            <p className="text-sm text-slate-600">Every time someone views medical information it is recorded, with who looked and when.</p>
+          <form method="get" action={`${base}#medical`}>
             <input type="hidden" name="medical" value="show" />
             <SaveButton variant="secondary">Show medical information</SaveButton>
           </form>
+        )}
+      </Card>
+
+      <Card id="qualifications" title="Qualifications" action={edit("qualifications", "qualifications")}>
+        {messages("qualifications")}
+        {qualifications.length ? (
+          <ul className="divide-y divide-slate-100">
+            {qualifications.map((q) => (
+              <li key={q.id} className="flex items-center justify-between py-2">
+                <span>
+                  {q.name}
+                  <span className="block text-sm text-slate-500">
+                    {q.awarded_on ? `Awarded ${ukDate(q.awarded_on)}` : "Award date not given"}
+                    {q.expires_on && (
+                      <span className={q.expires_on < today ? "text-red-700" : undefined}>
+                        {" "}
+                        · {q.expires_on < today ? "Expired" : "Expires"} {ukDate(q.expires_on)}
+                      </span>
+                    )}
+                  </span>
+                </span>
+                {editing === "qualifications" && (
+                  <form action={adminRemoveQualification}>
+                    <input type="hidden" name="id" value={q.id} />
+                    <input type="hidden" name="person_id" value={m.id} />
+                    <SaveButton variant="link" pendingText="Removing…" aria-label={`Remove ${q.name}`}>
+                      Remove
+                    </SaveButton>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-600">No qualifications recorded yet.</p>
+        )}
+        {editing === "qualifications" && (
+          <form action={adminAddQualification} className="mt-4 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
+            <input type="hidden" name="id" value={m.id} />
+            <Field label="Qualification" name="name" required hint="For example RYA Dinghy Level 2" />
+            <Field label="Awarded" name="awarded_on" type="date" />
+            <Field label="Expires" name="expires_on" type="date" />
+            <FormButtons base={base} section="qualifications" cancelText="Done" wide>
+              Add qualification
+            </FormButtons>
+          </form>
+        )}
+      </Card>
+
+      <Card id="preferences" title="Communication preferences" action={edit("preferences", "communication preferences")}>
+        {messages("preferences")}
+        {editing === "preferences" ? (
+          <form action={adminSavePreferences} className="space-y-3">
+            <input type="hidden" name="id" value={m.id} />
+            <p className="text-sm text-slate-600">Only change these when the member has asked you to.</p>
+            <Checkbox label="Club news and newsletters by email" name="news_consent" defaultChecked={m.news_consent} />
+            <Checkbox label="Listed in the member directory (name, phone and email)" name="directory_listed" defaultChecked={!m.directory_opt_out} />
+            <FormButtons base={base} section="preferences">Save preferences</FormButtons>
+          </form>
+        ) : (
+          <ul className="space-y-1 text-slate-800">
+            <li>Club news by email: {m.news_consent ? "yes" : "no"}</li>
+            <li>Listed in the member directory: {m.directory_opt_out ? "no" : "yes"}</li>
+          </ul>
         )}
       </Card>
     </div>
