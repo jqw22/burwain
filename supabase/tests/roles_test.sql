@@ -240,4 +240,29 @@ begin
 end $$;
 reset role;
 
+\echo 'Family medical: the main contact manages juniors and family without a login'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into medical_records (person_id, details, consent_given_at, updated_by)
+values ('20000000-0000-0000-0000-00000000000b', 'Peanut allergy', now(), '20000000-0000-0000-0000-00000000000a');
+do $$ begin
+  assert (select details from medical_records where person_id = '20000000-0000-0000-0000-00000000000b') = 'Peanut allergy', 'Alice sees Bob''s medical';
+end $$;
+select pg_temp.expect_error($q$insert into medical_records (person_id, details) values ('20000000-0000-0000-0000-00000000000e', 'x')$q$, 'row-level security');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
+do $$ begin
+  assert (select count(*) from medical_records where person_id = '20000000-0000-0000-0000-00000000000b') = 0, 'Eve can''t see Bob''s medical';
+end $$;
+select pg_temp.expect_error($q$insert into medical_records (person_id, details) values ('20000000-0000-0000-0000-00000000000b', 'x')$q$, 'row-level security');
+reset role;
+reset request.jwt.claim.sub;
+-- An adult in the family with their own login keeps control of their own record.
+insert into auth.users values ('00000000-0000-0000-0000-0000000000f0');
+insert into people (id, auth_user_id, household_id, first_name, last_name, date_of_birth)
+values ('20000000-0000-0000-0000-0000000000f0', '00000000-0000-0000-0000-0000000000f0', '10000000-0000-0000-0000-000000000001', 'Fran', 'Adult', '1982-01-01');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$insert into medical_records (person_id, details) values ('20000000-0000-0000-0000-0000000000f0', 'x')$q$, 'row-level security');
+reset role;
+
 \echo 'All database tests passed'

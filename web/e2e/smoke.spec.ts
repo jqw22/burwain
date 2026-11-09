@@ -22,7 +22,7 @@ test("a login link without a code goes back to the login page", async ({ page })
   await expect(page).toHaveURL(/\/login\?error=link$/);
 });
 
-for (const path of ["/profile", "/family", "/family/00000000-0000-0000-0000-000000000000"]) {
+for (const path of ["/profile", "/membership", "/profile/member/00000000-0000-0000-0000-000000000000"]) {
   test(`${path} needs a login`, async ({ page }) => {
     await page.goto(path);
     await expect(page).toHaveURL(/\/login$/);

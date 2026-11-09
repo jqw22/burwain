@@ -75,12 +75,16 @@ export default async function MembershipPage({ searchParams }: PageProps<"/membe
   const membersQuery = supabase.from("people").select("id, first_name, last_name").is("archived_at", null).order("date_of_birth");
   const [{ data: membersData }, { data: membershipsData }, ...quotes] = await Promise.all([
     meRow?.household_id ? membersQuery.eq("household_id", meRow.household_id) : membersQuery.eq("id", personId),
-    supabase
-      .from("memberships")
-      .select("id, club_year_id, status, price_pence, prorata_months, payer_person_id, membership_types(name), membership_people(person_id)")
-      .in("club_year_id", years.map((y) => y.id))
-      .neq("status", "cancelled")
-      .order("created_at"),
+    // Only this family's memberships (admins could otherwise see everyone's here).
+    (() => {
+      const q = supabase
+        .from("memberships")
+        .select("id, club_year_id, status, price_pence, prorata_months, payer_person_id, membership_types(name), membership_people(person_id)")
+        .in("club_year_id", years.map((y) => y.id))
+        .neq("status", "cancelled")
+        .order("created_at");
+      return meRow?.household_id ? q.eq("household_id", meRow.household_id) : q.eq("payer_person_id", personId);
+    })(),
     ...years.map((y) => supabase.rpc("membership_quote", { p_type_id: types[0]?.id, p_club_year_id: y.id })),
   ]);
   const members = (membersData ?? []) as Member[];

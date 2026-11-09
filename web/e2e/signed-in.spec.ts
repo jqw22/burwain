@@ -116,14 +116,17 @@ test("a member signs in with an email link and sees their membership", async ({ 
 test("a member updates their own details, medical info and qualifications", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/profile");
-  await expect(page.getByLabel("First name")).toHaveValue("Sam");
+  // Membership type, cost and payment status at the top.
+  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Family \(\d{4}\/\d{2}\): £255\s*Paid/);
+  const contact = page.getByRole("region", { name: "Contact details" });
+  await expect(contact.getByLabel("First name")).toHaveValue("Sam");
 
-  await page.getByLabel("Mobile", { exact: true }).fill("07700 900123");
-  await page.getByLabel("Emergency contact name").fill("Pat Tester");
-  await page.getByLabel("I'm happy to be contacted on WhatsApp").check();
-  await page.getByRole("button", { name: "Save details" }).click();
+  await contact.getByLabel("Mobile", { exact: true }).fill("07700 900123");
+  await contact.getByLabel("Emergency contact name").fill("Pat Tester");
+  await contact.getByLabel("I'm happy to be contacted on WhatsApp").check();
+  await contact.getByRole("button", { name: "Save details" }).click();
   await expect(page.getByRole("status")).toBeVisible();
-  await expect(page.getByLabel("Mobile", { exact: true })).toHaveValue("07700 900123");
+  await expect(page.getByRole("region", { name: "Contact details" }).getByLabel("Mobile", { exact: true })).toHaveValue("07700 900123");
   expect(sql(`select mobile || '|' || whatsapp from people where email = '${leadEmail}'`)).toBe("07700 900123|true");
 
   await page.getByLabel("Medical details").fill("Mild asthma, inhaler in kit bag.");
@@ -132,27 +135,48 @@ test("a member updates their own details, medical info and qualifications", asyn
   await expect(page.getByLabel("Medical details")).toHaveValue("Mild asthma, inhaler in kit bag.");
   expect(sql(`select count(*) from medical_records r join people p on p.id = r.person_id where p.email = '${leadEmail}'`)).toBe("1");
 
-  await page.getByLabel("Qualification").fill("RYA Dinghy Level 2");
+  await page.getByRole("textbox", { name: /^Qualification/ }).fill("RYA Dinghy Level 2");
+  await page.getByLabel("Awarded").fill("2024-06-30");
   await page.getByLabel("Expires").fill("2028-06-30");
   await page.getByRole("button", { name: "Add qualification" }).click();
   await expect(page.getByText("RYA Dinghy Level 2")).toBeVisible();
+  await expect(page.getByText("Awarded 30 Jun 2024 · Expires 30 Jun 2028")).toBeVisible();
   await shot(page, "profile");
 });
 
-test("the family lead sees the family and adds a junior", async ({ browser }) => {
+test("the family lead sees the family on Your details, adds a junior and their medical info", async ({ browser }) => {
   const page = await leadPage(browser);
-  await page.goto("/family");
-  await expect(page.getByText(`Alex Tester${run}`)).toBeVisible();
-  await expect(page.getByText(`Robin Tester${run}`)).toBeVisible();
-  await expect(page.getByText("junior, 12")).toBeVisible();
+  await page.goto("/profile");
+  const family = page.getByRole("region", { name: "Your family" });
+  await expect(family.getByText(`Alex Tester${run}`)).toBeVisible();
+  await expect(family.getByText(`Robin Tester${run}`)).toBeVisible();
+  await expect(family.getByText("junior, 12")).toBeVisible();
 
-  await page.getByLabel("First name").fill("Charlie");
-  await page.getByLabel("Last name").fill(`Tester${run}`);
-  await page.getByLabel("Date of birth").fill("2018-04-02");
-  await page.getByRole("button", { name: "Add to family" }).click();
+  const add = page.getByRole("region", { name: "Add a family member" });
+  await add.getByLabel("First name").fill("Charlie");
+  await add.getByLabel("Last name").fill(`Tester${run}`);
+  await add.getByLabel("Date of birth").fill("2018-04-02");
+  await add.getByRole("button", { name: "Add to family" }).click();
   await expect(page.getByText("Family member added.")).toBeVisible();
-  await expect(page.getByText(`Charlie Tester${run}`)).toBeVisible();
-  await shot(page, "family");
+  await expect(page.getByRole("region", { name: "Your family" }).getByText(`Charlie Tester${run}`)).toBeVisible();
+  await shot(page, "profile-family");
+
+  // Medical information for the junior.
+  await page.getByRole("link", { name: `Edit Robin Tester${run}` }).click();
+  // Wait for the page to finish loading, or the browser can reset a box typed into too early.
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Medical details").fill("Hay fever.");
+  await page.getByLabel(/I agree to the club holding this information/).check();
+  await page.getByRole("button", { name: "Save medical information" }).click();
+  await expect(page.getByText("Medical information saved.")).toBeVisible();
+  await expect(page.getByLabel("Medical details")).toHaveValue("Hay fever.");
+  expect(sql(`select details from medical_records r join people p on p.id = r.person_id where p.first_name = 'Robin' and p.last_name = 'Tester${run}'`)).toBe("Hay fever.");
+  await shot(page, "family-member-medical");
+
+  // The old Family page now opens Your details.
+  await page.goto("/family");
+  await expect(page).toHaveURL(/\/profile/);
+  await expect(page.getByRole("link", { name: "Family", exact: true })).toHaveCount(0);
 });
 
 test("a member adds a membership, sees what to pay, and cancels it", async ({ browser }) => {
@@ -184,7 +208,9 @@ test("a member adds a membership, sees what to pay, and cancels it", async ({ br
 
 test("an admin imports the member spreadsheet after checking a preview", async ({ browser }) => {
   const page = await adminPage(browser);
-  await page.getByRole("link", { name: "Import members from the spreadsheet" }).click();
+  // Import is no longer on the home page; it is in the admin menu.
+  await page.getByRole("link", { name: "Members", exact: true }).click();
+  await page.getByRole("link", { name: "Import spreadsheet" }).click();
   await page.getByLabel("Member spreadsheet (.xlsx)").setInputFiles("e2e/fixtures/members.xlsx");
   await page.getByRole("button", { name: "Check spreadsheet" }).click();
 
