@@ -369,6 +369,7 @@ test("an admin adds new members: joining a family, a new family paying cash, and
   const details = page.getByRole("region", { name: "Their details" });
   await details.getByLabel("First name").fill("Nora");
   await details.getByLabel("Last name").fill(`New${run}`);
+  await details.getByLabel("Date of birth").fill("1984-05-05");
   // The address sits in the details box, under the name.
   await details.getByLabel("Address line 1").fill("7 Harbour St");
   await details.getByLabel("Postcode").fill("bb11 3dd");
@@ -433,6 +434,7 @@ test("an admin adds new members: joining a family, a new family paying cash, and
   await form.getByLabel("Membership type").selectOption({ label: typeLabel! });
   await form.getByLabel("First name").fill("Nora");
   await form.getByLabel("Last name").fill(`Again${run}`);
+  await form.getByLabel("Date of birth").fill("1984-05-05");
   await form.getByLabel(/^Email/).fill(`nora-${run}@example.test`);
   await form.getByLabel("Address line 1").fill("7 Harbour St");
   await form.getByLabel("Postcode").fill("bb11 3dd");
@@ -454,6 +456,7 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   const one = page.getByRole("region", { name: "Person 1 (main contact)" });
   await one.getByLabel("First name").fill("Iris");
   await one.getByLabel("Last name").fill(`Joiner${run}`);
+  await one.getByLabel("Date of birth").fill("1979-07-07");
   await one.getByLabel("Address line 1").fill("2 Boathouse Row");
   await one.getByLabel("Postcode").fill("bb9 1jj");
   await one.getByLabel(/^Email/).fill(`iris-${run}@example.test`);
@@ -462,6 +465,7 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   const two = page.getByRole("region", { name: "Person 2" });
   await two.getByLabel("First name").fill("Jon");
   await two.getByLabel("Last name").fill(`Joiner${run}`);
+  await two.getByLabel("Date of birth").fill("1978-08-08");
   await shot(page, "join");
   await form.getByRole("button", { name: "Send application" }).click();
   await expect(page.getByRole("status")).toContainText("We've received your application for Dual");
@@ -475,6 +479,7 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   const you = page.getByRole("region", { name: "Your details" });
   await you.getByLabel("First name").fill("Kay");
   await you.getByLabel("Last name").fill(`Spammy${run}`);
+  await you.getByLabel("Date of birth").fill("1991-09-09");
   await you.getByLabel("Address line 1").fill("1 Nowhere");
   await you.getByLabel("Postcode").fill("XX1 1XX");
   await you.getByLabel(/^Email/).fill(`kay-${run}@example.test`);

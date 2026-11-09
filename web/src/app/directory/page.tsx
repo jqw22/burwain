@@ -11,7 +11,7 @@ export default async function DirectoryPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Member directory</h1>
-      <p className="text-slate-700">Adult members this year.</p>
+      <p className="text-slate-700">Adult members this year, and anyone who has joined for next year.</p>
       <Card title={`${entries.length} ${entries.length === 1 ? "member" : "members"}`}>
         {entries.length === 0 ? (
           <p className="text-slate-600">No one is listed yet.</p>

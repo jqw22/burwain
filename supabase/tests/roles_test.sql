@@ -319,7 +319,8 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
 select pg_temp.expect_error($q$select admin_add_member('{"people":[{"first_name":"X","last_name":"Y"}],"address_line1":"1 A","postcode":"BB1"}')$q$, 'Only an admin');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
 select pg_temp.expect_error($q$select admin_add_member('{"people":[{"first_name":"X","last_name":"Y"}]}')$q$, 'address line 1');
-select pg_temp.expect_error($q$select admin_add_member('{"people":[{"first_name":"X","last_name":"Y","email":"A@example.com"}],"address_line1":"1 A","postcode":"BB1"}')$q$, 'already uses that email');
+select pg_temp.expect_error($q$select admin_add_member('{"people":[{"first_name":"X","last_name":"Y","date_of_birth":"1980-01-01","email":"A@example.com"}],"address_line1":"1 A","postcode":"BB1"}')$q$, 'already uses that email');
+select pg_temp.expect_error($q$select admin_add_member('{"people":[{"first_name":"X","last_name":"Y"}],"address_line1":"1 A","postcode":"BB1"}')$q$, 'Date of birth is needed');
 do $$ declare ivy uuid; jo uuid; hh uuid; m uuid; begin
   ivy := admin_add_member(jsonb_build_object('people', jsonb_build_array(jsonb_build_object('first_name', 'Ivy', 'last_name', 'New', 'date_of_birth', '1985-03-03',
            'email', 'Ivy@Example.com', 'news_consent', true, 'medical_details', 'Asthma', 'medical_consent', true,
@@ -391,7 +392,7 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
 select pg_temp.expect_error($q$select admin_add_member(jsonb_build_object('address_line1', '1 A', 'postcode', 'BB1',
   'people', jsonb_build_array(jsonb_build_object('first_name', 'A', 'last_name', 'B'), jsonb_build_object('first_name', 'C', 'last_name', 'D'))))$q$, 'Dual or Family');
 select pg_temp.expect_error($q$select admin_add_member(jsonb_build_object('address_line1', '1 A', 'postcode', 'BB1',
-  'people', jsonb_build_array(jsonb_build_object('first_name', 'A', 'last_name', 'B', 'medical_details', 'x'))))$q$, 'consent');
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'A', 'last_name', 'B', 'date_of_birth', '1980-01-01', 'medical_details', 'x'))))$q$, 'consent');
 select pg_temp.expect_error($q$select admin_add_member(jsonb_build_object('address_line1', '1 A', 'postcode', 'BB1',
   'type_id', (select id from membership_types where code = 'C'), 'club_year_id', (select id from club_years where label = '2026'),
   'people', jsonb_build_array(jsonb_build_object('first_name', 'A', 'last_name', 'B'), jsonb_build_object('first_name', 'C', 'last_name', 'D'))))$q$, 'exactly one');
@@ -429,23 +430,26 @@ end $$;
 select pg_temp.expect_error($q$select * from membership_applications$q$, 'permission denied');
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'individual' limit 1),
   'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '1 A', 'postcode', 'BB1',
-  'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'email', 'a@example.com'))))$q$, 'already uses that email');
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'date_of_birth', '1982-02-02', 'email', 'a@example.com'))))$q$, 'already uses that email');
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'dual' limit 1),
   'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '1 A', 'postcode', 'BB1',
-  'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'email', 'ann@example.com'))))$q$, 'exactly two');
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'date_of_birth', '1982-02-02', 'email', 'ann@example.com'))))$q$, 'exactly two');
 select pg_temp.expect_error($q$select accept_application(gen_random_uuid())$q$, 'permission denied');
+select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'individual' limit 1),
+  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '1 A', 'postcode', 'BB1',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Nod', 'last_name', 'Apply', 'email', 'nod@example.com'))))$q$, 'Date of birth is needed');
 select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Family' limit 1),
   'club_year_id', (select club_year_id from join_options() where is_next_year limit 1), 'address_line1', '3 Dam Rd', 'postcode', 'bb3 3cc',
   'household_id', '10000000-0000-0000-0000-000000000001', 'payment_method', 'cash',
   'people', jsonb_build_array(
-    jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'email', 'Ann@Example.com', 'medical_details', 'Asthma', 'medical_consent', true),
+    jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'date_of_birth', '1982-02-02', 'email', 'Ann@Example.com', 'medical_details', 'Asthma', 'medical_consent', true),
     jsonb_build_object('first_name', 'Ben', 'last_name', 'Apply', 'date_of_birth', '2016-01-01')))) \gset app_
 select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
   'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
-  'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'email', 'spam@example.com', 'medical_details', 'x', 'medical_consent', true)))) \gset spam_
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'date_of_birth', '1990-01-01', 'email', 'spam@example.com', 'medical_details', 'x', 'medical_consent', true)))) \gset spam_
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
   'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
-  'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'email', 'spam@example.com'))))$q$, 'already an application');
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'date_of_birth', '1990-01-01', 'email', 'spam@example.com'))))$q$, 'already an application');
 reset role;
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
@@ -463,6 +467,8 @@ do $$ declare ann uuid; hh uuid; begin
   assert (select count(*) from people where household_id = hh) = 2, 'Ann and Ben in a new family';
   assert (select status::text from memberships where household_id = hh) = 'awaiting_payment', 'no payment recorded from outside';
   assert (select email from people where id = ann) = 'ann@example.com', 'email saved';
+  assert exists (select 1 from member_directory() where id = ann), 'joined for next year, so in the directory now';
+  assert not exists (select 1 from member_directory() where first_name = 'Ben' and last_name = 'Apply'), 'child not in directory';
   assert (select data is null and status = 'accepted' from membership_applications where person_id = ann), 'application closed';
   perform decline_application((select id from pending_applications() where contact_name = 'Spam Bot'), 'Spam');
   assert (select data is null and status = 'declined' from membership_applications where contact_name = 'Spam Bot'), 'declined details deleted';
