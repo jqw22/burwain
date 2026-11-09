@@ -9,7 +9,7 @@ test("signed-out visitors are sent to the login page", async ({ page }) => {
 test("login page asks for an email address", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByLabel("Email address")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Email me a login link" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Email me a code" })).toBeVisible();
 });
 
 test("login page explains an expired link", async ({ page }) => {

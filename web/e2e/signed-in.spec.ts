@@ -51,25 +51,41 @@ test.beforeAll(() => {
   sql(`update households h set lead_person_id = p.id from people p where p.household_id = h.id and p.email = '${leadEmail}'`);
 });
 
-async function latestLink(email: string) {
+async function latestEmail(email: string, find: (text: string) => string | undefined) {
   for (let i = 0; i < 30; i++) {
     const res = await fetch(`${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:"${email}"`)}`);
     const { messages } = (await res.json()) as { messages: { ID: string }[] };
     if (messages?.length) {
-      const msg = (await (await fetch(`${MAILPIT_URL}/api/v1/message/${messages[0].ID}`)).json()) as { Text: string };
-      const link = msg.Text.match(/https?:\/\/\S+\/auth\/v1\/verify\S+/)?.[0];
-      if (link) return link.replace(/[)\]>]+$/, "");
+      const msg = (await (await fetch(`${MAILPIT_URL}/api/v1/message/${messages[0].ID}`)).json()) as { Text: string; HTML: string };
+      const found = find(`${msg.Text}\n${msg.HTML}`);
+      if (found) return found;
     }
     await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error(`no login email arrived for ${email}`);
 }
+const latestLink = (email: string) =>
+  latestEmail(email, (t) => t.match(/https?:\/\/[^\s"<]+\/auth\/v1\/verify[^\s"<]+/)?.[0]?.replace(/[)\]>]+$/, "").replaceAll("&amp;", "&"));
+const latestCode = (email: string) => latestEmail(email, (t) => t.match(/\b(\d{6})\b/)?.[1]);
 
-async function signIn(page: Page, email: string) {
+async function requestCode(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("Email address").fill(email);
-  await page.getByRole("button", { name: "Email me a login link" }).click();
-  await expect(page.getByText("Check your email for a login link")).toBeVisible();
+  await page.getByRole("button", { name: "Email me a code" }).click();
+  await expect(page.getByText("We've emailed a 6-digit code to")).toBeVisible();
+}
+
+// Members normally sign in by typing the 6-digit code from the email.
+async function signIn(page: Page, email: string) {
+  await requestCode(page, email);
+  await page.getByLabel("6-digit code").fill(await latestCode(email));
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/localhost:3100\/$/);
+}
+
+// The link in the same email still works too, in the browser that asked for it.
+async function signInWithLink(page: Page, email: string) {
+  await requestCode(page, email);
   await page.goto(await latestLink(email));
   await expect(page).toHaveURL(/localhost:3100\/$/);
 }
@@ -87,7 +103,7 @@ let admin: BrowserContext;
 async function adminPage(browser: import("@playwright/test").Browser) {
   if (!admin) {
     admin = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
-    await signIn(await admin.newPage(), adminEmail);
+    await signInWithLink(await admin.newPage(), adminEmail);
   }
   const page = await admin.newPage();
   await page.goto("/");
@@ -650,6 +666,16 @@ test("a member can't open the import page", async ({ browser }) => {
 });
 
 test("an email that isn't on the member list gets a clear message", async ({ page }) => {
-  await signIn(page, strangerEmail);
+  await requestCode(page, strangerEmail);
+  // The screen shows which address the code went to, so a wrong autofill is easy to spot.
+  await expect(page.getByRole("status")).toContainText(`st•••@example.test`);
+  await shot(page, "login-code");
+  // A wrong code gets a clear message and you can try again on the same screen.
+  await page.getByLabel("6-digit code").fill("000000");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("That code didn't work")).toBeVisible();
+  await shot(page, "login-wrong-code");
+  await page.getByLabel("6-digit code").fill(await latestCode(strangerEmail));
+  await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "We couldn't find your membership" })).toBeVisible();
 });
