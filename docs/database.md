@@ -60,3 +60,10 @@ statement, medical access and logging, superadmin-only change log, directory opt
 Create the project in the **London (eu-west-2)** region, then run the two migrations and the seed in
 order (Supabase CLI: `supabase db push`, or paste into the SQL editor). Give the first superadmin their
 role by inserting into `user_roles` from the SQL editor.
+
+## Automatic tests
+
+`supabase/tests/run.sh` loads the migrations and seed into an empty Postgres (with a small stand-in for
+Supabase's `auth` schema) and runs `supabase/tests/roles_test.sql`, which acts as each role and checks
+prices, pro rata, household and age rules, approvals, payment posting, medical privacy, the directory and
+signed-out access. GitHub runs it on every pull request and on `main` (`.github/workflows/database-tests.yml`).
