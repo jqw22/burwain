@@ -9,3 +9,7 @@
   # Public values: the publishable key is meant to be used in browsers. Row-level security protects the data.
   NEXT_PUBLIC_SUPABASE_URL = "https://wjbogbpeqdurehbkatmf.supabase.co"
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_WbpCRTybHW02yrKoPBX1BQ_KAZV3dFg"
+
+# Netlify's Next.js runtime turns the build into pages and server functions. Named here so it always runs.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
