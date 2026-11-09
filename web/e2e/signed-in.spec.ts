@@ -137,6 +137,33 @@ test("the family lead sees the family and adds a junior", async ({ browser }) =>
   await shot(page, "family");
 });
 
+test("a member adds a membership, sees what to pay, and cancels it", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/membership");
+  const year = page.getByRole("region", { name: /^Club year / }).first();
+  await expect(year.getByText(/Family for .*: £255\s*Paid/)).toBeVisible();
+
+  // A junior membership for an adult is refused with a clear reason.
+  await year.getByRole("radio", { name: /^Junior:/ }).check();
+  await year.getByRole("button", { name: "Add membership" }).click();
+  await expect(page.getByText("Someone is over the age limit")).toBeVisible();
+
+  // Club membership for Sam (ticked by default). Price depends on the month, so read it from the option.
+  const option = page.getByRole("region", { name: /^Club year / }).first().getByRole("radio", { name: /^Club Membership: £/ });
+  const label = (await option.evaluate((el) => el.closest("label")?.textContent)) ?? "";
+  const price = label.match(/£[\d.]+/)![0];
+  await option.check();
+  await page.getByRole("button", { name: "Add membership" }).first().click();
+  await expect(page.getByText("Membership added.")).toBeVisible();
+  await expect(page.getByText(new RegExp(`Club Membership for Sam: ${price.replace(".", "\\.")}`))).toBeVisible();
+  await expect(page.getByText(`To pay: ${price}.`)).toBeVisible();
+  await shot(page, "membership");
+
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText("Membership cancelled.")).toBeVisible();
+  await expect(page.getByText(/To pay:/)).toHaveCount(0);
+});
+
 test("an email that isn't on the member list gets a clear message", async ({ page }) => {
   await signIn(page, strangerEmail);
   await expect(page.getByRole("heading", { name: "We couldn't find your membership" })).toBeVisible();

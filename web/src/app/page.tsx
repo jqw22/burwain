@@ -61,6 +61,9 @@ export default async function HomePage() {
             ))}
           </ul>
         )}
+        <a href="/membership" className="mt-3 inline-block text-sky-800 underline">
+          Renew or add a membership
+        </a>
       </section>
       <SignOut />
     </div>
