@@ -30,3 +30,19 @@ export function unknownPlaceholders(text: string) {
 export function exampleValues(overrides: Partial<Record<string, string>> = {}) {
   return { ...Object.fromEntries(PLACEHOLDERS.map((p) => [p.key, p.example])), ...overrides } as Record<string, string>;
 }
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// Plain text to simple HTML: paragraphs on blank lines, line breaks kept, web addresses made into links.
+export function textToHtml(text: string) {
+  const paragraphs = text.trim().split(/\n{2,}/).map((p) =>
+    escapeHtml(p)
+      .replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, (url) => `<a href="${url}">${url}</a>`)
+      .replace(/\n/g, "<br>"),
+  );
+  return `<div style="font-family: Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #1e293b">${paragraphs
+    .map((p) => `<p style="margin: 0 0 1em">${p}</p>`)
+    .join("")}</div>`;
+}

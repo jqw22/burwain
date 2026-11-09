@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createServer, type Server } from "node:http";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 // Signed-in tests. They need a local Supabase stack (`supabase start`) and run only when
@@ -112,6 +113,35 @@ async function adminPage(browser: import("@playwright/test").Browser) {
 test.afterAll(async () => {
   await lead?.close();
   await admin?.close();
+  mailServer?.close();
+});
+
+// A pretend email service standing in for Resend (playwright.config.ts points the app at it).
+// It keeps what it's asked to send, and refuses anything addressed to a "quota" address as if the daily limit was hit.
+type SentEmail = { from: string; to: string[]; subject: string; text: string; html: string };
+const mailbox: SentEmail[] = [];
+let mailServer: Server | undefined;
+test.beforeAll(async () => {
+  if (!DB_URL) return;
+  mailServer = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      const emails = JSON.parse(body || "[]") as SentEmail[];
+      res.setHeader("Content-Type", "application/json");
+      if (req.headers.authorization !== "Bearer test-key") {
+        res.statusCode = 401;
+        return res.end(JSON.stringify({ message: "bad key" }));
+      }
+      if (emails.some((e) => e.to.some((t) => t.includes("quota")))) {
+        res.statusCode = 429;
+        return res.end(JSON.stringify({ name: "daily_quota_exceeded", message: "You have reached your daily email sending quota." }));
+      }
+      mailbox.push(...emails);
+      res.end(JSON.stringify({ data: emails.map((_, i) => ({ id: `email-${mailbox.length + i}` })) }));
+    });
+  });
+  await new Promise<void>((resolve) => mailServer!.listen(3998, "127.0.0.1", resolve));
 });
 
 async function shot(page: Page, name: string) {
@@ -638,6 +668,74 @@ test("an admin edits the renewal reminder email with a live preview, and adds an
 test("a member can't open the email templates page", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/admin/emails");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+});
+
+test("an admin previews, tests and sends renewal reminders, and a daily limit is reported", async ({ browser }) => {
+  // Rita has a 2026 membership and hasn't renewed; Quinn's email will hit the pretend daily limit.
+  for (const [first, email] of [["Rita", `remind-${run}@example.test`], ["Quinn", `quota-${run}@example.test`]]) {
+    sql(`
+      with p as (insert into people (first_name, last_name, date_of_birth, email) values ('${first}', 'Remind${run}', '1985-03-03', '${email}') returning id),
+      m as (insert into memberships (club_year_id, membership_type_id, payer_person_id, status, price_pence)
+            select current_club_year_id(), (select id from membership_types where code = 'IS'), id, 'active', 18500 from p returning id, payer_person_id)
+      insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
+    `);
+  }
+  const page = await adminPage(browser);
+  await page.goto("/admin/members");
+  await page.getByRole("link", { name: "Renewal reminders" }).click();
+  await expect(page.getByRole("heading", { name: "Renewal reminders", exact: true })).toBeVisible();
+  const rita = page.getByRole("row", { name: `Rita Remind${run}` });
+  await expect(rita).toContainText("Individual Sailing");
+  await expect(rita).toContainText("£185");
+  await expect(rita).toContainText("Not yet");
+
+  await rita.getByRole("link", { name: `Preview email for Rita Remind${run}` }).click();
+  const preview = page.getByRole("region", { name: `Preview: Rita Remind${run}` });
+  await expect(preview).toContainText("Hello Rita,");
+  await expect(preview).toContainText("/profile#renew");
+  await shot(page, "admin-reminders");
+
+  await preview.getByRole("button", { name: "Send this as a test to me" }).click();
+  await expect(page.getByText(`Test email sent to ${adminEmail}.`)).toBeVisible();
+  const test1 = mailbox.find((e) => e.to[0] === adminEmail);
+  expect(test1?.subject).toMatch(/^\[Test\] /);
+  expect(test1?.text).toContain("Hello Rita,");
+  expect(test1?.from).toBe("Burwain Test <club@example.test>");
+
+  const form = page.getByRole("form", { name: "Send renewal reminders" });
+  await form.getByRole("button", { name: "Untick everyone" }).click();
+  await form.getByRole("checkbox", { name: `Send to Rita Remind${run}` }).check();
+  await form.getByRole("button", { name: "Send to 1 member" }).click();
+  await expect(page.getByRole("alertdialog", { name: "Confirm sending" })).toContainText("You're about to email 1 member.");
+  await shot(page, "admin-reminders-confirm");
+  await page.getByRole("button", { name: "Yes, send now" }).click();
+  await expect(page.getByText("Sent 1 renewal reminder.")).toBeVisible();
+  const sent = mailbox.find((e) => e.to[0] === `remind-${run}@example.test`);
+  expect(sent?.html).toContain('<a href="http');
+  expect(sent?.subject).not.toContain("{");
+  // Already reminded, so not ticked again.
+  await expect(page.getByRole("checkbox", { name: `Send to Rita Remind${run}` })).not.toBeChecked();
+  await expect(page.getByRole("row", { name: `Rita Remind${run}` })).not.toContainText("Not yet");
+  expect(
+    sql(`select r.status from email_recipients r join people p on p.id = r.person_id where p.email = 'remind-${run}@example.test'`),
+  ).toBe("sent");
+
+  // Hitting the daily limit is reported, and nothing is marked as sent.
+  const again = page.getByRole("form", { name: "Send renewal reminders" });
+  await again.getByRole("button", { name: "Untick everyone" }).click();
+  await again.getByRole("checkbox", { name: `Send to Quinn Remind${run}` }).check();
+  await again.getByRole("button", { name: "Send to 1 member" }).click();
+  await page.getByRole("button", { name: "Yes, send now" }).click();
+  const limit = page.getByRole("alert").filter({ hasText: "Sent 0 of 1." });
+  await expect(limit).toBeVisible();
+  await expect(limit).toContainText("sending limit was reached");
+  await expect(page.getByRole("row", { name: `Quinn Remind${run}` })).toContainText("Not yet");
+});
+
+test("a member can't open the renewal reminders page", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/admin/reminders");
   await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 

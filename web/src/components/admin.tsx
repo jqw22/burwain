@@ -9,7 +9,7 @@ export function NotAllowed({ who = "club admins" }: { who?: string }) {
   );
 }
 
-export function AdminNav({ current }: { current: "members" | "new" | "applications" | "memberships" | "types" | "emails" | "import" }) {
+export function AdminNav({ current }: { current: "members" | "new" | "applications" | "memberships" | "types" | "emails" | "reminders" | "import" }) {
   const links = [
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "new", href: "/admin/members/new", label: "Add new member" },
@@ -17,6 +17,7 @@ export function AdminNav({ current }: { current: "members" | "new" | "applicatio
     { key: "memberships", href: "/admin/memberships", label: "Payments" },
     { key: "types", href: "/admin/types", label: "Membership types" },
     { key: "emails", href: "/admin/emails", label: "Email templates" },
+    { key: "reminders", href: "/admin/reminders", label: "Renewal reminders" },
     { key: "import", href: "/admin/import", label: "Import spreadsheet" },
   ] as const;
   return (
