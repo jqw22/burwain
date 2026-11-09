@@ -230,6 +230,17 @@ test("the family's main contact renews for next year from Your details", async (
   await shot(page, "renew-after");
 });
 
+test("an admin's home page has Membership admin and Finance admin sections", async ({ browser }) => {
+  const page = await adminPage(browser);
+  await expect(page.getByRole("heading", { name: "Membership admin" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finance admin" })).toBeVisible();
+  for (const name of ["Members", "Add new member", "Applications", "Membership types", "Email templates", "Import spreadsheet", "Public join form", "Income"]) {
+    await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole("link", { name: "Payments", exact: true })).toHaveCount(0);
+  await shot(page, "admin-home");
+});
+
 test("an admin imports the member spreadsheet after checking a preview", async ({ browser }) => {
   const page = await adminPage(browser);
   // Import is no longer on the home page; it is in the admin menu.
