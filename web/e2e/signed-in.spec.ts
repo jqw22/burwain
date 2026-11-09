@@ -117,7 +117,7 @@ test("a member updates their own details, medical info and qualifications", asyn
   const page = await leadPage(browser);
   await page.goto("/profile");
   // Membership type, cost and payment status at the top.
-  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Family \(\d{4}\): £255\s*Paid/);
+  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Family for Sam, Alex, Robin: £255\s*Paid/);
   const contact = page.getByRole("region", { name: "Contact details" });
   // Boxes show details read-only until you click Edit.
   await expect(contact.getByText("Not given").first()).toBeVisible();
@@ -151,7 +151,7 @@ test("a member updates their own details, medical info and qualifications", asyn
   await shot(page, "profile");
 });
 
-test("the family lead sees the family on Your details, adds a junior and manages family members' details", async ({ browser }) => {
+test("the family lead sees the family on Your details and manages family members' details", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/profile");
   const family = page.getByRole("region", { name: "Your family" });
@@ -159,20 +159,9 @@ test("the family lead sees the family on Your details, adds a junior and manages
   await expect(family.getByText(`Robin Tester${run}`)).toBeVisible();
   await expect(family.getByText("junior, 12")).toBeVisible();
 
-  await family.getByRole("link", { name: "Add a family member" }).click();
-  const add = page.getByRole("form", { name: "Add a family member" });
-  await add.getByLabel("First name").fill("Charlie");
-  await add.getByLabel("Last name").fill(`Tester${run}`);
-  await add.getByLabel("Date of birth").fill("2018-04-02");
-  await add.getByRole("button", { name: "Add to family" }).click();
-  await expect(page.getByText("Family member added.")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Your family" }).getByText(`Charlie Tester${run}`)).toBeVisible();
-  // The family's Family membership now covers Charlie too.
-  expect(
-    sql(`select count(*) from membership_people mp join people p on p.id = mp.person_id
-          join memberships m on m.id = mp.membership_id join membership_types t on t.id = m.membership_type_id
-         where p.first_name = 'Charlie' and p.last_name = 'Tester${run}' and t.code = 'F'`),
-  ).toBe("1");
+  // Adding someone new to the club is an admin job, so members can't add family members themselves.
+  await expect(family.getByRole("link", { name: "Add a family member" })).toHaveCount(0);
+  await expect(family.getByText("To add someone new to your family, please contact the membership secretary.")).toBeVisible();
   await shot(page, "profile-family");
 
   // Medical information for the junior.
@@ -210,31 +199,35 @@ test("the family lead sees the family on Your details, adds a junior and manages
   await expect(page.getByRole("link", { name: "Family", exact: true })).toHaveCount(0);
 });
 
-test("a member adds a membership, sees what to pay, and cancels it", async ({ browser }) => {
+test("the family's main contact renews for next year from Your details", async ({ browser }) => {
+  // Renewals open 60 days before the next club year starts.
+  const next = sql(`select label from club_years where current_date between starts_on - 60 and starts_on - 1`);
+  test.skip(!next, "renewals aren't open today");
   const page = await leadPage(browser);
-  await page.goto("/membership");
-  const year = page.getByRole("region", { name: /^Club year / }).first();
-  await expect(year.getByText(/Family for .*: £255\s*Paid/)).toBeVisible();
+  await page.goto("/profile");
+  const box = page.getByRole("region", { name: "Your membership" });
+  await expect(box.getByText(/Family for Sam, Alex, Robin: £255\s*Paid/)).toBeVisible();
+  await expect(box.getByRole("heading", { name: `Renew for ${next}` })).toBeVisible();
+  await expect(box.getByRole("link", { name: /Join|add a membership/i })).toHaveCount(0);
+  await shot(page, "renew-before");
 
-  // A junior membership for an adult is refused with a clear reason.
-  await year.getByRole("radio", { name: /^Junior:/ }).check();
-  await year.getByRole("button", { name: "Add membership" }).click();
+  // Changing type: a Junior membership for an adult is refused with a clear reason.
+  await box.getByRole("link", { name: "Change membership type" }).click();
+  const change = page.getByRole("form", { name: "Change membership type" });
+  await change.getByRole("radio", { name: /^Junior:/ }).check();
+  await change.getByRole("button", { name: `Add for ${next}` }).click();
   await expect(page.getByText("Someone is over the age limit")).toBeVisible();
 
-  // Club membership for Sam (ticked by default). Price depends on the month, so read it from the option.
-  const option = page.getByRole("region", { name: /^Club year / }).first().getByRole("radio", { name: /^Club Membership: £/ });
-  const label = (await option.evaluate((el) => el.closest("label")?.textContent)) ?? "";
-  const price = label.match(/£[\d.]+/)![0];
-  await option.check();
-  await page.getByRole("button", { name: "Add membership" }).first().click();
-  await expect(page.getByText("Membership added.")).toBeVisible();
-  await expect(page.getByText(new RegExp(`Club Membership for Sam: ${price.replace(".", "\\.")}`))).toBeVisible();
-  await expect(page.getByText(`To pay: ${price}.`)).toBeVisible();
-  await shot(page, "membership");
-
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByText("Membership cancelled.")).toBeVisible();
-  await expect(page.getByText(/To pay:/)).toHaveCount(0);
+  await page.goto("/profile");
+  await page.getByRole("button", { name: `Renew for ${next}` }).click();
+  await expect(page.getByText("Renewed.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your membership" }).getByText(/Family for Sam, Alex, Robin: £255\s*Awaiting payment/)).toBeVisible();
+  await expect(page.getByRole("button", { name: `Renew for ${next}` })).toHaveCount(0);
+  expect(
+    sql(`select count(*) from memberships m join club_years cy on cy.id = m.club_year_id join people p on p.id = m.payer_person_id
+         where p.email = '${leadEmail}' and cy.label = '${next}' and m.status = 'awaiting_payment'`),
+  ).toBe("1");
+  await shot(page, "renew-after");
 });
 
 test("an admin imports the member spreadsheet after checking a preview", async ({ browser }) => {
@@ -262,7 +255,7 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await page.getByRole("link", { name: "Members", exact: true }).click();
   await page.getByLabel("Search members").fill(`Tester${run}`);
   await page.getByRole("button", { name: "Search" }).click();
-  await expect(page.getByText(/4 people matching/)).toBeVisible();
+  await expect(page.getByText(/3 people matching/)).toBeVisible();
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toContainText("F: Paid");
   await shot(page, "admin-members");
 
@@ -312,24 +305,67 @@ test("an admin approves an Associate membership and finance records a cheque for
   await shot(page, "admin-memberships");
 });
 
-test("someone not in a family group sets one up and adds a family member", async ({ browser }) => {
-  // Ada (the admin) was added on her own, with no family group.
+test("an admin adds new members: one joining an existing family, one starting a new family and paying cash", async ({ browser }) => {
   const page = await adminPage(browser);
+  // Members not in a family can't set one up themselves any more.
   await page.getByRole("link", { name: "Your details" }).click();
-  const family = page.getByRole("region", { name: "Your family" });
-  await page.waitForLoadState("networkidle");
-  await family.getByLabel("Address line 1").fill("5 Marina Way");
-  await family.getByLabel("Postcode").fill("bb10 2cc");
-  await family.getByRole("button", { name: "Set up my family" }).click();
-  await expect(page.getByText("Your family group is set up.")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Home address" })).toContainText("BB10 2CC");
+  await expect(page.getByRole("button", { name: "Set up my family" })).toHaveCount(0);
+  await expect(page.getByText("You're not in a family group.")).toBeVisible();
 
-  await page.getByRole("link", { name: "Add a family member" }).click();
-  const add = page.getByRole("form", { name: "Add a family member" });
-  await add.getByLabel("First name").fill("Ben");
-  await add.getByLabel("Last name").fill(`Admin${run}`);
-  await add.getByRole("button", { name: "Add to family" }).click();
-  await expect(page.getByRole("region", { name: "Your family" }).getByText(`Ben Admin${run}`)).toBeVisible();
+  // Charlie joins Sam's family and is covered by the Family membership.
+  await page.goto("/admin/members");
+  await page.getByRole("link", { name: "Add new member" }).click();
+  await page.waitForLoadState("networkidle");
+  const form = page.getByRole("form", { name: "Add new member" });
+  await form.getByLabel("First name").fill("Charlie");
+  await form.getByLabel("Last name").fill(`Tester${run}`);
+  await form.getByLabel("Date of birth").fill("2018-04-02");
+  await form.getByLabel("Joining a family already in the club").check();
+  const familyLabel = await form.getByLabel("Which family?").locator("option", { hasText: `Tester${run}, Sam` }).textContent();
+  await form.getByLabel("Which family?").selectOption({ label: familyLabel! });
+  await form.getByRole("button", { name: "Add member" }).click();
+  await expect(page.getByText("New member added.")).toBeVisible();
+  expect(
+    sql(`select count(*) from membership_people mp join people p on p.id = mp.person_id
+          join memberships m on m.id = mp.membership_id join membership_types t on t.id = m.membership_type_id
+         where p.first_name = 'Charlie' and p.last_name = 'Tester${run}' and t.code = 'F' and m.club_year_id = current_club_year_id()`),
+  ).toBe("1");
+
+  // Nora starts a new family on Club Membership and pays cash. A missing postcode is explained first.
+  await page.goto("/admin/members/new");
+  await page.waitForLoadState("networkidle");
+  await form.getByLabel("First name").fill("Nora");
+  await form.getByLabel("Last name").fill(`New${run}`);
+  await form.getByLabel(/^Email/).fill(`nora-${run}@example.test`);
+  await form.getByLabel("Address line 1").fill("7 Harbour St");
+  await form.getByLabel("Postcode").fill("bb11 3dd");
+  await form.getByLabel("Club year").selectOption({ index: 0 });
+  const typeLabel = await form.getByLabel("Membership type").locator("option", { hasText: /^Club Membership: £/ }).textContent();
+  await form.getByLabel("Membership type").selectOption({ label: typeLabel! });
+  await form.getByLabel("Payment received").selectOption("cash");
+  await shot(page, "admin-add-member");
+  await form.getByRole("button", { name: "Add member" }).click();
+  await expect(page.getByText("New member added.")).toBeVisible();
+  expect(
+    sql(`select p.first_joined_on = current_date, h.postcode, h.lead_person_id = p.id
+           from people p join households h on h.id = p.household_id where p.email = 'nora-${run}@example.test'`),
+  ).toBe("t|BB11 3DD|t");
+  expect(
+    sql(`select m.status from memberships m join membership_people mp on mp.membership_id = m.id
+          join people p on p.id = mp.person_id where p.email = 'nora-${run}@example.test'`),
+  ).toBe("active");
+
+  // The same email can't be added twice; what was typed stays in the form.
+  await page.goto("/admin/members/new");
+  await page.waitForLoadState("networkidle");
+  await form.getByLabel("First name").fill("Nora");
+  await form.getByLabel("Last name").fill(`Again${run}`);
+  await form.getByLabel(/^Email/).fill(`nora-${run}@example.test`);
+  await form.getByLabel("Address line 1").fill("7 Harbour St");
+  await form.getByLabel("Postcode").fill("bb11 3dd");
+  await form.getByRole("button", { name: "Add member" }).click();
+  await expect(page.getByText("Someone already uses that email.")).toBeVisible();
+  await expect(form.getByLabel("Last name")).toHaveValue(`Again${run}`);
 });
 
 test("members see a directory of adult members, without payment status", async ({ browser }) => {

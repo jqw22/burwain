@@ -1,17 +1,16 @@
 import Link from "next/link";
-import { STATUS_LABEL } from "@/components/admin";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
-import { PERSON_FIELDS, ageOn, pounds, requireMe, ukDate, type Person } from "@/lib/me";
+import { PERSON_FIELDS, ageOn, requireMe, ukDate, type Person } from "@/lib/me";
 import {
-  addFamilyMember,
   addQualification,
-  createHousehold,
   removeQualification,
   saveAddress,
   saveDetails,
   saveMedical,
   savePreferences,
 } from "./actions";
+import { EditLink, FormButtons, Item, LINK } from "./ui";
+import { RenewalCard } from "./renewal";
 
 const SAVED: Record<string, string> = {
   details: "Your details have been saved.",
@@ -21,6 +20,7 @@ const SAVED: Record<string, string> = {
   address: "Your address has been saved.",
   add: "Family member added.",
   household: "Your family group is set up. You can now add family members.",
+  renewed: "Renewed. It's shown below with the amount to pay.",
 };
 const ERRORS: Record<string, string> = {
   details: "We couldn't save your details. Please check them and try again.",
@@ -31,6 +31,15 @@ const ERRORS: Record<string, string> = {
   address: "We couldn't save the address. Please try again.",
   add: "We couldn't add that person. Please give a first and last name.",
   household: "We couldn't set up your family group. Please try again.",
+  who: "Please tick who the membership is for.",
+  one: "That membership covers one person. Please tick just one name.",
+  two: "Dual membership covers two adults. Please tick exactly two names.",
+  age: "Someone is over the age limit for that membership, or their date of birth is missing.",
+  adult: "A junior needs an adult in the family with a membership for the same year. Please renew the adult membership first.",
+  duplicate: "Someone you ticked already has that kind of membership for the year.",
+  closed: "Renewals for that year aren't open yet.",
+  unavailable: "That membership type isn't available at the moment.",
+  renew: "We couldn't renew. Please try again, or contact the membership secretary.",
 };
 
 const SECTION: Record<string, string> = {
@@ -42,6 +51,16 @@ const SECTION: Record<string, string> = {
   consent: "medical",
   qualification: "qualifications",
   preferences: "preferences",
+  renewed: "renew",
+  who: "renew",
+  one: "renew",
+  two: "renew",
+  age: "renew",
+  adult: "renew",
+  duplicate: "renew",
+  closed: "renew",
+  unavailable: "renew",
+  renew: "renew",
 };
 
 type Qualification = { id: string; name: string; awarded_on: string | null; expires_on: string | null };
@@ -55,15 +74,6 @@ type Household = {
   postcode: string | null;
 };
 type Member = { id: string; first_name: string; last_name: string; date_of_birth: string | null; whatsapp: boolean };
-type Held = {
-  memberships: {
-    status: string;
-    price_pence: number;
-    prorata_months: number;
-    membership_types: { name: string } | null;
-    club_years: { label: string; starts_on: string; ends_on: string } | null;
-  };
-};
 
 export default async function ProfilePage({ searchParams }: PageProps<"/profile">) {
   const params = await searchParams;
@@ -76,7 +86,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
   ]);
   if (!me) return null;
 
-  const [{ data: household }, { data: familyData }, { data: heldData }] = await Promise.all([
+  const [{ data: household }, { data: familyData }] = await Promise.all([
     me.household_id
       ? supabase.from("households").select("*").eq("id", me.household_id).single<Household>()
       : Promise.resolve({ data: null }),
@@ -88,19 +98,9 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
           .is("archived_at", null)
           .order("date_of_birth")
       : Promise.resolve({ data: [] }),
-    supabase
-      .from("membership_people")
-      .select("memberships!inner(status, price_pence, prorata_months, membership_types(name), club_years(label, starts_on, ends_on))")
-      .eq("person_id", personId)
-      .neq("memberships.status", "cancelled"),
   ]);
   const family = ((familyData ?? []) as Member[]).filter((m) => m.id !== personId);
   const isLead = household?.lead_person_id === personId;
-  // Memberships for years that haven't ended, earliest first (this year, then next year's renewal).
-  const held = ((heldData ?? []) as unknown as Held[])
-    .map((h) => h.memberships)
-    .filter((m) => m.club_years && m.club_years.ends_on >= new Date().toISOString().slice(0, 10))
-    .sort((a, b) => (a.club_years!.starts_on < b.club_years!.starts_on ? -1 : 1));
 
   const saved = typeof params.saved === "string" ? SAVED[params.saved] : undefined;
   const error = typeof params.error === "string" ? ERRORS[params.error] : undefined;
@@ -132,32 +132,15 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Your details</h1>
 
-      <Card title="Your membership">
-        {held.length === 0 ? (
-          <p className="text-slate-700">You don&apos;t have a membership for this year yet.</p>
-        ) : (
-          <ul className="space-y-1">
-            {held.map((m, i) => (
-              <li key={i}>
-                <strong>{m.membership_types?.name}</strong> ({m.club_years?.label}): {pounds(m.price_pence)}
-                {m.prorata_months < 12 && <span className="text-sm text-slate-500"> ({m.prorata_months} months)</span>}
-                <span
-                  className={
-                    m.status === "active"
-                      ? "ml-2 rounded bg-emerald-50 px-2 py-0.5 text-sm text-emerald-900"
-                      : "ml-2 rounded bg-amber-50 px-2 py-0.5 text-sm text-amber-900"
-                  }
-                >
-                  {STATUS_LABEL[m.status] ?? m.status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <Link href="/membership" className="mt-3 inline-block text-sm text-sky-800 underline">
-          Renew or add a membership
-        </Link>
-      </Card>
+      <RenewalCard
+        supabase={supabase}
+        personId={personId}
+        householdId={me.household_id}
+        canRenew={!household || isLead}
+        family={(familyData ?? []) as Member[]}
+        editing={editing}
+        messages={messages("renew")}
+      />
 
       <Card
         id="contact"
@@ -207,24 +190,13 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
       <Card
         id="family"
         title="Your family"
-        action={household && isLead && editing !== "family" && <EditLink section="family" label="family" text="Add a family member" />}
+        action={null}
       >
         {messages("family")}
         {!household ? (
-          <form action={createHousehold} className="grid gap-4 sm:grid-cols-2">
-            <p className="text-slate-700 sm:col-span-2">
-              You&apos;re not in a family group yet. Add your home address to set one up. You&apos;ll be the main
-              contact and can then add your family.
-            </p>
-            <Field label="Address line 1" name="address_line1" required autoComplete="address-line1" />
-            <Field label="Address line 2" name="address_line2" autoComplete="address-line2" />
-            <Field label="Town" name="address_line3" autoComplete="address-level2" />
-            <Field label="County" name="address_line4" autoComplete="address-level1" />
-            <Field label="Postcode" name="postcode" required autoComplete="postal-code" />
-            <div className="sm:col-span-2">
-              <SaveButton>Set up my family</SaveButton>
-            </div>
-          </form>
+          <p className="text-slate-700">
+            You&apos;re not in a family group. To add family members, please contact the membership secretary.
+          </p>
         ) : (
           <>
             {family.length === 0 ? (
@@ -258,24 +230,10 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
             {!isLead && (
               <p className="mt-4 text-sm text-slate-600">Only the main contact for your family can make changes here.</p>
             )}
-            {isLead && editing === "family" && (
-              <form
-                action={addFamilyMember}
-                aria-label="Add a family member"
-                className="mt-4 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2"
-              >
-                <h3 className="font-medium sm:col-span-2">Add a family member</h3>
-                <input type="hidden" name="household_id" value={household.id} />
-                <Field label="First name" name="first_name" required />
-                <Field label="Last name" name="last_name" required />
-                <Field label="Date of birth" name="date_of_birth" type="date" hint="Needed for junior memberships." />
-                <Field label="Email (adults)" name="email" type="email" hint="Lets them sign in with their own login." />
-                <Field label="Mobile" name="mobile" type="tel" />
-                <div className="self-end pb-2">
-                  <Checkbox label="Happy to be contacted on WhatsApp" name="whatsapp" />
-                </div>
-                <FormButtons section="family" cancelText="Done">Add to family</FormButtons>
-              </form>
+            {isLead && (
+              <p className="mt-4 text-sm text-slate-600">
+                To add someone new to your family, please contact the membership secretary.
+              </p>
             )}
           </>
         )}
@@ -421,53 +379,6 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
           </ul>
         )}
       </Card>
-    </div>
-  );
-}
-
-const LINK =
-  "rounded px-1 text-sm text-sky-800 underline underline-offset-2 hover:bg-sky-50 hover:text-sky-950 " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500";
-
-function EditLink({ section, label, text = "Edit" }: { section: string; label: string; text?: string }) {
-  return (
-    <Link
-      href={`/profile?edit=${section}#${section}`}
-      scroll={false}
-      className={LINK}
-      aria-label={text === "Edit" ? `Edit ${label}` : undefined}
-    >
-      {text}
-    </Link>
-  );
-}
-
-function FormButtons({
-  section,
-  children,
-  cancelText = "Cancel",
-  wide,
-}: {
-  section: string;
-  children: React.ReactNode;
-  cancelText?: string;
-  wide?: boolean;
-}) {
-  return (
-    <div className={`flex items-center gap-4 ${wide ? "sm:col-span-3" : "sm:col-span-2"}`}>
-      <SaveButton>{children}</SaveButton>
-      <Link href={`/profile#${section}`} scroll={false} className={LINK}>
-        {cancelText}
-      </Link>
-    </div>
-  );
-}
-
-function Item({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <div>
-      <dt className="text-sm text-slate-500">{label}</dt>
-      <dd className="text-slate-800">{value || "Not given"}</dd>
     </div>
   );
 }
