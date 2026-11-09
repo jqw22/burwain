@@ -69,33 +69,58 @@ export default async function HomePage() {
           See or renew your membership
         </Link>
       </section>
+      {isAdmin && (
+        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="font-semibold">Membership admin</h2>
+          <ul className="mt-2 space-y-1">
+            <li>
+              <Link href="/admin/members" className="text-sky-800 underline">
+                Members
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/members/new" className="text-sky-800 underline">
+                Add new member
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/applications" className="text-sky-800 underline">
+                Applications
+              </Link>
+              {waiting > 0 && <span className="ml-2 rounded bg-amber-50 px-2 py-0.5 text-sm text-amber-900">{waiting} waiting</span>}
+            </li>
+            <li>
+              <Link href="/admin/types" className="text-sky-800 underline">
+                Membership types
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/emails" className="text-sky-800 underline">
+                Email templates
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/import" className="text-sky-800 underline">
+                Import spreadsheet
+              </Link>
+            </li>
+            <li>
+              {/* Temporary: the public join form will be linked from the club website later. */}
+              <Link href="/join" className="text-sky-800 underline">
+                Public join form
+              </Link>
+              <span className="ml-2 text-sm text-slate-500">(temporary link)</span>
+            </li>
+          </ul>
+        </section>
+      )}
       {(isAdmin || isFinance) && (
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="font-semibold">Club admin</h2>
+          <h2 className="font-semibold">Finance admin</h2>
           <ul className="mt-2 space-y-1">
-            {isAdmin && (
-              <>
-                <li>
-                  <Link href="/admin/members" className="text-sky-800 underline">
-                    Members
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/admin/members/new" className="text-sky-800 underline">
-                    Add new member
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/admin/applications" className="text-sky-800 underline">
-                    Applications
-                  </Link>
-                  {waiting > 0 && <span className="ml-2 rounded bg-amber-50 px-2 py-0.5 text-sm text-amber-900">{waiting} waiting</span>}
-                </li>
-              </>
-            )}
             <li>
               <Link href="/admin/memberships" className="text-sky-800 underline">
-                Payments
+                Income
               </Link>
             </li>
           </ul>

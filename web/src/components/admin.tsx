@@ -14,7 +14,7 @@ export function AdminNav({ current }: { current: "members" | "new" | "applicatio
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "new", href: "/admin/members/new", label: "Add new member" },
     { key: "applications", href: "/admin/applications", label: "Applications" },
-    { key: "memberships", href: "/admin/memberships", label: "Payments" },
+    { key: "memberships", href: "/admin/memberships", label: "Income" },
     { key: "types", href: "/admin/types", label: "Membership types" },
     { key: "emails", href: "/admin/emails", label: "Email templates" },
     { key: "reminders", href: "/admin/reminders", label: "Renewal reminders" },
