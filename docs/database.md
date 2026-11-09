@@ -35,6 +35,8 @@ Called from the app as RPCs, e.g. `supabase.rpc('member_directory')`.
 
 ## Spreadsheet import mapping
 
+Admins upload the spreadsheet at `/admin/import` in the app. It shows a preview grouped into families, then calls `import_members()`, which adds everything in one go (or nothing, if anything fails) and skips people already in the database (same name and date of birth, or same first name and email). The oldest adult in each family becomes its main contact. Family and Dual memberships cover everyone at the address with that class; other types are one per person.
+
 | Spreadsheet column | Goes to |
 | --- | --- |
 | Firstname, Lastname, Title | `people.first_name`, `last_name`, `title` |

@@ -13,6 +13,7 @@ test.describe.configure({ mode: "serial" });
 const run = Date.now().toString(36);
 const leadEmail = `lead-${run}@example.test`;
 const strangerEmail = `stranger-${run}@example.test`;
+const adminEmail = `admin-${run}@example.test`;
 
 function sql(statement: string) {
   return execFileSync("psql", [DB_URL!, "-v", "ON_ERROR_STOP=1", "-qtAc", statement], { encoding: "utf8" }).trim();
@@ -41,6 +42,10 @@ test.beforeAll(() => {
     )
     insert into membership_people (membership_id, person_id)
     select m.id, p.id from m, (select id from lead union all select id from others) p;
+  `);
+  sql(`
+    with a as (insert into people (first_name, last_name, date_of_birth, email) values ('Ada', 'Admin${run}', '1970-01-01', '${adminEmail}') returning id)
+    insert into user_roles (person_id, role) select id, 'admin' from a;
   `);
   // Rows inserted above aren't visible to an update in the same statement, so set the lead separately.
   sql(`update households h set lead_person_id = p.id from people p where p.household_id = h.id and p.email = '${leadEmail}'`);
@@ -162,6 +167,30 @@ test("a member adds a membership, sees what to pay, and cancels it", async ({ br
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByText("Membership cancelled.")).toBeVisible();
   await expect(page.getByText(/To pay:/)).toHaveCount(0);
+});
+
+test("an admin imports the member spreadsheet after checking a preview", async ({ page }) => {
+  await signIn(page, adminEmail);
+  await page.getByRole("link", { name: "Import members from the spreadsheet" }).click();
+  await page.getByLabel("Member spreadsheet (.xlsx)").setInputFiles("e2e/fixtures/members.xlsx");
+  await page.getByRole("button", { name: "Check spreadsheet" }).click();
+
+  await expect(page.getByText("4 people in 2 families")).toBeVisible();
+  await expect(page.getByText("Hazel Fixture")).toBeVisible();
+  await expect(page.getByText(/born 01\/02\/1955/)).toBeVisible();
+  await shot(page, "import-preview");
+
+  await page.getByRole("button", { name: "Import 4 people" }).click();
+  await expect(page.getByText("Import finished")).toBeVisible();
+  // The fixture is the same every run, so later runs skip people already imported.
+  expect(sql(`select count(*) from people where last_name = 'Fixture' and household_id is not null`)).toBe("3");
+  expect(sql(`select count(distinct household_id) from people where last_name = 'Fixture'`)).toBe("1");
+});
+
+test("a member can't open the import page", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/admin/import");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 
 test("an email that isn't on the member list gets a clear message", async ({ page }) => {
