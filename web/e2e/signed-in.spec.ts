@@ -166,6 +166,12 @@ test("the family lead sees the family on Your details, adds a junior and manages
   await add.getByRole("button", { name: "Add to family" }).click();
   await expect(page.getByText("Family member added.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Your family" }).getByText(`Charlie Tester${run}`)).toBeVisible();
+  // The family's Family membership now covers Charlie too.
+  expect(
+    sql(`select count(*) from membership_people mp join people p on p.id = mp.person_id
+          join memberships m on m.id = mp.membership_id join membership_types t on t.id = m.membership_type_id
+         where p.first_name = 'Charlie' and p.last_name = 'Tester${run}' and t.code = 'F'`),
+  ).toBe("1");
   await shot(page, "profile-family");
 
   // Medical information for the junior.
@@ -315,6 +321,18 @@ test("someone not in a family group sets one up and adds a family member", async
   await add.getByLabel("Last name").fill(`Admin${run}`);
   await add.getByRole("button", { name: "Add to family" }).click();
   await expect(page.getByRole("region", { name: "Your family" }).getByText(`Ben Admin${run}`)).toBeVisible();
+});
+
+test("members see a directory of adult members, without payment status", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/");
+  await page.getByRole("link", { name: "Directory" }).click();
+  await expect(page.getByRole("heading", { name: "Member directory" })).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Alex`) })).toContainText("Family");
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: new RegExp(`Tester${run}, Sam`) })).toHaveCount(0);
+  await expect(page.getByText("Paid", { exact: true })).toHaveCount(0);
+  await shot(page, "directory");
 });
 
 test("a member can't open the memberships and payments page", async ({ browser }) => {
