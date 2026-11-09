@@ -53,6 +53,13 @@ select pg_temp.expect_error($q$insert into memberships (club_year_id, membership
 select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'IS'), array['20000000-0000-0000-0000-00000000000e'::uuid], '2026-03-05')$q$, 'own household');
 select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'U21'), array['20000000-0000-0000-0000-00000000000a'::uuid], '2026-03-05')$q$, 'age limit');
 do $$ begin
+  insert into people (household_id, first_name, last_name, date_of_birth)
+  values ('10000000-0000-0000-0000-000000000001', 'Cleo', 'Junior', '2016-02-02');
+  assert (select count(*) from people) = 3, 'household lead can add a family member';
+end $$;
+select pg_temp.expect_error($q$insert into people (household_id, first_name, last_name, auth_user_id) values ('10000000-0000-0000-0000-000000000001', 'Mal', 'Icious', '00000000-0000-0000-0000-00000000000e')$q$, 'Only an admin');
+select pg_temp.expect_error($q$insert into people (household_id, first_name, last_name) values ('10000000-0000-0000-0000-000000000002', 'Not', 'Mine')$q$, 'row-level security');
+do $$ begin
   update people set news_consent = true where first_name = 'Alice';
   assert (select news_consent_at is not null from people where first_name = 'Alice'), 'consent should be time-stamped';
   insert into medical_records (person_id, details, consent_given_at) values ('20000000-0000-0000-0000-00000000000a', 'Asthma', now());
