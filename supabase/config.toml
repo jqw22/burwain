@@ -245,6 +245,17 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
+# Login emails carry a 6-digit code (typed into the sign-in page) as well as a link.
+# "magic_link" goes to people who have signed in before, "confirmation" to first-timers.
+# The live project needs the same text pasted in: Authentication > Emails in the dashboard.
+[auth.email.template.magic_link]
+subject = "Your Burwain login code"
+content_path = "./supabase/templates/login-code.html"
+
+[auth.email.template.confirmation]
+subject = "Your Burwain login code"
+content_path = "./supabase/templates/login-code.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"
