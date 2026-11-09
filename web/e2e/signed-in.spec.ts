@@ -305,8 +305,8 @@ test("an admin approves an Associate membership and finance records a cheque for
     insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
   `);
   const page = await adminPage(browser);
-  await page.getByRole("link", { name: "Payments", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Payments", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Income", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Income", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Awaiting committee approval" })).toBeVisible();
   await shot(page, "admin-memberships-approval");
 
