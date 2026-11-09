@@ -711,8 +711,9 @@ test("an admin previews, tests and sends renewal reminders, and a daily limit is
   await again.getByRole("checkbox", { name: `Send to Quinn Remind${run}` }).check();
   await again.getByRole("button", { name: "Send to 1 member" }).click();
   await page.getByRole("button", { name: "Yes, send now" }).click();
-  await expect(page.getByRole("alert")).toContainText("Sent 0 of 1.");
-  await expect(page.getByRole("alert")).toContainText("sending limit was reached");
+  const limit = page.getByRole("alert").filter({ hasText: "Sent 0 of 1." });
+  await expect(limit).toBeVisible();
+  await expect(limit).toContainText("sending limit was reached");
   await expect(page.getByRole("row", { name: `Quinn Remind${run}` })).toContainText("Not yet");
 });
 
