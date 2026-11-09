@@ -113,6 +113,33 @@ select pg_temp.expect_error($q$select start_membership(gen_random_uuid(), array[
 select pg_temp.expect_error($q$select * from people$q$, 'permission denied');
 reset role;
 
+\echo 'First sign-in links a login to the member record by email'
+insert into auth.users values ('00000000-0000-0000-0000-0000000000f1'), ('00000000-0000-0000-0000-0000000000f2'), ('00000000-0000-0000-0000-0000000000f3');
+insert into people (id, household_id, first_name, last_name, date_of_birth, email) values
+  ('20000000-0000-0000-0000-0000000000f1', null, 'Fran', 'New', '1985-01-01', 'Fran@Example.com'),
+  ('20000000-0000-0000-0000-0000000000f2', null, 'Gus', 'Twin', '1985-01-01', 'twin@example.com'),
+  ('20000000-0000-0000-0000-0000000000f3', null, 'Hal', 'Twin', '1986-01-01', 'twin@example.com'),
+  ('20000000-0000-0000-0000-0000000000f4', null, 'Ivy', 'Kid', '2015-01-01', 'kid@example.com');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+set request.jwt.claims = '{"email": "fran@example.com"}';
+do $$ begin
+  assert link_my_account() = '20000000-0000-0000-0000-0000000000f1', 'email match links the record (case-insensitive)';
+  assert current_person_id() = '20000000-0000-0000-0000-0000000000f1', 'now signed in as Fran';
+  assert link_my_account() = '20000000-0000-0000-0000-0000000000f1', 'linking again is harmless';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f2';
+set request.jwt.claims = '{"email": "twin@example.com"}';
+do $$ begin
+  assert link_my_account() is null, 'two adults share an email: not linked automatically';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f3';
+set request.jwt.claims = '{"email": "kid@example.com"}';
+do $$ begin
+  assert link_my_account() is null, 'junior records are never linked to a login';
+end $$;
+reset role;
+
 do $$ begin
   assert prorata_months('2026-03-01') = 12 and prorata_months('2026-09-10') = 6 and prorata_months('2027-02-01') = 1, 'pro rata months';
 end $$;
