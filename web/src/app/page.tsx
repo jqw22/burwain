@@ -69,9 +69,18 @@ export default async function HomePage() {
       {isAdmin && (
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="font-semibold">Club admin</h2>
-          <a href="/admin/import" className="mt-2 inline-block text-sky-800 underline">
-            Import members from the spreadsheet
-          </a>
+          <ul className="mt-2 space-y-1">
+            <li>
+              <a href="/admin/members" className="text-sky-800 underline">
+                Members
+              </a>
+            </li>
+            <li>
+              <a href="/admin/import" className="text-sky-800 underline">
+                Import members from the spreadsheet
+              </a>
+            </li>
+          </ul>
         </section>
       )}
       <SignOut />

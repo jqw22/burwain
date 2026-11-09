@@ -1,3 +1,4 @@
+import { AdminNav } from "@/components/admin";
 import { Card } from "@/components/fields";
 import { requireMe } from "@/lib/me";
 import { ImportForm } from "./import-form";
@@ -20,6 +21,7 @@ export default async function ImportPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Import members from the spreadsheet</h1>
+      <AdminNav current="import" />
       <p className="text-slate-700">
         Upload the member list. You&apos;ll see who will be added, grouped into families, before anything is saved.
         Uploading the same list again is safe: people already here are skipped.
