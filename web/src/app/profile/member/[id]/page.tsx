@@ -73,7 +73,9 @@ export default async function FamilyMemberPage({ params, searchParams }: PagePro
           <Field label="Date of birth" name="date_of_birth" type="date" defaultValue={m.date_of_birth} />
           <Field label="Email" name="email" type="email" defaultValue={m.email} />
           <Field label="Mobile" name="mobile" type="tel" defaultValue={m.mobile} />
-          <div />
+          <div className="self-end pb-2">
+            <Checkbox label="Happy to be contacted on WhatsApp" name="whatsapp" defaultChecked={m.whatsapp} />
+          </div>
           <Field label="Emergency contact name" name="emergency_contact_name" defaultValue={m.emergency_contact_name} />
           <Field label="Emergency contact mobile" name="emergency_contact_mobile" type="tel" defaultValue={m.emergency_contact_mobile} />
           <div className="sm:col-span-2">
