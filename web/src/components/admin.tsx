@@ -9,12 +9,13 @@ export function NotAllowed({ who = "club admins" }: { who?: string }) {
   );
 }
 
-export function AdminNav({ current }: { current: "members" | "new" | "applications" | "memberships" | "import" }) {
+export function AdminNav({ current }: { current: "members" | "new" | "applications" | "memberships" | "types" | "import" }) {
   const links = [
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "new", href: "/admin/members/new", label: "Add new member" },
     { key: "applications", href: "/admin/applications", label: "Applications" },
     { key: "memberships", href: "/admin/memberships", label: "Payments" },
+    { key: "types", href: "/admin/types", label: "Membership types" },
     { key: "import", href: "/admin/import", label: "Import spreadsheet" },
   ] as const;
   return (
