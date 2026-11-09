@@ -441,6 +441,71 @@ test("an admin adds new members: joining a family, a new family paying cash, and
   await expect(form.getByLabel("Last name")).toHaveValue(`Again${run}`);
 });
 
+test("a visitor applies on the public Join page, and an admin accepts one and declines another", async ({ browser }) => {
+  const visitor = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
+  const page = await visitor.newPage();
+  await page.goto("/join");
+  await page.waitForLoadState("networkidle");
+  const form = page.getByRole("form", { name: "Join Burwain" });
+  // Juniors join through a parent's Family membership, so Junior isn't offered.
+  await expect(form.getByLabel("Membership type").locator("option", { hasText: /^Junior/ })).toHaveCount(0);
+  const dual = await form.getByLabel("Membership type").locator("option", { hasText: /^Dual: £/ }).textContent();
+  await form.getByLabel("Membership type").selectOption({ label: dual! });
+  const one = page.getByRole("region", { name: "Person 1 (main contact)" });
+  await one.getByLabel("First name").fill("Iris");
+  await one.getByLabel("Last name").fill(`Joiner${run}`);
+  await one.getByLabel("Address line 1").fill("2 Boathouse Row");
+  await one.getByLabel("Postcode").fill("bb9 1jj");
+  await one.getByLabel(/^Email/).fill(`iris-${run}@example.test`);
+  await one.getByLabel("Medical details").fill("Hay fever.");
+  await one.getByLabel("I agree to the club holding this information").check();
+  const two = page.getByRole("region", { name: "Person 2" });
+  await two.getByLabel("First name").fill("Jon");
+  await two.getByLabel("Last name").fill(`Joiner${run}`);
+  await shot(page, "join");
+  await form.getByRole("button", { name: "Send application" }).click();
+  await expect(page.getByRole("status")).toContainText("We've received your application for Dual");
+  await shot(page, "join-thanks");
+
+  // A second application, which the admin will decline.
+  await page.goto("/join");
+  await page.waitForLoadState("networkidle");
+  const club = await form.getByLabel("Membership type").locator("option", { hasText: /^Club Membership: £/ }).textContent();
+  await form.getByLabel("Membership type").selectOption({ label: club! });
+  const you = page.getByRole("region", { name: "Your details" });
+  await you.getByLabel("First name").fill("Kay");
+  await you.getByLabel("Last name").fill(`Spammy${run}`);
+  await you.getByLabel("Address line 1").fill("1 Nowhere");
+  await you.getByLabel("Postcode").fill("XX1 1XX");
+  await you.getByLabel(/^Email/).fill(`kay-${run}@example.test`);
+  await form.getByRole("button", { name: "Send application" }).click();
+  await expect(page.getByRole("status")).toBeVisible();
+  await visitor.close();
+
+  const admin = await adminPage(browser);
+  await expect(admin.getByText(/\d+ waiting/)).toBeVisible();
+  await admin.getByRole("link", { name: "Applications" }).click();
+  const iris = admin.getByRole("region", { name: `Iris Joiner${run}: Dual` });
+  await expect(iris).toContainText(`Jon Joiner${run}`);
+  await expect(iris).toContainText("Given (visible on their member page once accepted)");
+  await expect(iris).not.toContainText("Hay fever");
+  await shot(admin, "admin-applications");
+  await admin.getByRole("button", { name: `Accept Iris Joiner${run}` }).click();
+  await expect(admin.getByText("Application accepted")).toBeVisible();
+  expect(
+    sql(`select count(*), count(distinct p.household_id), min(m.status::text), min(t.code)
+           from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
+           join membership_types t on t.id = m.membership_type_id where p.last_name = 'Joiner${run}'`),
+  ).toBe("2|1|awaiting_payment|D");
+
+  await admin.goto("/admin/applications");
+  await admin.getByRole("region", { name: `Kay Spammy${run}: Club Membership` }).getByLabel("Reason (optional)").fill("Not a real person");
+  await admin.getByRole("button", { name: `Decline Kay Spammy${run}` }).click();
+  await expect(admin.getByText("Application declined")).toBeVisible();
+  expect(sql(`select status, data is null from membership_applications where contact_email = 'kay-${run}@example.test'`)).toBe("declined|t");
+  expect(sql(`select count(*) from people where last_name = 'Spammy${run}'`)).toBe("0");
+});
+
 test("members see a directory of adult members, without payment status", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/");

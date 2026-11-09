@@ -45,6 +45,7 @@ export default async function HomePage() {
   ]);
 
   const history = (historyData ?? []) as HistoryRow[];
+  const waiting = isAdmin ? ((await supabase.rpc("pending_applications")).data ?? []).length : 0;
   const latestYear = history.map((h) => h.starts_on).sort().at(-1);
   const current = history.filter((h) => h.person_id === personId && h.starts_on === latestYear);
 
@@ -83,6 +84,12 @@ export default async function HomePage() {
                   <Link href="/admin/members/new" className="text-sky-800 underline">
                     Add new member
                   </Link>
+                </li>
+                <li>
+                  <Link href="/admin/applications" className="text-sky-800 underline">
+                    Applications
+                  </Link>
+                  {waiting > 0 && <span className="ml-2 rounded bg-amber-50 px-2 py-0.5 text-sm text-amber-900">{waiting} waiting</span>}
                 </li>
               </>
             )}

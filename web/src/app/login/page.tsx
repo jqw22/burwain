@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { sendLoginLink } from "./actions";
 
 const ERRORS: Record<string, string> = {
@@ -46,6 +47,12 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
               Email me a login link
             </button>
           </form>
+          <p className="mt-6 text-sm text-slate-600">
+            Not a member yet?{" "}
+            <Link href="/join" className="text-sky-800 underline">
+              Join Burwain
+            </Link>
+          </p>
         </>
       )}
     </div>

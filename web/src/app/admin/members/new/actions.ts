@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { meWithRole, text } from "@/lib/me";
+import { peopleFromForm } from "@/lib/member-form";
 
 // Database messages an admin can act on. Anything else gets a general message.
 const KNOWN: [string, string][] = [
@@ -45,11 +46,6 @@ const MESSAGES: Record<string, string> = {
   general: "Something went wrong. Please check the details and try again.",
 };
 
-const PERSON_FIELDS = [
-  "title", "first_name", "last_name", "date_of_birth", "email", "mobile",
-  "emergency_contact_name", "emergency_contact_mobile", "medical_details",
-];
-
 export async function adminAddMember(_prev: AddState, form: FormData): Promise<AddState> {
   const values = Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)]));
   const { supabase, allowed } = await meWithRole("admin");
@@ -64,24 +60,7 @@ export async function adminAddMember(_prev: AddState, form: FormData): Promise<A
   if (family === "existing" && !p.household_id) return { error: MESSAGES.family, values };
   if (!p.type_id) p.payment_method = null;
 
-  const count = Math.min(Math.max(Number(form.get("people_count") ?? 1), 1), 4);
-  p.people = Array.from({ length: count }, (_, i) => {
-    const key = (f: string) => `p${i}_${f}`;
-    const person: Record<string, unknown> = Object.fromEntries(PERSON_FIELDS.map((f) => [f, text(form, key(f))]));
-    person.whatsapp = form.get(key("whatsapp")) === "on";
-    person.medical_consent = form.get(key("medical_consent")) === "on";
-    person.news_consent = form.get(key("news_consent")) === "on";
-    person.directory_opt_out = form.get(key("directory_listed")) !== "on";
-    person.qualifications = form
-      .getAll(key("qual_name"))
-      .map((name, j) => ({
-        name: String(name).trim(),
-        awarded_on: String(form.getAll(key("qual_awarded"))[j] ?? "") || null,
-        expires_on: String(form.getAll(key("qual_expires"))[j] ?? "") || null,
-      }))
-      .filter((q) => q.name);
-    return person;
-  });
+  p.people = peopleFromForm(form);
 
   const { data, error } = await supabase.rpc("admin_add_member", { p });
   if (error) {
