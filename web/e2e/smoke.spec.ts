@@ -22,7 +22,14 @@ test("a login link without a code goes back to the login page", async ({ page })
   await expect(page).toHaveURL(/\/login\?error=link$/);
 });
 
-for (const path of ["/profile", "/membership", "/profile/member/00000000-0000-0000-0000-000000000000"]) {
+test("the Join page opens without a login", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Join Burwain" }).click();
+  await expect(page).toHaveURL(/\/join$/);
+  await expect(page.getByRole("heading", { name: "Join Burwain" })).toBeVisible();
+});
+
+for (const path of ["/profile", "/membership", "/admin/applications", "/profile/member/00000000-0000-0000-0000-000000000000"]) {
   test(`${path} needs a login`, async ({ page }) => {
     await page.goto(path);
     await expect(page).toHaveURL(/\/login$/);

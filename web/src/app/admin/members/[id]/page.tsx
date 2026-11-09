@@ -34,6 +34,7 @@ const SAVED: Record<string, string> = {
   medical: "Medical information saved.",
   qualification: "Qualifications updated.",
   preferences: "Preferences saved.",
+  accepted: "Application accepted: they're now a member, with their membership awaiting payment.",
   added: "New member added. Their membership, if you chose one, is on the Payments page.",
 };
 const ERRORS: Record<string, string> = {
@@ -140,7 +141,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
       {(roles ?? []).length > 0 && (
         <p className="text-sm text-slate-600">Roles: {(roles as { role: string }[]).map((r) => r.role).join(", ")}</p>
       )}
-      {savedKey === "added" && <Notice message={SAVED.added} />}
+      {(savedKey === "added" || savedKey === "accepted") && <Notice message={SAVED[savedKey]} />}
 
       <Card id="membership" title="Membership">
         {myHistory.length === 0 ? (

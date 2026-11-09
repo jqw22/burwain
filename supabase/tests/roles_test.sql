@@ -419,4 +419,56 @@ select pg_temp.expect_error($q$select admin_save_medical('20000000-0000-0000-000
 reset role;
 reset request.jwt.claim.sub;
 
+\echo 'Public applications: anyone can apply, admins accept or decline'
+set role anon;
+reset request.jwt.claim.sub;
+do $$ begin
+  assert (select count(*) from join_options() where cover = 'junior') = 0, 'Junior not offered publicly';
+  assert (select count(*) from join_options()) > 0, 'options offered';
+end $$;
+select pg_temp.expect_error($q$select * from membership_applications$q$, 'permission denied');
+select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'individual' limit 1),
+  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '1 A', 'postcode', 'BB1',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'email', 'a@example.com'))))$q$, 'already uses that email');
+select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'dual' limit 1),
+  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '1 A', 'postcode', 'BB1',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'email', 'ann@example.com'))))$q$, 'exactly two');
+select pg_temp.expect_error($q$select accept_application(gen_random_uuid())$q$, 'permission denied');
+select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Family' limit 1),
+  'club_year_id', (select club_year_id from join_options() where is_next_year limit 1), 'address_line1', '3 Dam Rd', 'postcode', 'bb3 3cc',
+  'household_id', '10000000-0000-0000-0000-000000000001', 'payment_method', 'cash',
+  'people', jsonb_build_array(
+    jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'email', 'Ann@Example.com', 'medical_details', 'Asthma', 'medical_consent', true),
+    jsonb_build_object('first_name', 'Ben', 'last_name', 'Apply', 'date_of_birth', '2016-01-01')))) \gset app_
+select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
+  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'email', 'spam@example.com', 'medical_details', 'x', 'medical_consent', true)))) \gset spam_
+select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
+  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'email', 'spam@example.com'))))$q$, 'already an application');
+reset role;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error(format('select accept_application(%L)', :'app_submit_application'), 'Only an admin');
+do $$ begin
+  assert (select count(*) from membership_applications) = 0, 'members can''t see applications';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+do $$ declare ann uuid; hh uuid; begin
+  assert (select count(*) from pending_applications()) = 2, 'two waiting';
+  assert (select has_medical from pending_applications() where contact_name = 'Ann Apply'), 'medical flagged, not shown';
+  ann := accept_application((select id from pending_applications() where contact_name = 'Ann Apply'));
+  select household_id into hh from people where id = ann;
+  assert hh <> '10000000-0000-0000-0000-000000000001', 'can''t be slipped into an existing family';
+  assert (select count(*) from people where household_id = hh) = 2, 'Ann and Ben in a new family';
+  assert (select status::text from memberships where household_id = hh) = 'awaiting_payment', 'no payment recorded from outside';
+  assert (select email from people where id = ann) = 'ann@example.com', 'email saved';
+  assert (select data is null and status = 'accepted' from membership_applications where person_id = ann), 'application closed';
+  perform decline_application((select id from pending_applications() where contact_name = 'Spam Bot'), 'Spam');
+  assert (select data is null and status = 'declined' from membership_applications where contact_name = 'Spam Bot'), 'declined details deleted';
+end $$;
+select pg_temp.expect_error(format('select accept_application(%L)', :'app_submit_application'), 'already been dealt with');
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'
