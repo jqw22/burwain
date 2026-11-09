@@ -34,27 +34,35 @@ export function Checkbox({ label, name, defaultChecked }: { label: string; name:
   );
 }
 
-export function Card({ title, children }: { title: string; children: React.ReactNode }) {
+export function Card({
+  title,
+  children,
+  action,
+  id,
+}: {
+  title: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+  id?: string;
+}) {
   return (
-    <section aria-label={title} className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold">{title}</h2>
+    <section id={id} aria-label={title} className="scroll-mt-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex items-baseline justify-between gap-4">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        {action}
+      </div>
       <div className="mt-4">{children}</div>
     </section>
   );
 }
 
-export function SaveButton({ children = "Save" }: { children?: React.ReactNode }) {
-  return (
-    <button type="submit" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
-      {children}
-    </button>
-  );
-}
+export { SaveButton } from "./save-button";
 
 export function Notice({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <p className="rounded bg-emerald-50 p-3 text-emerald-900" role="status">
+    <p className="flex items-center gap-2 rounded border border-emerald-300 bg-emerald-50 p-3 font-medium text-emerald-900" role="status">
+      <span aria-hidden="true">✓</span>
       {message}
     </p>
   );

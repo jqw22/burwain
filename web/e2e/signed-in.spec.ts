@@ -106,7 +106,7 @@ test("a member signs in with an email link and sees their membership", async ({ 
   const page = await leadPage(browser);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Welcome, Sam" })).toBeVisible();
-  await expect(page.getByText(/Family \(\d{4}\/\d{2}\):/)).toBeVisible();
+  await expect(page.getByText(/Family \(\d{4}\):/)).toBeVisible();
   await expect(page.getByText("Paid")).toBeVisible();
   // The login is now linked to Sam's member record.
   expect(sql(`select auth_user_id is not null from people where email = '${leadEmail}'`)).toBe("t");
@@ -117,8 +117,12 @@ test("a member updates their own details, medical info and qualifications", asyn
   const page = await leadPage(browser);
   await page.goto("/profile");
   // Membership type, cost and payment status at the top.
-  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Family \(\d{4}\/\d{2}\): £255\s*Paid/);
+  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Family \(\d{4}\): £255\s*Paid/);
   const contact = page.getByRole("region", { name: "Contact details" });
+  // Boxes show details read-only until you click Edit.
+  await expect(contact.getByText("Not given").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save details" })).toHaveCount(0);
+  await contact.getByRole("link", { name: "Edit contact details" }).click();
   await expect(contact.getByLabel("First name")).toHaveValue("Sam");
 
   await contact.getByLabel("Mobile", { exact: true }).fill("07700 900123");
@@ -126,15 +130,17 @@ test("a member updates their own details, medical info and qualifications", asyn
   await contact.getByLabel("I'm happy to be contacted on WhatsApp").check();
   await contact.getByRole("button", { name: "Save details" }).click();
   await expect(page.getByRole("status")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Contact details" }).getByLabel("Mobile", { exact: true })).toHaveValue("07700 900123");
+  await expect(page.getByRole("region", { name: "Contact details" })).toContainText("07700 900123 (WhatsApp OK)");
   expect(sql(`select mobile || '|' || whatsapp from people where email = '${leadEmail}'`)).toBe("07700 900123|true");
 
+  await page.getByRole("link", { name: "Edit medical information" }).click();
   await page.getByLabel("Medical details").fill("Mild asthma, inhaler in kit bag.");
   await page.getByLabel("I agree to the club holding this information").check();
   await page.getByRole("button", { name: "Save medical information" }).click();
-  await expect(page.getByLabel("Medical details")).toHaveValue("Mild asthma, inhaler in kit bag.");
+  await expect(page.getByRole("region", { name: "Your medical information" })).toContainText("Mild asthma, inhaler in kit bag.");
   expect(sql(`select count(*) from medical_records r join people p on p.id = r.person_id where p.email = '${leadEmail}'`)).toBe("1");
 
+  await page.getByRole("link", { name: "Edit qualifications" }).click();
   await page.getByRole("textbox", { name: /^Qualification/ }).fill("RYA Dinghy Level 2");
   await page.getByLabel("Awarded").fill("2024-06-30");
   await page.getByLabel("Expires").fill("2028-06-30");
@@ -152,7 +158,8 @@ test("the family lead sees the family on Your details, adds a junior and manages
   await expect(family.getByText(`Robin Tester${run}`)).toBeVisible();
   await expect(family.getByText("junior, 12")).toBeVisible();
 
-  const add = page.getByRole("region", { name: "Add a family member" });
+  await family.getByRole("link", { name: "Add a family member" }).click();
+  const add = page.getByRole("form", { name: "Add a family member" });
   await add.getByLabel("First name").fill("Charlie");
   await add.getByLabel("Last name").fill(`Tester${run}`);
   await add.getByLabel("Date of birth").fill("2018-04-02");
@@ -300,9 +307,10 @@ test("someone not in a family group sets one up and adds a family member", async
   await family.getByLabel("Postcode").fill("bb10 2cc");
   await family.getByRole("button", { name: "Set up my family" }).click();
   await expect(page.getByText("Your family group is set up.")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Home address" }).getByLabel("Postcode")).toHaveValue("BB10 2CC");
+  await expect(page.getByRole("region", { name: "Home address" })).toContainText("BB10 2CC");
 
-  const add = page.getByRole("region", { name: "Add a family member" });
+  await page.getByRole("link", { name: "Add a family member" }).click();
+  const add = page.getByRole("form", { name: "Add a family member" });
   await add.getByLabel("First name").fill("Ben");
   await add.getByLabel("Last name").fill(`Admin${run}`);
   await add.getByRole("button", { name: "Add to family" }).click();

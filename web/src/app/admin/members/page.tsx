@@ -1,3 +1,4 @@
+import { SaveButton } from "@/components/fields";
 import Link from "next/link";
 import { AdminNav, NotAllowed, STATUS_LABEL } from "@/components/admin";
 import { ageOn, meWithRole } from "@/lib/me";
@@ -54,9 +55,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
           placeholder="Search by name or email"
           className="w-full rounded border border-slate-300 bg-white px-3 py-2"
         />
-        <button type="submit" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
-          Search
-        </button>
+        <SaveButton>Search</SaveButton>
       </form>
       <p className="text-sm text-slate-600">
         {rows.length} {rows.length === 1 ? "person" : "people"}

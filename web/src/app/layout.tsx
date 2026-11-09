@@ -16,9 +16,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/" className="font-semibold text-sky-900">
               Home
             </Link>
-            <Link href="/membership" className="text-sm text-slate-700 hover:text-sky-900">
-              Membership
-            </Link>
             <Link href="/profile" className="text-sm text-slate-700 hover:text-sky-900">
               Your details
             </Link>
