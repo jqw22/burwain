@@ -130,7 +130,8 @@ test("a member updates their own details, medical info and qualifications", asyn
   await contact.getByLabel("I'm happy to be contacted on WhatsApp").check();
   await contact.getByRole("button", { name: "Save details" }).click();
   await expect(page.getByRole("status")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Contact details" })).toContainText("07700 900123 (WhatsApp OK)");
+  await expect(page.getByRole("region", { name: "Contact details" })).toContainText("07700 900123");
+  await expect(page.getByRole("region", { name: "Contact details" })).toContainText("Happy to be contacted on WhatsAppYes");
   expect(sql(`select mobile || '|' || whatsapp from people where email = '${leadEmail}'`)).toBe("07700 900123|true");
 
   await page.getByRole("link", { name: "Edit medical information" }).click();
@@ -177,6 +178,14 @@ test("the family lead sees the family on Your details, adds a junior and manages
   // Medical information for the junior.
   await page.getByRole("link", { name: `Edit Robin Tester${run}` }).click();
   // Wait for the page to finish loading, or the browser can reset a box typed into too early.
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Happy to be contacted on WhatsApp").check();
+  await page.getByRole("button", { name: "Save details" }).click();
+  await expect(page.getByText("Details saved.")).toBeVisible();
+  expect(sql(`select whatsapp from people where first_name = 'Robin' and last_name = 'Tester${run}'`)).toBe("t");
+  await page.goto("/profile");
+  await expect(page.getByRole("region", { name: "Your family" }).getByRole("listitem").filter({ hasText: `Robin Tester${run}` })).toContainText("WhatsApp: yes");
+  await page.getByRole("link", { name: `Edit Robin Tester${run}` }).click();
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Medical details").fill("Hay fever.");
   await page.getByLabel(/I agree to the club holding this information/).check();

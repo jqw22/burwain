@@ -54,7 +54,7 @@ type Household = {
   address_line4: string | null;
   postcode: string | null;
 };
-type Member = { id: string; first_name: string; last_name: string; date_of_birth: string | null };
+type Member = { id: string; first_name: string; last_name: string; date_of_birth: string | null; whatsapp: boolean };
 type Held = {
   memberships: {
     status: string;
@@ -83,7 +83,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
     me.household_id
       ? supabase
           .from("people")
-          .select("id, first_name, last_name, date_of_birth")
+          .select("id, first_name, last_name, date_of_birth, whatsapp")
           .eq("household_id", me.household_id)
           .is("archived_at", null)
           .order("date_of_birth")
@@ -193,7 +193,8 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
             <Item label="Name" value={[me.title, me.first_name, me.last_name].filter(Boolean).join(" ")} />
             <Item label="Date of birth" value={me.date_of_birth && ukDate(me.date_of_birth)} />
             <Item label="Contact email" value={me.email} />
-            <Item label="Mobile" value={me.mobile && `${me.mobile}${me.whatsapp ? " (WhatsApp OK)" : ""}`} />
+            <Item label="Mobile" value={me.mobile} />
+            <Item label="Happy to be contacted on WhatsApp" value={me.whatsapp ? "Yes" : "No"} />
             <Item
               label="Emergency contact"
               value={[me.emergency_contact_name, me.emergency_contact_mobile].filter(Boolean).join(", ")}
@@ -238,6 +239,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
                         {m.first_name} {m.last_name}
                         {m.id === household.lead_person_id && <span className="ml-2 text-sm text-slate-500">main contact</span>}
                         {age !== null && age < 18 && <span className="ml-2 text-sm text-slate-500">junior, {age}</span>}
+                        <span className="block text-sm text-slate-500">WhatsApp: {m.whatsapp ? "yes" : "no"}</span>
                       </span>
                       {isLead && (
                         <Link
@@ -269,6 +271,9 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
                 <Field label="Date of birth" name="date_of_birth" type="date" hint="Needed for junior memberships." />
                 <Field label="Email (adults)" name="email" type="email" hint="Lets them sign in with their own login." />
                 <Field label="Mobile" name="mobile" type="tel" />
+                <div className="self-end pb-2">
+                  <Checkbox label="Happy to be contacted on WhatsApp" name="whatsapp" />
+                </div>
                 <FormButtons section="family" cancelText="Done">Add to family</FormButtons>
               </form>
             )}

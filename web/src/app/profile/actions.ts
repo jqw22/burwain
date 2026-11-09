@@ -96,6 +96,7 @@ export async function addFamilyMember(form: FormData) {
     date_of_birth: text(form, "date_of_birth"),
     email: text(form, "email")?.toLowerCase() ?? null,
     mobile: text(form, "mobile"),
+    whatsapp: form.get("whatsapp") === "on",
   });
   redirect(error ? "/profile?edit=family&error=add#family" : "/profile?edit=family&saved=add#family");
 }
@@ -111,6 +112,7 @@ export async function saveFamilyMember(form: FormData) {
       date_of_birth: text(form, "date_of_birth"),
       email: text(form, "email")?.toLowerCase() ?? null,
       mobile: text(form, "mobile"),
+      whatsapp: form.get("whatsapp") === "on",
       emergency_contact_name: text(form, "emergency_contact_name"),
       emergency_contact_mobile: text(form, "emergency_contact_mobile"),
     })
