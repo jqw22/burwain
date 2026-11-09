@@ -167,3 +167,40 @@ begin
 end $$;
 revoke execute on function admin_add_member(jsonb) from public, anon;
 grant execute on function admin_add_member(jsonb) to authenticated;
+
+-- Members renew a membership they hold this year for next year: same type, same people.
+-- Changing type or adding a membership is done by club admins.
+create function renew_my_membership(p_membership uuid, p_club_year_id uuid) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := current_person_id();
+  m      memberships;
+  t      membership_types;
+  people uuid[];
+begin
+  if me is null then raise exception 'Not logged in'; end if;
+  select * into m from memberships where id = p_membership and status in ('active', 'awaiting_payment', 'pending_approval');
+  if not found then raise exception 'That membership can''t be renewed'; end if;
+  if not (m.payer_person_id = me or (m.household_id is not null and is_household_lead(m.household_id))) then
+    raise exception 'Only your family''s main contact can renew';
+  end if;
+  if not exists (select 1 from open_club_years() o where o.id = p_club_year_id and o.is_renewal) then
+    raise exception 'Renewals for that year are not open yet';
+  end if;
+  if not exists (select 1 from club_years cy join club_years nx on nx.id = p_club_year_id
+                  where cy.id = m.club_year_id and cy.ends_on < nx.starts_on
+                    and club_today() between cy.starts_on and cy.ends_on) then
+    raise exception 'Only this year''s memberships can be renewed';
+  end if;
+  select * into t from membership_types where id = m.membership_type_id;
+  -- Juniors: the sibling price (J1, J2, J3) is worked out again for the new year.
+  if t.sibling_order is not null then
+    select * into t from membership_types where cover = 'junior' and sibling_order = 1 order by sort_order limit 1;
+  end if;
+  select array_agg(mp.person_id) into people
+    from membership_people mp join people p on p.id = mp.person_id
+   where mp.membership_id = m.id and p.archived_at is null;
+  return create_membership(coalesce(m.payer_person_id, me), t.id, people, p_club_year_id, false);
+end $$;
+revoke execute on function renew_my_membership(uuid, uuid) from public, anon;
+grant execute on function renew_my_membership(uuid, uuid) to authenticated;

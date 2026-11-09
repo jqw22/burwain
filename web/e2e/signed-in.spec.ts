@@ -211,12 +211,12 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(box.getByRole("link", { name: /Join|add a membership/i })).toHaveCount(0);
   await shot(page, "renew-before");
 
-  // Changing type: a Junior membership for an adult is refused with a clear reason.
-  await box.getByRole("link", { name: "Change membership type" }).click();
-  const change = page.getByRole("form", { name: "Change membership type" });
-  await change.getByRole("radio", { name: /^Junior:/ }).check();
-  await change.getByRole("button", { name: `Add for ${next}` }).click();
-  await expect(page.getByText("Someone is over the age limit")).toBeVisible();
+  // Members can only renew: no choosing a different or extra membership type.
+  await expect(box.getByRole("link", { name: "Change membership type" })).toHaveCount(0);
+  await expect(page.getByRole("radio")).toHaveCount(0);
+  // The old Membership page now opens Your details.
+  await page.goto("/membership");
+  await expect(page).toHaveURL(/\/profile/);
 
   await page.goto("/profile");
   await page.getByRole("button", { name: `Renew for ${next}` }).click();

@@ -358,4 +358,27 @@ end $$;
 reset role;
 reset request.jwt.claim.sub;
 
+\echo 'Members renew this year''s memberships for next year, and only those'
+-- club_today is 2026-12-05, so 2027 renewals are open. Eve holds C and A for 2026.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
+do $$ declare c uuid; n uuid; begin
+  select m.id into c from memberships m join membership_types t on t.id = m.membership_type_id
+   where m.payer_person_id = '20000000-0000-0000-0000-00000000000e' and t.code = 'C' and m.club_year_id = (select id from club_years where label = '2026') and m.status <> 'cancelled';
+  n := renew_my_membership(c, (select id from club_years where label = '2027'));
+  assert (select t.code from memberships m join membership_types t on t.id = m.membership_type_id where m.id = n) = 'C', 'same type';
+  assert (select price_pence from memberships where id = n) = 3000, 'full price for next year';
+  assert (select array_agg(person_id) from membership_people where membership_id = n) = array['20000000-0000-0000-0000-00000000000e'::uuid], 'same people';
+end $$;
+select pg_temp.expect_error($q$select renew_my_membership((select m.id from memberships m join membership_types t on t.id = m.membership_type_id where t.code = 'C' and m.club_year_id = (select id from club_years where label = '2027') and m.payer_person_id = '20000000-0000-0000-0000-00000000000e'), (select id from club_years where label = '2027'))$q$, 'this year');
+reset role;
+select m.id as eve_c from memberships m join membership_types t on t.id = m.membership_type_id
+ where t.code = 'C' and m.club_year_id = (select id from club_years where label = '2026')
+   and m.payer_person_id = '20000000-0000-0000-0000-00000000000e' and m.status <> 'cancelled' \gset
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error(format('select renew_my_membership(%L, (select id from club_years where label = %L))', :'eve_c', '2027'), 'main contact');
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'

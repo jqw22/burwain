@@ -138,7 +138,6 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
         householdId={me.household_id}
         canRenew={!household || isLead}
         family={(familyData ?? []) as Member[]}
-        editing={editing}
         messages={messages("renew")}
       />
 
