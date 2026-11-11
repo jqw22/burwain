@@ -703,8 +703,9 @@ test("an admin adds a membership type, changes its price and makes it inactive",
 
 test("an admin edits the renewal reminder email with a live preview, and adds another template", async ({ browser }) => {
   const page = await adminPage(browser);
-  await page.goto("/admin/members");
-  await page.getByRole("link", { name: "Email templates" }).click();
+  // Found in the Admin communications box on Home.
+  await page.goto("/");
+  await page.getByRole("link", { name: "Email templates", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Email templates", exact: true })).toBeVisible();
   await expect(page.getByRole("row", { name: "Renewal reminder" })).toContainText("Renewal reminder");
 
@@ -766,8 +767,9 @@ test("an admin previews, tests and sends renewal reminders, and a daily limit is
     `);
   }
   const page = await adminPage(browser);
-  await page.goto("/admin/members");
-  await page.getByRole("link", { name: "Renewal reminders" }).click();
+  // Found in the Admin communications box on Home.
+  await page.goto("/");
+  await page.getByRole("link", { name: "Renewal reminders", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Renewal reminders", exact: true })).toBeVisible();
   const rita = page.getByRole("row", { name: `Rita Remind${run}` });
   await expect(rita).toContainText("Individual Sailing");
