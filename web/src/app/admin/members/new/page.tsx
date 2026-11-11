@@ -15,8 +15,9 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
     supabase.rpc("open_club_years"),
     supabase
       .from("membership_types")
-      .select("id, name, cover, annual_price_pence, sibling_order")
+      .select("id, club_year_id, starts_on, ends_on, name, cover, annual_price_pence, sibling_order")
       .eq("is_open", true)
+      .gte("ends_on", new Date().toISOString().slice(0, 10))
       .order("sort_order"),
     supabase.from("households").select("id, postcode, address_line1, lead_person_id"),
     supabase.from("people").select("id, first_name, last_name, household_id").is("archived_at", null).not("household_id", "is", null),
@@ -31,12 +32,6 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
     .gte("club_years.ends_on", new Date().toISOString().slice(0, 10));
   const sharing = new Set(((shared ?? []) as { household_id: string | null }[]).map((m) => m.household_id));
   const yearList = (years ?? []) as Year[];
-  const current = yearList.find((y) => !y.is_renewal);
-  const { data: quote } = current
-    ? await supabase.rpc("membership_quote", { p_type_id: (types ?? [])[0]?.id, p_club_year_id: current.id })
-    : { data: null };
-  const months = (quote as { months: number }[] | null)?.[0]?.months ?? 12;
-
   const everyone = (people ?? []) as Person[];
   const families: Family[] = ((households ?? []) as Household[])
     .map((h) => {
@@ -65,7 +60,6 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
         years={yearList}
         types={(types ?? []) as Type[]}
         families={families}
-        months={months}
         canRecordPayment={Boolean(isFinance)}
         householdId={typeof params.household === "string" ? params.household : undefined}
         today={new Date().toISOString().slice(0, 10)}

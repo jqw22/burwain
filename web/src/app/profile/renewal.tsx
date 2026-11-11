@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { STATUS_LABEL } from "@/components/admin";
-import { SaveButton } from "@/components/fields";
 import { ageOn, pounds } from "@/lib/me";
 import type { createClient } from "@/lib/supabase/server";
-import { renewMemberships } from "./actions";
+import { RenewForm, type RenewPerson, type RenewType } from "./renew-form";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 type Year = { id: string; label: string; starts_on: string; ends_on: string; is_renewal: boolean };
@@ -33,7 +32,8 @@ type Member = { id: string; first_name: string; last_name: string; date_of_birth
 const RENEWABLE = ["active", "awaiting_payment", "pending_approval"];
 
 // "Your membership" on Your details: this year's memberships, and renewing for next year once renewals open.
-// Members can only renew what they have. Joining or changing type is done by club admins.
+// Members renew the people on this year's memberships into any of next year's types.
+// Adding people who weren't members this year is done by club admins.
 export async function RenewalCard({
   supabase,
   personId,
@@ -79,29 +79,41 @@ export async function RenewalCard({
   const nextYear = memberships.filter((m) => m.club_year_id === next?.id);
   const coveredNext = new Set(nextYear.flatMap((m) => m.membership_people.map((p) => p.person_id)));
 
-  // What to renew: this year's memberships whose people aren't sorted for next year yet.
-  // Adults first, because a junior needs an adult member in the family.
-  const toRenew = next
-    ? thisYear
-        .filter((m) => RENEWABLE.includes(m.status) && m.membership_types)
-        .filter((m) => m.membership_people.some((p) => !coveredNext.has(p.person_id)))
-        .sort((a, b) => Number(a.membership_types!.cover === "junior") - Number(b.membership_types!.cover === "junior"))
+  // Who can be renewed: people on this year's memberships who aren't covered for next year yet.
+  // Members choose any of next year's active types for them (upgrade or downgrade).
+  const pool = next
+    ? [...new Set(
+        thisYear
+          .filter((m) => RENEWABLE.includes(m.status))
+          .flatMap((m) => m.membership_people.map((p) => p.person_id))
+          .filter((id) => !coveredNext.has(id) && (people.length === 0 || people.some((p) => p.id === id))),
+      )].sort((a, b) => order(a) - order(b))
     : [];
-  const problem = (m: Membership) => {
-    const t = m.membership_types!;
-    if (!t.is_open) return `${t.name} isn't offered for ${next!.label}.`;
-    if (t.max_age !== null) {
-      const over = m.membership_people.find((p) => {
-        const dob = people.find((x) => x.id === p.person_id)?.date_of_birth ?? null;
-        const age = ageOn(dob, new Date(next!.starts_on));
-        return age === null || age > t.max_age!;
-      });
-      if (over) return `${nameOf(over.person_id)} will be too old for ${t.name} in ${next!.label} (or their date of birth is missing).`;
-    }
-    return null;
-  };
-  const ready = toRenew.filter((m) => !problem(m));
-  const blocked = toRenew.filter((m) => problem(m));
+  const { data: typesData } = next
+    ? await supabase
+        .from("membership_types")
+        .select("id, code, name, description, cover, annual_price_pence, max_age, sibling_order, starts_on, ends_on")
+        .eq("club_year_id", next.id)
+        .eq("is_open", true)
+        .gte("ends_on", new Date().toISOString().slice(0, 10))
+        .order("sort_order")
+    : { data: [] };
+  const nextTypes = ((typesData ?? []) as (RenewType & { code: string; sibling_order: number | null })[])
+    // Juniors are offered once; the second and third sibling prices are picked automatically.
+    .filter((t) => t.sibling_order === null || t.sibling_order === 1);
+  // Start with the same type as this year, where next year has it.
+  const first = thisYear.find((m) => m.membership_people.some((p) => pool.includes(p.person_id)))?.membership_types;
+  const suggested = (
+    nextTypes.find((t) => t.code === first?.code) ?? (first?.cover === "junior" ? nextTypes.find((t) => t.cover === "junior") : undefined)
+  )?.id;
+  const renewPeople: RenewPerson[] = pool.map((id) => {
+    const person = people.find((p) => p.id === id);
+    return {
+      id,
+      name: person ? `${person.first_name} ${person.last_name}` : "You",
+      age: ageOn(person?.date_of_birth ?? null, new Date(next!.starts_on)),
+    };
+  });
 
   const status = (s: string) => (
     <span
@@ -158,46 +170,19 @@ export async function RenewalCard({
             )}
             {!canRenew ? (
               <p className="mt-2 text-slate-700">Your family&apos;s main contact renews for everyone.</p>
-            ) : toRenew.length === 0 ? (
+            ) : pool.length === 0 ? (
               nextYear.length === 0 && (
                 <p className="mt-2 text-slate-700">There&apos;s nothing from {current?.label ?? "this year"} to renew.</p>
               )
             ) : (
               <>
-                {ready.length > 0 && (
-                  <form action={renewMemberships} className="mt-2 space-y-3">
-                    <p className="text-slate-700">Renew the same memberships for {next.label}, full year:</p>
-                    <ul className="space-y-1">
-                      {ready.map((m) => (
-                        <li key={m.id}>
-                          <strong>{m.membership_types!.cover === "junior" ? "Junior" : m.membership_types!.name}</strong> for{" "}
-                          {names(m)}: {pounds(m.membership_types!.annual_price_pence)}
-                          <input type="hidden" name="renew" value={m.id} />
-                        </li>
-                      ))}
-                    </ul>
-                    <input type="hidden" name="club_year_id" value={next.id} />
-                    <label className="flex items-start gap-2 rounded border border-sky-300 bg-white p-3">
-                      <input name="confirm" type="checkbox" required className="mt-1" />
-                      <span className="text-sm">
-                        I confirm that all my personal details{people.length > 1 && " (and my family's)"} are up to date.
-                      </span>
-                    </label>
-                    <SaveButton pendingText="Renewing…">Renew for {next.label}</SaveButton>
-                  </form>
-                )}
-                {blocked.length > 0 && (
-                  <ul className="mt-3 space-y-1 text-amber-900">
-                    {blocked.map((m) => (
-                      <li key={m.id}>
-                        {problem(m)} Please contact the membership secretary to change it.
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                {nextYear.length > 0 && <p className="mt-3 font-medium text-sky-950">Renew the others</p>}
+                <RenewForm yearId={next.id} yearLabel={next.label} people={renewPeople} types={nextTypes} suggested={suggested} />
+                <p className="mt-2 text-sm text-slate-600">
+                  To add someone who wasn&apos;t a member this year, please contact the membership secretary.
+                </p>
               </>
             )}
-
           </div>
         )}
       </div>

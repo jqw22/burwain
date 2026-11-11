@@ -38,7 +38,7 @@ test.beforeAll(() => {
       returning id
     ), m as (
       insert into memberships (club_year_id, membership_type_id, payer_person_id, household_id, status, price_pence)
-      select current_club_year_id(), (select id from membership_types where code = 'F'), lead.id, lead.household_id, 'active', 25500
+      select current_club_year_id(), (select id from membership_types where code = 'F' and club_year_id = current_club_year_id()), lead.id, lead.household_id, 'active', 25500
         from lead returning id
     )
     insert into membership_people (membership_id, person_id)
@@ -261,21 +261,31 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(box.getByRole("link", { name: /Join|add a membership/i })).toHaveCount(0);
   await shot(page, "renew-before");
 
-  // Members can only renew: no choosing a different or extra membership type.
-  await expect(box.getByRole("link", { name: "Change membership type" })).toHaveCount(0);
-  await expect(page.getByRole("radio")).toHaveCount(0);
+  // Members choose any of next year's types for the people ticked, starting with the same type as this year.
+  const type = box.getByLabel(`Membership type for ${next}`);
+  await expect(type.locator("option:checked")).toHaveText("Family: £255");
+  await expect(type.locator("option", { hasText: "Individual Sailing" })).toHaveCount(0); // covers one person, three are ticked
+  await box.getByRole("checkbox", { name: /^Alex / }).uncheck();
+  await box.getByRole("checkbox", { name: /^Robin / }).uncheck();
+  await expect(type.locator("option", { hasText: "Individual Sailing" })).toHaveCount(1);
+  await box.getByRole("checkbox", { name: /^Alex / }).check();
+  await box.getByRole("checkbox", { name: /^Robin / }).check();
+  await expect(type.locator("option:checked")).toHaveText("Family: £255");
   // The old Membership page now opens Your details.
   await page.goto("/membership");
   await expect(page).toHaveURL(/\/profile/);
 
   await page.goto("/profile");
-  // The member must confirm their details are up to date before renewing.
-  const confirm = page.getByLabel(/I confirm that all my personal details .*are up to date/);
-  await expect(confirm).not.toBeChecked();
+  // After pressing Renew, the next screen asks whether their details are up to date.
   await page.getByRole("button", { name: `Renew for ${next}` }).click();
-  await expect(page).toHaveURL(/\/profile(\?|#|$)/); // the browser stops the form until the box is ticked
-  await confirm.check();
+  const question = page.getByRole("region", { name: "Are your personal details up to date?" });
+  await expect(question).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your renewal" })).toContainText("Family for Sam");
+  await shot(page, "renew-confirm");
+  await question.getByRole("link", { name: "No, I need to update them first" }).click();
+  await expect(page).toHaveURL(/\/profile$/);
   await page.getByRole("button", { name: `Renew for ${next}` }).click();
+  await page.getByRole("button", { name: "Yes, they're up to date. Renew" }).click();
 
   // A test checkout: the order, a choice of card or Direct Debit, and a Pay button. No money is taken.
   await expect(page.getByRole("heading", { name: "Checkout" })).toBeVisible();
@@ -354,7 +364,7 @@ test("an admin finds a member, edits them and views their medical details", asyn
   sql(`
     with p as (insert into people (first_name, last_name, date_of_birth) values ('Pat', 'Tester${run}', '1960-03-03') returning id),
     m as (insert into memberships (club_year_id, membership_type_id, payer_person_id, status, price_pence)
-          select current_club_year_id(), (select id from membership_types where code = 'IS'), p.id, 'lapsed', 10000 from p
+          select current_club_year_id(), (select id from membership_types where code = 'IS' and club_year_id = current_club_year_id()), p.id, 'lapsed', 10000 from p
           returning id, payer_person_id)
     insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
   `);
@@ -411,12 +421,12 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await shot(page, "admin-member");
 });
 
-test("an admin approves an Associate membership and finance records a cheque for it", async ({ browser }) => {
-  // Alex has asked for an Associate membership, which needs approval.
+test("finance records a cheque for an Associate membership, which no longer needs approval", async ({ browser }) => {
+  // Alex has asked for an Associate membership. It goes straight to awaiting payment.
   sql(`
     with m as (
       insert into memberships (club_year_id, membership_type_id, payer_person_id, household_id, status, price_pence)
-      select current_club_year_id(), (select id from membership_types where code = 'A'), p.id, p.household_id, 'pending_approval', 3000
+      select current_club_year_id(), (select id from membership_types where code = 'A' and club_year_id = current_club_year_id()), p.id, p.household_id, 'awaiting_payment', 3000
         from people p where p.email = 'alex-${run}@example.test' returning id, payer_person_id
     )
     insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
@@ -424,11 +434,7 @@ test("an admin approves an Associate membership and finance records a cheque for
   const page = await adminPage(browser);
   await page.getByRole("link", { name: "Income", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Income", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Awaiting committee approval" })).toBeVisible();
-  await shot(page, "admin-memberships-approval");
-
-  await page.getByRole("button", { name: `Approve Associate Membership for Alex Tester${run}` }).click();
-  await expect(page.getByText("Membership approved.")).toBeVisible();
+  await expect(page.getByText("Awaiting approval")).toHaveCount(0);
 
   await page.getByRole("checkbox", { name: `Mark Associate Membership for Alex Tester${run} as paid` }).check();
   await page.getByLabel("Paid by").selectOption("cheque");
@@ -667,7 +673,7 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await form.getByLabel("Name").fill(name);
   await form.getByLabel("Short code").fill(code.toLowerCase());
   await form.getByLabel("Description").fill("Windsurfing only, own board.");
-  await form.getByLabel("Price for a full year (£)").fill("60");
+  await form.getByLabel("Price for the whole period (£)").fill("60");
   await form.getByLabel("Category").selectOption("non_sailing");
   await shot(page, "admin-types-add");
   await form.getByRole("button", { name: "Add membership type" }).click();
@@ -682,8 +688,8 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   const edit = page.getByRole("region", { name: `Edit ${name}` });
   await edit.getByLabel("Short code").fill("F");
   await edit.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByText("Another membership type already uses that short code.")).toBeVisible();
-  await page.getByRole("region", { name: `Edit ${name}` }).getByLabel("Price for a full year (£)").fill("65.50");
+  await expect(page.getByText("Another membership type for this year already uses that short code.")).toBeVisible();
+  await page.getByRole("region", { name: `Edit ${name}` }).getByLabel("Price for the whole period (£)").fill("65.50");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Membership type saved.")).toBeVisible();
   await expect(page.getByRole("row", { name })).toContainText("£65.50");
@@ -692,13 +698,43 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await page.goto("/admin/members/new");
   await expect(page.getByLabel("Membership type").locator("option", { hasText: name })).toHaveCount(1);
   await page.goto("/admin/types");
-  await page.getByRole("button", { name: `Make inactive: ${name}` }).click();
+  await expect(page.getByRole("button", { name: "Make inactive" })).toHaveCount(0); // only on the edit screen
+  await page.getByRole("link", { name: `Edit ${name}` }).click();
+  await expect(page.getByRole("region", { name: `Edit ${name}` })).toBeVisible();
+  await shot(page, "admin-types-edit");
+  await page.getByRole("region", { name: `Edit ${name}` }).getByRole("button", { name: "Make inactive" }).click();
   await expect(page.getByText("Membership type is now inactive.")).toBeVisible();
   await expect(page.getByRole("region", { name: /^Inactive/ }).getByRole("row", { name })).toBeVisible();
   expect(sql(`select is_open from membership_types where code = '${code}'`)).toBe("f");
   await shot(page, "admin-types");
   await page.goto("/admin/members/new");
   await expect(page.getByLabel("Membership type").locator("option", { hasText: name })).toHaveCount(0);
+});
+
+test("an admin sets up next year's membership types by copying a year, then changes a price for that year only", async ({ browser }) => {
+  const latest = Number(sql(`select max(cy.label::int) from club_years cy where exists (select 1 from membership_types t where t.club_year_id = cy.id)`));
+  const next = String(latest + 1);
+  const page = await adminPage(browser);
+  await page.goto(`/admin/types?year=${latest}`);
+  await expect(page.getByRole("link", { name: String(latest), exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("checkbox", { name: /approval/i })).toHaveCount(0);
+  await shot(page, "admin-types-year");
+  await page.getByRole("button", { name: `Set up ${next} membership types` }).click();
+  await expect(page.getByText("Membership types copied.")).toBeVisible();
+  await expect(page.getByRole("link", { name: next, exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("region", { name: `Active for ${next}` }).getByRole("row", { name: "Family", exact: true })).toContainText("£255");
+  await expect(page.getByRole("row", { name: "Family", exact: true })).toContainText(`1 Jan ${next} to 31 Dec ${next}`);
+
+  await page.getByRole("link", { name: "Edit Family" }).click();
+  await page.getByRole("region", { name: `Edit Family (${next})` }).getByLabel("Price for the whole period (£)").fill("270");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Membership type saved.")).toBeVisible();
+  await expect(page.getByRole("row", { name: "Family", exact: true })).toContainText("£270");
+  await shot(page, "admin-types-next-year");
+  expect(
+    sql(`select string_agg(cy.label || '=' || t.annual_price_pence, ',' order by cy.label) from membership_types t
+           join club_years cy on cy.id = t.club_year_id where t.code = 'F' and cy.label in ('${latest}', '${next}')`),
+  ).toBe(`${latest}=25500,${next}=27000`);
 });
 
 test("an admin edits the renewal reminder email with a live preview, and adds another template", async ({ browser }) => {
@@ -762,7 +798,7 @@ test("an admin previews, tests and sends renewal reminders, and a daily limit is
     sql(`
       with p as (insert into people (first_name, last_name, date_of_birth, email) values ('${first}', 'Remind${run}', '1985-03-03', '${email}') returning id),
       m as (insert into memberships (club_year_id, membership_type_id, payer_person_id, status, price_pence)
-            select current_club_year_id(), (select id from membership_types where code = 'IS'), id, 'active', 18500 from p returning id, payer_person_id)
+            select current_club_year_id(), (select id from membership_types where code = 'IS' and club_year_id = current_club_year_id()), id, 'active', 18500 from p returning id, payer_person_id)
       insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
     `);
   }
