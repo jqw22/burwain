@@ -154,6 +154,10 @@ test("a member signs in with an email link and sees their membership", async ({ 
   await expect(page.getByRole("heading", { name: "Welcome, Sam" })).toBeVisible();
   await expect(page.getByText(/Family \(\d{4}\):/)).toBeVisible();
   await expect(page.getByText("Paid")).toBeVisible();
+  // Sign out is in the top bar, and the page you're on is marked there.
+  await expect(page.getByRole("banner").getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("main").getByRole("button", { name: "Sign out" })).toHaveCount(0);
   // The login is now linked to Sam's member record.
   expect(sql(`select auth_user_id is not null from people where email = '${leadEmail}'`)).toBe("t");
   await shot(page, "home");
@@ -265,9 +269,28 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(page).toHaveURL(/\/profile/);
 
   await page.goto("/profile");
+  // The member must confirm their details are up to date before renewing.
+  const confirm = page.getByLabel(/I confirm that all my personal details .*are up to date/);
+  await expect(confirm).not.toBeChecked();
   await page.getByRole("button", { name: `Renew for ${next}` }).click();
+  await expect(page).toHaveURL(/\/profile(\?|#|$)/); // the browser stops the form until the box is ticked
+  await confirm.check();
+  await page.getByRole("button", { name: `Renew for ${next}` }).click();
+
+  // A test checkout: the order, a choice of card or Direct Debit, and a Pay button. No money is taken.
+  await expect(page.getByRole("heading", { name: "Checkout" })).toBeVisible();
   await expect(page.getByText("Renewed.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your order" })).toContainText(`Family ${next}`);
+  await expect(page.getByRole("region", { name: "Your order" })).toContainText(/Total to pay\s*£255/);
+  await expect(page.getByText("Test checkout.")).toBeVisible();
+  await shot(page, "checkout");
+  await page.getByLabel("Direct Debit").check();
+  await page.getByRole("button", { name: "Pay £255" }).click();
+  await expect(page.getByText("Your payment of £255 by Direct Debit is confirmed.")).toBeVisible();
+  await shot(page, "checkout-confirmed");
+  await page.getByRole("link", { name: "Back to Your details" }).click();
   await expect(page.getByRole("region", { name: "Your membership" }).getByText(/Family for Sam, Alex, Robin: £255\s*Awaiting payment/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Pay now" })).toBeVisible();
   await expect(page.getByRole("button", { name: `Renew for ${next}` })).toHaveCount(0);
   expect(
     sql(`select count(*) from memberships m join club_years cy on cy.id = m.club_year_id join people p on p.id = m.payer_person_id
@@ -276,22 +299,27 @@ test("the family's main contact renews for next year from Your details", async (
   await shot(page, "renew-after");
 });
 
-test("an admin's home page has Membership admin and Finance admin sections", async ({ browser }) => {
+test("an admin's home page has Membership admin, Admin communications and Finance admin sections", async ({ browser }) => {
   const page = await adminPage(browser);
-  await expect(page.getByRole("heading", { name: "Membership admin" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Finance admin" })).toBeVisible();
-  for (const name of ["Members", "Add new member", "Applications", "Membership types", "Email templates", "Import spreadsheet", "Public join form", "Income"]) {
-    await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
-  }
-  await expect(page.getByRole("link", { name: "Payments", exact: true })).toHaveCount(0);
+  const section = (name: string) => page.getByRole("main").locator("section", { has: page.getByRole("heading", { name, exact: true }) });
+  const links = async (name: string) => (await section(name).getByRole("link").allTextContents()).map((t) => t.trim());
+  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
+  expect(await links("Admin communications")).toEqual(["Email templates", "Renewal reminders"]);
+  expect(await links("Finance admin")).toEqual(["Income"]);
+
+  // The Members bar no longer has Add new member, Income or Email templates.
+  await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
+  const bar = page.getByRole("navigation", { name: "Membership admin" });
+  await expect(page.getByRole("heading", { name: "Members", exact: true })).toBeVisible();
+  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Import"]);
+  await page.goto("/");
   await shot(page, "admin-home");
 });
 
 test("an admin imports the member spreadsheet after checking a preview", async ({ browser }) => {
   const page = await adminPage(browser);
-  // Import is no longer on the home page; it is in the admin menu.
   await page.getByRole("link", { name: "Members", exact: true }).click();
-  await page.getByRole("link", { name: "Import spreadsheet" }).click();
+  await page.getByRole("link", { name: "Import", exact: true }).click();
   await page.getByLabel("Member spreadsheet (.xlsx)").setInputFiles("e2e/fixtures/members.xlsx");
   await page.getByRole("button", { name: "Check spreadsheet" }).click();
 
@@ -313,8 +341,40 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await page.getByLabel("Search members").fill(`Tester${run}`);
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByText(/3 people matching/)).toBeVisible();
-  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toContainText("F: Paid");
+  // Separate Type, Payment and Status columns; no Postcode.
+  const headers = (await page.getByRole("columnheader").allTextContents()).map((t) => t.replace("▲", "").trim());
+  expect(headers).toEqual(["Name", "Email", "Mobile", "Type", "Payment", "Status"]);
+  const sam = page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) });
+  await expect(sam.getByRole("cell").nth(3)).toHaveText("Family");
+  await expect(sam.getByRole("cell").nth(4)).toContainText("Paid");
+  await expect(sam.getByRole("cell").nth(5)).toHaveText("Active");
   await shot(page, "admin-members");
+
+  // Filter by membership status. Pat's membership this year has lapsed.
+  sql(`
+    with p as (insert into people (first_name, last_name, date_of_birth) values ('Pat', 'Tester${run}', '1960-03-03') returning id),
+    m as (insert into memberships (club_year_id, membership_type_id, payer_person_id, status, price_pence)
+          select current_club_year_id(), (select id from membership_types where code = 'IS'), p.id, 'lapsed', 10000 from p
+          returning id, payer_person_id)
+    insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
+  `);
+  await page.reload();
+  await page.getByRole("link", { name: /^Lapsed \(\d+\)$/ }).click();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Pat`) })).toContainText("Lapsed");
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toHaveCount(0);
+  await shot(page, "admin-members-lapsed");
+  await page.getByRole("link", { name: /^Active \(\d+\)$/ }).click();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Pat`) })).toHaveCount(0);
+  // Sort by type keeps the search and filter.
+  await page.getByRole("link", { name: "Type", exact: true }).click();
+  await expect(page).toHaveURL(/sort=type/);
+  await expect(page).toHaveURL(/status=active/);
+  await expect(page.getByLabel("Search members")).toHaveValue(`Tester${run}`);
+  await page.getByRole("link", { name: /^All \(\d+\)$/ }).click();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Pat`) })).toBeVisible();
+  await page.getByLabel("Search members").fill(`Tester${run}`);
+  await page.getByRole("button", { name: "Search" }).click();
 
   await page.getByRole("link", { name: `Tester${run}, Sam` }).click();
   // Same boxes as Your details, read-only until Edit is clicked.
@@ -394,7 +454,7 @@ test("an admin adds new members: joining a family, a new family paying cash, and
 
   // Charlie joins Sam's family and is covered by the Family membership.
   await page.goto("/admin/members");
-  await page.getByRole("link", { name: "Add new member" }).first().click();
+  await page.getByRole("link", { name: "+ Add new member" }).click();
   await page.waitForLoadState("networkidle");
   const form = page.getByRole("form", { name: "Add new member" });
   // Membership type starts blank; the rest of the form appears once it's chosen.
@@ -577,7 +637,20 @@ test("members see a directory of adult members, without payment status", async (
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) })).toHaveCount(0);
   await expect(page.getByRole("link", { name: new RegExp(`Tester${run}, Sam`) })).toHaveCount(0);
   await expect(page.getByText("Paid", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("banner").getByRole("link", { name: "Directory" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("banner").getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current", "page");
   await shot(page, "directory");
+
+  // Search by name.
+  await page.getByLabel("Search the directory").fill(`alex tester${run}`);
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Alex`) })).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toHaveCount(0);
+  await expect(page.getByText(/1 of \d+ members matching/)).toBeVisible();
+  await shot(page, "directory-search");
+  await page.getByRole("link", { name: "Clear search" }).click();
+  await expect(page.getByLabel("Search the directory")).toHaveValue("");
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Alex`) })).toBeVisible();
 });
 
 test("an admin adds a membership type, changes its price and makes it inactive", async ({ browser }) => {
@@ -630,8 +703,9 @@ test("an admin adds a membership type, changes its price and makes it inactive",
 
 test("an admin edits the renewal reminder email with a live preview, and adds another template", async ({ browser }) => {
   const page = await adminPage(browser);
-  await page.goto("/admin/members");
-  await page.getByRole("link", { name: "Email templates" }).click();
+  // Found in the Admin communications box on Home.
+  await page.goto("/");
+  await page.getByRole("link", { name: "Email templates", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Email templates", exact: true })).toBeVisible();
   await expect(page.getByRole("row", { name: "Renewal reminder" })).toContainText("Renewal reminder");
 
@@ -693,8 +767,9 @@ test("an admin previews, tests and sends renewal reminders, and a daily limit is
     `);
   }
   const page = await adminPage(browser);
-  await page.goto("/admin/members");
-  await page.getByRole("link", { name: "Renewal reminders" }).click();
+  // Found in the Admin communications box on Home.
+  await page.goto("/");
+  await page.getByRole("link", { name: "Renewal reminders", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Renewal reminders", exact: true })).toBeVisible();
   const rita = page.getByRole("row", { name: `Rita Remind${run}` });
   await expect(rita).toContainText("Individual Sailing");

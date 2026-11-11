@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { TopNav } from "@/components/top-nav";
 import { createClient } from "@/lib/supabase/server";
 import "./globals.css";
 
@@ -18,17 +19,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <header className="border-b border-slate-200 bg-white">
           <nav className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-4">
             {signedIn ? (
-              <>
-                <Link href="/" className="font-semibold text-sky-900">
-                  Home
-                </Link>
-                <Link href="/profile" className="text-sm text-slate-700 hover:text-sky-900">
-                  Your details
-                </Link>
-                <Link href="/directory" className="text-sm text-slate-700 hover:text-sky-900">
-                  Directory
-                </Link>
-              </>
+              <TopNav />
             ) : (
               <>
                 <span className="font-semibold text-sky-900">Burwain</span>

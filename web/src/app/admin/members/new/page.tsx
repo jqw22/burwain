@@ -56,7 +56,7 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Add new member</h1>
-      <AdminNav current="new" />
+      <AdminNav current="members" />
       <p className="text-slate-700">
         Add someone joining the club. Existing members renew themselves from Your details. If you give an email, they
         can log in with it straight away.

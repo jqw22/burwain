@@ -9,20 +9,32 @@ export function NotAllowed({ who = "club admins" }: { who?: string }) {
   );
 }
 
-export function AdminNav({ current }: { current: "members" | "new" | "applications" | "memberships" | "types" | "emails" | "reminders" | "import" }) {
-  const links = [
-    { key: "members", href: "/admin/members", label: "Members" },
-    { key: "new", href: "/admin/members/new", label: "Add new member" },
-    { key: "applications", href: "/admin/applications", label: "Applications" },
-    { key: "memberships", href: "/admin/memberships", label: "Income" },
-    { key: "types", href: "/admin/types", label: "Membership types" },
-    { key: "emails", href: "/admin/emails", label: "Email templates" },
-    { key: "reminders", href: "/admin/reminders", label: "Renewal reminders" },
-    { key: "import", href: "/admin/import", label: "Import spreadsheet" },
-  ] as const;
+// Each Home page section has its own bar of links: Membership admin, Admin communications and Finance admin.
+const SECTIONS = {
+  members: "membership",
+  applications: "membership",
+  types: "membership",
+  import: "membership",
+  emails: "comms",
+  reminders: "comms",
+  memberships: "finance",
+} as const;
+const LINKS = [
+  { key: "members", href: "/admin/members", label: "Members" },
+  { key: "applications", href: "/admin/applications", label: "Applications" },
+  { key: "types", href: "/admin/types", label: "Membership types" },
+  { key: "import", href: "/admin/import", label: "Import" },
+  { key: "emails", href: "/admin/emails", label: "Email templates" },
+  { key: "reminders", href: "/admin/reminders", label: "Renewal reminders" },
+  { key: "memberships", href: "/admin/memberships", label: "Income" },
+] as const;
+const SECTION_NAME = { membership: "Membership admin", comms: "Admin communications", finance: "Finance admin" };
+
+export function AdminNav({ current }: { current: keyof typeof SECTIONS }) {
+  const section = SECTIONS[current];
   return (
-    <nav aria-label="Admin" className="flex flex-wrap gap-4 border-b border-slate-200 pb-2 text-sm">
-      {links.map((l) => (
+    <nav aria-label={SECTION_NAME[section]} className="flex flex-wrap gap-4 border-b border-slate-200 pb-2 text-sm">
+      {LINKS.filter((l) => SECTIONS[l.key] === section).map((l) => (
         <Link
           key={l.key}
           href={l.href}

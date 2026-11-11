@@ -39,6 +39,7 @@ const ERRORS: Record<string, string> = {
   duplicate: "Someone you ticked already has that kind of membership for the year.",
   closed: "Renewals for that year aren't open yet.",
   unavailable: "That membership type isn't available at the moment.",
+  confirm: "Please tick the box to confirm your personal details are up to date.",
   renew: "We couldn't renew. Please try again, or contact the membership secretary.",
 };
 
@@ -60,6 +61,7 @@ const SECTION: Record<string, string> = {
   duplicate: "renew",
   closed: "renew",
   unavailable: "renew",
+  confirm: "renew",
   renew: "renew",
 };
 
