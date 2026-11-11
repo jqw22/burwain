@@ -32,7 +32,6 @@ export default async function HomePage() {
           You&apos;re signed in, but this email address doesn&apos;t match a member record. Please
           contact the membership secretary so they can link your account.
         </p>
-        <SignOut />
       </div>
     );
   }
@@ -79,11 +78,6 @@ export default async function HomePage() {
               </Link>
             </li>
             <li>
-              <Link href="/admin/members/new" className="text-sky-800 underline">
-                Add new member
-              </Link>
-            </li>
-            <li>
               <Link href="/admin/applications" className="text-sky-800 underline">
                 Applications
               </Link>
@@ -95,13 +89,8 @@ export default async function HomePage() {
               </Link>
             </li>
             <li>
-              <Link href="/admin/emails" className="text-sky-800 underline">
-                Email templates
-              </Link>
-            </li>
-            <li>
               <Link href="/admin/import" className="text-sky-800 underline">
-                Import spreadsheet
+                Import
               </Link>
             </li>
             <li>
@@ -110,6 +99,23 @@ export default async function HomePage() {
                 Public join form
               </Link>
               <span className="ml-2 text-sm text-slate-500">(temporary link)</span>
+            </li>
+          </ul>
+        </section>
+      )}
+      {isAdmin && (
+        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="font-semibold">Admin communications</h2>
+          <ul className="mt-2 space-y-1">
+            <li>
+              <Link href="/admin/emails" className="text-sky-800 underline">
+                Email templates
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/reminders" className="text-sky-800 underline">
+                Renewal reminders
+              </Link>
             </li>
           </ul>
         </section>
@@ -126,17 +132,6 @@ export default async function HomePage() {
           </ul>
         </section>
       )}
-      <SignOut />
     </div>
-  );
-}
-
-function SignOut() {
-  return (
-    <form action="/auth/signout" method="post" className="mt-4">
-      <button type="submit" className="text-sm text-slate-600 underline">
-        Sign out
-      </button>
-    </form>
   );
 }

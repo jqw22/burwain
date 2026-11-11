@@ -200,9 +200,10 @@ function membershipError(message: string) {
 export async function renewMemberships(form: FormData) {
   const { supabase } = await requireMe();
   const yearId = String(form.get("club_year_id") ?? "");
+  if (form.get("confirm") !== "on") redirect("/profile?error=confirm#renew");
   for (const id of form.getAll("renew").map(String)) {
     const { error } = await supabase.rpc("renew_my_membership", { p_membership: id, p_club_year_id: yearId });
     if (error) redirect(`/profile?error=${membershipError(error.message)}#renew`);
   }
-  redirect("/profile?saved=renewed#renew");
+  redirect("/profile/checkout?renewed=1");
 }

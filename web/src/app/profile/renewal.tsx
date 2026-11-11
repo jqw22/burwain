@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { STATUS_LABEL } from "@/components/admin";
 import { SaveButton } from "@/components/fields";
 import { ageOn, pounds } from "@/lib/me";
@@ -147,6 +148,14 @@ export async function RenewalCard({
             {nextYear.length > 0 && (
               <ul className="mt-2 space-y-1">{nextYear.map(line)}</ul>
             )}
+            {canRenew && nextYear.some((m) => m.status === "awaiting_payment") && (
+              <Link
+                href="/profile/checkout"
+                className="mt-3 inline-block rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900"
+              >
+                Pay now
+              </Link>
+            )}
             {!canRenew ? (
               <p className="mt-2 text-slate-700">Your family&apos;s main contact renews for everyone.</p>
             ) : toRenew.length === 0 ? (
@@ -168,6 +177,12 @@ export async function RenewalCard({
                       ))}
                     </ul>
                     <input type="hidden" name="club_year_id" value={next.id} />
+                    <label className="flex items-start gap-2 rounded border border-sky-300 bg-white p-3">
+                      <input name="confirm" type="checkbox" required className="mt-1" />
+                      <span className="text-sm">
+                        I confirm that all my personal details{people.length > 1 && " (and my family's)"} are up to date.
+                      </span>
+                    </label>
                     <SaveButton pendingText="Renewing…">Renew for {next.label}</SaveButton>
                   </form>
                 )}
