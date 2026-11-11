@@ -311,8 +311,7 @@ test("an admin's home page has Membership admin, Admin communications and Financ
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
   const bar = page.getByRole("navigation", { name: "Membership admin" });
   await expect(page.getByRole("heading", { name: "Members", exact: true })).toBeVisible();
-  await expect(bar.getByRole("link", { name: "Members" })).toBeVisible();
-  expect((await bar.getByRole("link").allTextContents()).map((t) => t.trim())).toEqual(["Members", "Applications", "Membership types", "Import"]);
+  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Import"]);
   await page.goto("/");
   await shot(page, "admin-home");
 });
