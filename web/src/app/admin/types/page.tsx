@@ -2,10 +2,12 @@ import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { meWithRole, pounds } from "@/lib/me";
-import { saveType, setActive } from "./actions";
+import { copyToNextYear, saveType, setActive } from "./actions";
 
+type Year = { id: string; label: string; starts_on: string };
 type MembershipType = {
   id: string;
+  club_year_id: string;
   code: string;
   name: string;
   description: string | null;
@@ -14,7 +16,6 @@ type MembershipType = {
   annual_price_pence: number;
   max_age: number | null;
   requires_adult_member: boolean;
-  requires_approval: boolean;
   sibling_order: number | null;
   is_open: boolean;
   sort_order: number;
@@ -32,6 +33,7 @@ const SAVED: Record<string, string> = {
   added: "Membership type added.",
   updated: "Membership type saved.",
   activated: "Membership type is active again. It's offered to new members and for renewal.",
+  copied: "Membership types copied. Check the prices for this year, and add or make inactive any types that change.",
   deactivated: "Membership type is now inactive. Existing memberships aren't affected.",
 };
 const ERRORS: Record<string, string> = {
@@ -42,17 +44,20 @@ const ERRORS: Record<string, string> = {
   age: "The age limit must be a whole number of years, or left blank.",
   sibling: "The junior sibling number must be 1 to 9, or left blank.",
   order: "The list position must be a whole number.",
-  duplicate: "Another membership type already uses that short code. Please choose a different one.",
+  duplicate: "Another membership type for this year already uses that short code. Please choose a different one.",
+  copy: "We couldn't copy the membership types. Please try again.",
   save: "We couldn't save that. Please try again.",
 };
 
 const select = "mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2";
 
-function TypeForm({ type, nextOrder }: { type: MembershipType | null; nextOrder: number }) {
+function TypeForm({ type, nextOrder, year }: { type: MembershipType | null; nextOrder: number; year: Year }) {
   return (
-    <Card title={type ? `Edit ${type.name}` : "Add a membership type"} id="edit">
+    <Card title={type ? `Edit ${type.name} (${year.label})` : `Add a membership type for ${year.label}`} id="edit">
       <form action={saveType} className="grid gap-4 sm:grid-cols-2">
         <input type="hidden" name="id" value={type?.id ?? ""} />
+        <input type="hidden" name="year" value={year.label} />
+        <input type="hidden" name="club_year_id" value={year.id} />
         <Field label="Name" name="name" defaultValue={type?.name} required />
         <Field
           label="Short code"
@@ -78,7 +83,7 @@ function TypeForm({ type, nextOrder }: { type: MembershipType | null; nextOrder:
           name="price"
           defaultValue={type ? (type.annual_price_pence / 100).toFixed(2) : ""}
           required
-          hint="Changing the price only affects new memberships and renewals, not ones already taken."
+          hint={`The price for ${year.label} only. Memberships already taken keep the price they were taken at.`}
         />
         <label className="block">
           <span className="text-sm font-medium">Category</span>
@@ -118,13 +123,12 @@ function TypeForm({ type, nextOrder }: { type: MembershipType | null; nextOrder:
           hint="Lower numbers are shown first."
         />
         <div className="space-y-2 sm:col-span-2">
-          <Checkbox label="Needs admin approval before it can be paid (like Associate)" name="requires_approval" defaultChecked={type?.requires_approval} />
           <Checkbox label="Needs an adult member in the same family (like Junior)" name="requires_adult_member" defaultChecked={type?.requires_adult_member} />
           <Checkbox label="Active: offered to new members, on the Join page and for renewal" name="is_open" defaultChecked={type?.is_open ?? true} />
         </div>
         <div className="flex items-center gap-4 sm:col-span-2">
           <SaveButton>{type ? "Save changes" : "Add membership type"}</SaveButton>
-          <Link href="/admin/types" className="text-sm text-slate-600 underline">Cancel</Link>
+          <Link href={`/admin/types?year=${year.label}`} className="text-sm text-slate-600 underline">Cancel</Link>
         </div>
       </form>
     </Card>
@@ -136,15 +140,36 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
   const { supabase, allowed } = await meWithRole("admin");
   if (!allowed) return <NotAllowed />;
 
-  const { data } = await supabase.from("membership_types").select("*").order("sort_order").order("name");
-  const types = (data ?? []) as MembershipType[];
+  const [{ data: yearsData }, { data: currentId }, { data }] = await Promise.all([
+    supabase.from("club_years").select("id, label, starts_on").order("starts_on"),
+    supabase.rpc("current_club_year_id"),
+    supabase.from("membership_types").select("*").order("sort_order").order("name"),
+  ]);
+  const allYears = (yearsData ?? []) as Year[];
+  const allTypes = (data ?? []) as MembershipType[];
+  // Years to show: any year with types, plus this year.
+  const years = allYears.filter((y) => y.id === currentId || allTypes.some((t) => t.club_year_id === y.id));
+  const wanted = typeof params.year === "string" ? params.year : "";
+  const year = years.find((y) => y.label === wanted) ?? years.find((y) => y.id === currentId) ?? years[years.length - 1];
+  if (!year) return <p>No club years have been set up yet.</p>;
+  const types = allTypes.filter((t) => t.club_year_id === year.id);
+  const nextLabel = String(Number(year.label) + 1);
+  const nextYear = allYears.find((y) => y.label === nextLabel);
+  const nextCodes = new Set(allTypes.filter((t) => t.club_year_id === nextYear?.id).map((t) => t.code));
+  const toCopy = types.filter((t) => !nextCodes.has(t.code)).length;
+  const isFuture = year.starts_on > new Date().toISOString().slice(0, 10);
   const active = types.filter((t) => t.is_open);
   const inactive = types.filter((t) => !t.is_open);
   const edit = typeof params.edit === "string" ? params.edit : "";
   const editing = types.find((t) => t.id === edit) ?? null;
   const nextOrder = Math.max(0, ...types.map((t) => t.sort_order)) + 10;
 
-  const saved = typeof params.saved === "string" ? SAVED[params.saved] : undefined;
+  const saved =
+    params.saved === "copied" && params.count === "0"
+      ? `${year.label} already has all of these membership types.`
+      : typeof params.saved === "string"
+        ? SAVED[params.saved]
+        : undefined;
   const error = typeof params.error === "string" ? ERRORS[params.error] : undefined;
 
   const table = (list: MembershipType[]) => (
@@ -166,7 +191,6 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
               t.max_age !== null && `Age ${t.max_age} or under`,
               t.sibling_order !== null && `Sibling ${t.sibling_order}`,
               t.requires_adult_member && "Needs adult member",
-              t.requires_approval && "Needs approval",
             ].filter(Boolean);
             return (
               <tr key={t.id} aria-label={t.name}>
@@ -180,11 +204,12 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
                 <td className="py-2 pr-4 text-slate-600">{rules.length ? rules.join(", ") : "None"}</td>
                 <td className="py-2">
                   <div className="flex items-center justify-end gap-3 whitespace-nowrap">
-                    <Link href={`/admin/types?edit=${t.id}#edit`} className="text-sky-800 underline" aria-label={`Edit ${t.name}`}>
+                    <Link href={`/admin/types?year=${year.label}&edit=${t.id}#edit`} className="text-sky-800 underline" aria-label={`Edit ${t.name}`}>
                       Edit
                     </Link>
                     <form action={setActive}>
                       <input type="hidden" name="id" value={t.id} />
+                      <input type="hidden" name="year" value={year.label} />
                       <input type="hidden" name="active" value={t.is_open ? "false" : "true"} />
                       <SaveButton variant="link" pendingText="…" aria-label={`${t.is_open ? "Make inactive" : "Make active"}: ${t.name}`}>
                         {t.is_open ? "Make inactive" : "Make active"}
@@ -211,26 +236,63 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
         </p>
       )}
 
-      {edit && <TypeForm type={editing} nextOrder={nextOrder} />}
+      <nav aria-label="Club year" className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-slate-700">Club year:</span>
+        {years.map((y) => (
+          <Link
+            key={y.id}
+            href={`/admin/types?year=${y.label}`}
+            aria-current={y.id === year.id ? "page" : undefined}
+            className={
+              y.id === year.id
+                ? "rounded bg-sky-800 px-3 py-1 text-sm font-medium text-white"
+                : "rounded border border-slate-300 bg-white px-3 py-1 text-sm text-slate-800 hover:bg-slate-50"
+            }
+          >
+            {y.label}
+          </Link>
+        ))}
+      </nav>
+      <p className="text-slate-700">
+        Each club year has its own membership types and prices. Changing the {year.label} types doesn&apos;t affect any other year.
+        {isFuture &&
+          ` Renewals and joining for ${year.label} open 60 days before 1 January ${year.label}, once at least one type below is active.`}
+      </p>
+      {toCopy > 0 && (
+        <form action={copyToNextYear} className="flex flex-wrap items-center gap-3 rounded border border-sky-200 bg-sky-50 p-4">
+          <input type="hidden" name="club_year_id" value={year.id} />
+          <input type="hidden" name="year" value={year.label} />
+          <span className="text-sky-950">
+            {nextCodes.size === 0
+              ? `Set up ${nextLabel} by copying these ${year.label} types and prices. You can then change them for ${nextLabel}.`
+              : `${toCopy} of these types aren't in ${nextLabel} yet.`}
+          </span>
+          <SaveButton pendingText="Copying…">
+            {nextCodes.size === 0 ? `Set up ${nextLabel} membership types` : `Copy them to ${nextLabel}`}
+          </SaveButton>
+        </form>
+      )}
+
+      {edit && <TypeForm type={editing} nextOrder={nextOrder} year={year} />}
 
       <Card
-        title={`Active (${active.length})`}
+        title={`Active for ${year.label} (${active.length})`}
         action={
           !edit && (
-            <Link href="/admin/types?edit=new#edit" className="rounded bg-sky-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-950">
+            <Link href={`/admin/types?year=${year.label}&edit=new#edit`} className="rounded bg-sky-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-950">
               Add a membership type
             </Link>
           )
         }
       >
-        <p className="mb-2 text-sm text-slate-600">Offered to new members, on the Join page and for renewal.</p>
+        <p className="mb-2 text-sm text-slate-600">Offered for {year.label} to new members, on the Join page and for renewal.</p>
         {active.length ? table(active) : <p className="text-slate-700">No active membership types.</p>}
       </Card>
 
-      <Card title={`Inactive (${inactive.length})`}>
+      <Card title={`Inactive for ${year.label} (${inactive.length})`}>
         <p className="mb-2 text-sm text-slate-600">
-          Not offered any more. Members who already have one keep it for the year, but can&apos;t renew it. Types are never deleted, so past
-          memberships and reports still show them.
+          Not offered for {year.label}. Members who already have one keep it. Types are never deleted, so past memberships and reports still
+          show them.
         </p>
         {inactive.length ? table(inactive) : <p className="text-slate-700">No inactive membership types.</p>}
       </Card>

@@ -190,20 +190,28 @@ const MEMBERSHIP_ERRORS: [string, string][] = [
   ["already has", "duplicate"],
   ["not open", "closed"],
   ["not available", "unavailable"],
+  ["up to 4", "four"],
+  ["this year's memberships", "notmember"],
+  ["main contact", "lead"],
 ];
 function membershipError(message: string) {
   return MEMBERSHIP_ERRORS.find(([needle]) => message.includes(needle))?.[1] ?? "renew";
 }
 
-// Renew this year's memberships for next year: same types and people. Adults come first in the form,
-// because a junior needs an adult member in the family.
+// Renew for next year: one new membership of the chosen type for the people ticked.
+// If others on this year's memberships still need renewing, go back so they can be done too.
 export async function renewMemberships(form: FormData) {
   const { supabase } = await requireMe();
   const yearId = String(form.get("club_year_id") ?? "");
   if (form.get("confirm") !== "on") redirect("/profile?error=confirm#renew");
-  for (const id of form.getAll("renew").map(String)) {
-    const { error } = await supabase.rpc("renew_my_membership", { p_membership: id, p_club_year_id: yearId });
-    if (error) redirect(`/profile?error=${membershipError(error.message)}#renew`);
-  }
+  const people = form.getAll("person").map(String);
+  if (people.length === 0) redirect("/profile?error=who#renew");
+  const { error } = await supabase.rpc("renew_my_membership", {
+    p_type_id: String(form.get("type_id") ?? ""),
+    p_person_ids: people,
+    p_club_year_id: yearId,
+  });
+  if (error) redirect(`/profile?error=${membershipError(error.message)}#renew`);
+  if (Number(form.get("remaining") ?? 0) > 0) redirect("/profile?saved=renewed#renew");
   redirect("/profile/checkout?renewed=1");
 }

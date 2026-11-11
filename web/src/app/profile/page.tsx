@@ -20,7 +20,7 @@ const SAVED: Record<string, string> = {
   address: "Your address has been saved.",
   add: "Family member added.",
   household: "Your family group is set up. You can now add family members.",
-  renewed: "Renewed. It's shown below with the amount to pay.",
+  renewed: "Renewed. It's shown below with the amount to pay. You can renew the others now, or pay first.",
 };
 const ERRORS: Record<string, string> = {
   details: "We couldn't save your details. Please check them and try again.",
@@ -40,6 +40,9 @@ const ERRORS: Record<string, string> = {
   closed: "Renewals for that year aren't open yet.",
   unavailable: "That membership type isn't available at the moment.",
   confirm: "Please tick the box to confirm your personal details are up to date.",
+  four: "A Family membership covers up to 4 people. Please tick fewer names.",
+  notmember: "Only people with a membership this year can be renewed. To add someone new, please contact the membership secretary.",
+  lead: "Your family's main contact renews for everyone.",
   renew: "We couldn't renew. Please try again, or contact the membership secretary.",
 };
 
@@ -62,6 +65,9 @@ const SECTION: Record<string, string> = {
   closed: "renew",
   unavailable: "renew",
   confirm: "renew",
+  four: "renew",
+  notmember: "renew",
+  lead: "renew",
   renew: "renew",
 };
 

@@ -2,20 +2,25 @@
 
 insert into activities (name) values ('Sailing'), ('Paddleboarding'), ('RC Laser sailing');
 
+insert into club_years (label, starts_on, ends_on) values
+  ('2026', '2026-01-01', '2026-12-31'),
+  ('2027', '2027-01-01', '2027-12-31');
+
+-- 2026 membership types. Each club year has its own types; 2027 starts as a copy (below).
 insert into membership_types
-  (code, name, description, category, cover, annual_price_pence, max_age, requires_adult_member, requires_approval, sibling_order, sort_order)
+  (club_year_id, code, name, description, category, cover, annual_price_pence, max_age, requires_adult_member, sibling_order, sort_order)
 values
-  ('IS',  'Individual Sailing', 'Adult sailing member, excluding boat storage.', 'sailing', 'individual', 18500, null, false, false, null, 10),
-  ('F',   'Family', 'The full family where children are under 18, or under 21 in full-time education or training. Excludes boat storage.', 'sailing', 'family', 25500, null, false, false, null, 20),
-  ('D',   'Dual', 'Two adults of the same household who both sail, excluding boat storage.', 'sailing', 'dual', 22500, null, false, false, null, 30),
-  ('U21', 'U21 Adult', 'Adult sailing member under 21, excluding boat storage.', 'sailing', 'individual', 9500, 20, false, false, null, 40),
-  ('J1',  'Junior', 'Sailing member under 18. A parent must also be a member in an adult category.', 'sailing', 'junior', 9500, 17, true, false, 1, 50),
-  ('J2',  'Junior (second sibling)', 'Second sibling in the same family.', 'sailing', 'junior', 7000, 17, true, false, 2, 60),
-  ('J3',  'Junior (third sibling)', 'Third sibling in the same family.', 'sailing', 'junior', 5000, 17, true, false, 3, 70),
-  ('C',   'Club Membership', 'For anyone with an interest in the Club.', 'non_sailing', 'individual', 3000, null, false, false, null, 80),
-  ('A',   'Associate Membership', 'Full members of 5+ years who no longer sail, or members now living over 75 miles away. Needs admin approval.', 'non_sailing', 'individual', 3000, null, false, true, null, 90),
-  ('RC',  'RC Laser Membership', 'Members who sail Remote Control Lasers only.', 'non_sailing', 'individual', 9500, null, false, false, null, 100),
-  ('SUP', 'Stand Up Paddleboard', 'Covers the whole family for paddleboarding.', 'non_sailing', 'family', 8000, null, false, false, null, 110);
+  ((select id from club_years where label = '2026'), 'IS',  'Individual Sailing', 'Adult sailing member, excluding boat storage.', 'sailing', 'individual', 18500, null, false, null, 10),
+  ((select id from club_years where label = '2026'), 'F',   'Family', 'The full family where children are under 18, or under 21 in full-time education or training. Excludes boat storage.', 'sailing', 'family', 25500, null, false, null, 20),
+  ((select id from club_years where label = '2026'), 'D',   'Dual', 'Two adults of the same household who both sail, excluding boat storage.', 'sailing', 'dual', 22500, null, false, null, 30),
+  ((select id from club_years where label = '2026'), 'U21', 'U21 Adult', 'Adult sailing member under 21, excluding boat storage.', 'sailing', 'individual', 9500, 20, false, null, 40),
+  ((select id from club_years where label = '2026'), 'J1',  'Junior', 'Sailing member under 18. A parent must also be a member in an adult category.', 'sailing', 'junior', 9500, 17, true, 1, 50),
+  ((select id from club_years where label = '2026'), 'J2',  'Junior (second sibling)', 'Second sibling in the same family.', 'sailing', 'junior', 7000, 17, true, 2, 60),
+  ((select id from club_years where label = '2026'), 'J3',  'Junior (third sibling)', 'Third sibling in the same family.', 'sailing', 'junior', 5000, 17, true, 3, 70),
+  ((select id from club_years where label = '2026'), 'C',   'Club Membership', 'For anyone with an interest in the Club.', 'non_sailing', 'individual', 3000, null, false, null, 80),
+  ((select id from club_years where label = '2026'), 'A',   'Associate Membership', 'Full members of 5+ years who no longer sail, or members now living over 75 miles away.', 'non_sailing', 'individual', 3000, null, false, null, 90),
+  ((select id from club_years where label = '2026'), 'RC',  'RC Laser Membership', 'Members who sail Remote Control Lasers only.', 'non_sailing', 'individual', 9500, null, false, null, 100),
+  ((select id from club_years where label = '2026'), 'SUP', 'Stand Up Paddleboard', 'Covers the whole family for paddleboarding.', 'non_sailing', 'family', 8000, null, false, null, 110);
 
 insert into membership_type_activities (membership_type_id, activity_id)
 select t.id, a.id from membership_types t, activities a
@@ -23,9 +28,8 @@ select t.id, a.id from membership_types t, activities a
     or (t.code = 'RC'  and a.name = 'RC Laser sailing')
     or (t.code = 'SUP' and a.name = 'Paddleboarding');
 
-insert into club_years (label, starts_on, ends_on) values
-  ('2026', '2026-01-01', '2026-12-31'),
-  ('2027', '2027-01-01', '2027-12-31');
+-- 2027 starts with the same types and prices, so renewals can be tested.
+select copy_types_into((select id from club_years where label = '2026'), (select id from club_years where label = '2027'));
 
 insert into boat_storage_options (name, price_pence, members_rate, description) values
   ('Dinghy storage (members)', 3500, true,  'Per sailing dinghy, including road trailer.'),

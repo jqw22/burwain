@@ -1,7 +1,7 @@
 import { AdminNav, NotAllowed, STATUS_LABEL } from "@/components/admin";
 import { Card, Notice, SaveButton } from "@/components/fields";
 import { meWithRole, pounds, ukDate } from "@/lib/me";
-import { approveMembership, recordPayment } from "./actions";
+import { recordPayment } from "./actions";
 
 type Year = { id: string; label: string; starts_on: string };
 type Row = {
@@ -27,14 +27,11 @@ const METHOD: Record<string, string> = {
 };
 const SAVED: Record<string, string> = {
   paid: "Payment recorded. Those memberships are now marked as paid.",
-  approved: "Membership approved. It's now awaiting payment.",
 };
 const ERRORS: Record<string, string> = {
   choose: "Please tick at least one membership to mark as paid.",
   payment: "We couldn't record that payment. Check the date isn't in the future and the memberships are still awaiting payment.",
   finance: "Only finance logins can record payments.",
-  approve: "Only club admins can approve memberships.",
-  approved: "We couldn't approve that membership. It may already have been approved.",
 };
 
 export default async function MembershipsPage({ searchParams }: PageProps<"/admin/memberships">) {
@@ -57,7 +54,6 @@ export default async function MembershipsPage({ searchParams }: PageProps<"/admi
   const total = (status: string) => rows.filter((r) => r.status === status);
   const paid = total("active");
   const unpaid = total("awaiting_payment");
-  const pending = total("pending_approval");
   const sum = (list: Row[]) => pounds(list.reduce((s, r) => s + r.price_pence, 0));
 
   const saved = typeof params.saved === "string" ? SAVED[params.saved] : undefined;
@@ -89,7 +85,7 @@ export default async function MembershipsPage({ searchParams }: PageProps<"/admi
         <SaveButton variant="secondary">Show</SaveButton>
       </form>
 
-      <dl className="grid gap-4 sm:grid-cols-3">
+      <dl className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <dt className="text-sm text-slate-600">Paid</dt>
           <dd className="text-xl font-semibold">
@@ -102,35 +98,7 @@ export default async function MembershipsPage({ searchParams }: PageProps<"/admi
             {unpaid.length} <span className="text-base font-normal text-slate-600">({sum(unpaid)})</span>
           </dd>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <dt className="text-sm text-slate-600">Awaiting approval</dt>
-          <dd className="text-xl font-semibold">{pending.length}</dd>
-        </div>
       </dl>
-
-      {pending.length > 0 && (
-        <Card title="Awaiting committee approval">
-          <ul className="divide-y divide-slate-100">
-            {pending.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span>
-                  <strong>{r.membership_type}</strong> for {r.people}: {pounds(r.price_pence)}
-                  <span className="ml-2 text-sm text-slate-600">asked on {ukDate(r.created_at)}</span>
-                </span>
-                {isAdmin && (
-                  <form action={approveMembership}>
-                    <input type="hidden" name="id" value={r.id} />
-                    <input type="hidden" name="year" value={year?.id} />
-                    <SaveButton aria-label={`Approve ${r.membership_type} for ${r.people}`} pendingText="Approving…">
-                      Approve
-                    </SaveButton>
-                  </form>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
 
       <Card title={`All memberships for ${year?.label ?? "this year"}`}>
         {rows.length === 0 ? (

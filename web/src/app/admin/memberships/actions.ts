@@ -7,14 +7,6 @@ function back(year: string, key: "saved" | "error", value: string): never {
   redirect(`/admin/memberships?year=${encodeURIComponent(year)}&${key}=${value}`);
 }
 
-export async function approveMembership(form: FormData) {
-  const year = String(form.get("year") ?? "");
-  const { supabase, allowed } = await meWithRole("admin");
-  if (!allowed) back(year, "error", "approve");
-  const { error } = await supabase.rpc("approve_membership", { p_membership: String(form.get("id")) });
-  back(year, error ? "error" : "saved", "approved");
-}
-
 export async function recordPayment(form: FormData) {
   const year = String(form.get("year") ?? "");
   const { supabase, allowed } = await meWithRole("finance");

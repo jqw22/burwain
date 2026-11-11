@@ -38,7 +38,7 @@ test.beforeAll(() => {
       returning id
     ), m as (
       insert into memberships (club_year_id, membership_type_id, payer_person_id, household_id, status, price_pence)
-      select current_club_year_id(), (select id from membership_types where code = 'F'), lead.id, lead.household_id, 'active', 25500
+      select current_club_year_id(), (select id from membership_types where code = 'F' and club_year_id = current_club_year_id()), lead.id, lead.household_id, 'active', 25500
         from lead returning id
     )
     insert into membership_people (membership_id, person_id)
@@ -261,9 +261,16 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(box.getByRole("link", { name: /Join|add a membership/i })).toHaveCount(0);
   await shot(page, "renew-before");
 
-  // Members can only renew: no choosing a different or extra membership type.
-  await expect(box.getByRole("link", { name: "Change membership type" })).toHaveCount(0);
-  await expect(page.getByRole("radio")).toHaveCount(0);
+  // Members choose any of next year's types for the people ticked, starting with the same type as this year.
+  const type = box.getByLabel(`Membership type for ${next} (full year)`);
+  await expect(type.locator("option:checked")).toHaveText("Family: £255");
+  await expect(type.locator("option", { hasText: "Individual Sailing" })).toHaveCount(0); // covers one person, three are ticked
+  await box.getByRole("checkbox", { name: /^Alex / }).uncheck();
+  await box.getByRole("checkbox", { name: /^Robin / }).uncheck();
+  await expect(type.locator("option", { hasText: "Individual Sailing" })).toHaveCount(1);
+  await box.getByRole("checkbox", { name: /^Alex / }).check();
+  await box.getByRole("checkbox", { name: /^Robin / }).check();
+  await expect(type.locator("option:checked")).toHaveText("Family: £255");
   // The old Membership page now opens Your details.
   await page.goto("/membership");
   await expect(page).toHaveURL(/\/profile/);
@@ -354,7 +361,7 @@ test("an admin finds a member, edits them and views their medical details", asyn
   sql(`
     with p as (insert into people (first_name, last_name, date_of_birth) values ('Pat', 'Tester${run}', '1960-03-03') returning id),
     m as (insert into memberships (club_year_id, membership_type_id, payer_person_id, status, price_pence)
-          select current_club_year_id(), (select id from membership_types where code = 'IS'), p.id, 'lapsed', 10000 from p
+          select current_club_year_id(), (select id from membership_types where code = 'IS' and club_year_id = current_club_year_id()), p.id, 'lapsed', 10000 from p
           returning id, payer_person_id)
     insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
   `);
@@ -411,12 +418,12 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await shot(page, "admin-member");
 });
 
-test("an admin approves an Associate membership and finance records a cheque for it", async ({ browser }) => {
-  // Alex has asked for an Associate membership, which needs approval.
+test("finance records a cheque for an Associate membership, which no longer needs approval", async ({ browser }) => {
+  // Alex has asked for an Associate membership. It goes straight to awaiting payment.
   sql(`
     with m as (
       insert into memberships (club_year_id, membership_type_id, payer_person_id, household_id, status, price_pence)
-      select current_club_year_id(), (select id from membership_types where code = 'A'), p.id, p.household_id, 'pending_approval', 3000
+      select current_club_year_id(), (select id from membership_types where code = 'A' and club_year_id = current_club_year_id()), p.id, p.household_id, 'awaiting_payment', 3000
         from people p where p.email = 'alex-${run}@example.test' returning id, payer_person_id
     )
     insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
@@ -424,11 +431,7 @@ test("an admin approves an Associate membership and finance records a cheque for
   const page = await adminPage(browser);
   await page.getByRole("link", { name: "Income", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Income", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Awaiting committee approval" })).toBeVisible();
-  await shot(page, "admin-memberships-approval");
-
-  await page.getByRole("button", { name: `Approve Associate Membership for Alex Tester${run}` }).click();
-  await expect(page.getByText("Membership approved.")).toBeVisible();
+  await expect(page.getByText("Awaiting approval")).toHaveCount(0);
 
   await page.getByRole("checkbox", { name: `Mark Associate Membership for Alex Tester${run} as paid` }).check();
   await page.getByLabel("Paid by").selectOption("cheque");
@@ -682,7 +685,7 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   const edit = page.getByRole("region", { name: `Edit ${name}` });
   await edit.getByLabel("Short code").fill("F");
   await edit.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByText("Another membership type already uses that short code.")).toBeVisible();
+  await expect(page.getByText("Another membership type for this year already uses that short code.")).toBeVisible();
   await page.getByRole("region", { name: `Edit ${name}` }).getByLabel("Price for a full year (£)").fill("65.50");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Membership type saved.")).toBeVisible();
@@ -699,6 +702,31 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await shot(page, "admin-types");
   await page.goto("/admin/members/new");
   await expect(page.getByLabel("Membership type").locator("option", { hasText: name })).toHaveCount(0);
+});
+
+test("an admin sets up next year's membership types by copying a year, then changes a price for that year only", async ({ browser }) => {
+  const latest = Number(sql(`select max(cy.label::int) from club_years cy where exists (select 1 from membership_types t where t.club_year_id = cy.id)`));
+  const next = String(latest + 1);
+  const page = await adminPage(browser);
+  await page.goto(`/admin/types?year=${latest}`);
+  await expect(page.getByRole("link", { name: String(latest), exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("checkbox", { name: /approval/i })).toHaveCount(0);
+  await shot(page, "admin-types-year");
+  await page.getByRole("button", { name: `Set up ${next} membership types` }).click();
+  await expect(page.getByText("Membership types copied.")).toBeVisible();
+  await expect(page.getByRole("link", { name: next, exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("region", { name: `Active for ${next}` }).getByRole("row", { name: "Family", exact: true })).toContainText("£255");
+
+  await page.getByRole("link", { name: "Edit Family" }).click();
+  await page.getByRole("region", { name: `Edit Family (${next})` }).getByLabel("Price for a full year (£)").fill("270");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Membership type saved.")).toBeVisible();
+  await expect(page.getByRole("row", { name: "Family", exact: true })).toContainText("£270");
+  await shot(page, "admin-types-next-year");
+  expect(
+    sql(`select string_agg(cy.label || '=' || t.annual_price_pence, ',' order by cy.label) from membership_types t
+           join club_years cy on cy.id = t.club_year_id where t.code = 'F' and cy.label in ('${latest}', '${next}')`),
+  ).toBe(`${latest}=25500,${next}=27000`);
 });
 
 test("an admin edits the renewal reminder email with a live preview, and adds another template", async ({ browser }) => {
@@ -762,7 +790,7 @@ test("an admin previews, tests and sends renewal reminders, and a daily limit is
     sql(`
       with p as (insert into people (first_name, last_name, date_of_birth, email) values ('${first}', 'Remind${run}', '1985-03-03', '${email}') returning id),
       m as (insert into memberships (club_year_id, membership_type_id, payer_person_id, status, price_pence)
-            select current_club_year_id(), (select id from membership_types where code = 'IS'), id, 'active', 18500 from p returning id, payer_person_id)
+            select current_club_year_id(), (select id from membership_types where code = 'IS' and club_year_id = current_club_year_id()), id, 'active', 18500 from p returning id, payer_person_id)
       insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
     `);
   }

@@ -15,7 +15,7 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
     supabase.rpc("open_club_years"),
     supabase
       .from("membership_types")
-      .select("id, name, cover, annual_price_pence, sibling_order")
+      .select("id, club_year_id, name, cover, annual_price_pence, sibling_order")
       .eq("is_open", true)
       .order("sort_order"),
     supabase.from("households").select("id, postcode, address_line1, lead_person_id"),
@@ -33,7 +33,10 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
   const yearList = (years ?? []) as Year[];
   const current = yearList.find((y) => !y.is_renewal);
   const { data: quote } = current
-    ? await supabase.rpc("membership_quote", { p_type_id: (types ?? [])[0]?.id, p_club_year_id: current.id })
+    ? await supabase.rpc("membership_quote", {
+        p_type_id: ((types ?? []) as Type[]).find((t) => t.club_year_id === current.id)?.id,
+        p_club_year_id: current.id,
+      })
     : { data: null };
   const months = (quote as { months: number }[] | null)?.[0]?.months ?? 12;
 
