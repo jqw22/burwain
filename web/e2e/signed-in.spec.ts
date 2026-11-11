@@ -367,7 +367,7 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toBeVisible();
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Pat`) })).toHaveCount(0);
   // Sort by type keeps the search and filter.
-  await page.getByRole("link", { name: "Type" }).click();
+  await page.getByRole("link", { name: "Type", exact: true }).click();
   await expect(page).toHaveURL(/sort=type/);
   await expect(page).toHaveURL(/status=active/);
   await expect(page.getByLabel("Search members")).toHaveValue(`Tester${run}`);
