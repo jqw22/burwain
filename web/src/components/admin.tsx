@@ -9,7 +9,7 @@ export function NotAllowed({ who = "club admins" }: { who?: string }) {
   );
 }
 
-// Each Home page section has its own bar of links: Membership admin, Admin communications and Finance admin.
+// Each Home page section has its own bar of links: Membership admin, Communications admin and Finance admin.
 const SECTIONS = {
   members: "membership",
   applications: "membership",
@@ -28,7 +28,7 @@ const LINKS = [
   { key: "reminders", href: "/admin/reminders", label: "Renewal reminders" },
   { key: "memberships", href: "/admin/memberships", label: "Income" },
 ] as const;
-const SECTION_NAME = { membership: "Membership admin", comms: "Admin communications", finance: "Finance admin" };
+const SECTION_NAME = { membership: "Membership admin", comms: "Communications admin", finance: "Finance admin" };
 
 export function AdminNav({ current }: { current: keyof typeof SECTIONS }) {
   const section = SECTIONS[current];

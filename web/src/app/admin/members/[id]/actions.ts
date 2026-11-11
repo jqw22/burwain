@@ -105,3 +105,30 @@ export async function adminSavePreferences(form: FormData) {
     .eq("id", id);
   back(id, error ? "error" : "saved", "preferences", "preferences", Boolean(error));
 }
+
+// An admin renews (or adds) a membership for this member and/or their family.
+export async function adminRenewMembership(form: FormData) {
+  const { supabase, allowed } = await meWithRole("admin");
+  const id = String(form.get("member_id"));
+  if (!allowed) back(id, "error", "renew", "membership");
+  const people = form.getAll("person").map(String);
+  if (people.length === 0) back(id, "error", "who", "membership");
+  const { error } = await supabase.rpc("admin_renew_membership", {
+    p_person: id,
+    p_type_id: String(form.get("type_id") ?? ""),
+    p_person_ids: people,
+    p_club_year_id: String(form.get("club_year_id") ?? ""),
+  });
+  if (error) {
+    const known: [string, string][] = [
+      ["age limit", "age"],
+      ["already has", "duplicate"],
+      ["junior needs an adult", "adult"],
+      ["covers exactly", "count"],
+      ["up to 4", "count"],
+      ["not available", "unavailable"],
+    ];
+    back(id, "error", known.find(([n]) => error.message.includes(n))?.[1] ?? "renew", "membership");
+  }
+  back(id, "saved", "renewed", "membership");
+}

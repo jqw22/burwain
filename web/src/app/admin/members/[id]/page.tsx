@@ -4,8 +4,10 @@ import { NotAllowed, STATUS_LABEL } from "@/components/admin";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { EditLink, FormButtons, Item, LINK } from "@/app/profile/ui";
 import { ageOn, meWithRole, PERSON_FIELDS, pounds, ukDate, type Person } from "@/lib/me";
+import { RenewForm, type RenewPerson, type RenewType } from "@/app/profile/renew-form";
 import {
   adminAddQualification,
+  adminRenewMembership,
   adminRemoveQualification,
   adminSaveAddress,
   adminSaveLead,
@@ -36,6 +38,8 @@ const SAVED: Record<string, string> = {
   preferences: "Preferences saved.",
   accepted: "Application accepted: they're now a member, with their membership awaiting payment.",
   added: "New member added. Their membership, if you chose one, is on the Payments page.",
+  contact: "Contact added. They'll get club emails if they agreed to them. To make them a member, add a membership below.",
+  renewed: "Membership added. It's awaiting payment; finance can record the payment on the Income page.",
 };
 const ERRORS: Record<string, string> = {
   details: "We couldn't save those details. Please check them and try again.",
@@ -44,6 +48,13 @@ const ERRORS: Record<string, string> = {
   medical: "We couldn't save the medical information. Please try again.",
   qualification: "We couldn't update the qualifications. Please check the name and dates.",
   preferences: "We couldn't save the preferences. Please try again.",
+  who: "Please tick who the membership is for.",
+  age: "Someone is over the age limit for that membership, or their date of birth is missing.",
+  duplicate: "Someone ticked already has that kind of membership for that year.",
+  adult: "A junior needs an adult in the family with a membership for the same year. Renew the adult first.",
+  count: "That membership type doesn't cover that number of people.",
+  unavailable: "That membership type isn't available.",
+  renew: "We couldn't add that membership. Please try again.",
 };
 const SECTION: Record<string, string> = {
   details: "contact",
@@ -52,6 +63,15 @@ const SECTION: Record<string, string> = {
   medical: "medical",
   qualification: "qualifications",
   preferences: "preferences",
+  renewed: "membership",
+  contact: "membership",
+  who: "membership",
+  age: "membership",
+  duplicate: "membership",
+  adult: "membership",
+  count: "membership",
+  unavailable: "membership",
+  renew: "membership",
 };
 
 // An admin's view of one member: the same boxes as Your details, each opened for editing with its Edit link.
@@ -93,6 +113,40 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
         .limit(1)
     : { data: [] };
   const canAddToFamily = (sharedData ?? []).length > 0;
+
+  // Renewing or adding a membership for this member and their family: for each open club year, the people
+  // not yet covered that year, and that year's active membership types.
+  const { data: openYears } = await supabase.rpc("open_club_years");
+  const years = (openYears ?? []) as { id: string; label: string; starts_on: string; is_renewal: boolean }[];
+  const familyIds = m.household_id ? ((family ?? []) as Relative[]).map((r) => r.id) : [m.id];
+  const [{ data: coveredData }, { data: yearTypes }] = await Promise.all([
+    supabase
+      .from("membership_people")
+      .select("person_id, memberships!inner(club_year_id, status)")
+      .in("person_id", familyIds)
+      .in("memberships.club_year_id", years.map((y) => y.id))
+      .neq("memberships.status", "cancelled"),
+    supabase
+      .from("membership_types")
+      .select("id, club_year_id, name, description, cover, annual_price_pence, max_age, sibling_order, starts_on, ends_on")
+      .in("club_year_id", years.map((y) => y.id))
+      .eq("is_open", true)
+      .gte("ends_on", new Date().toISOString().slice(0, 10))
+      .order("sort_order"),
+  ]);
+  const covered = (coveredData ?? []) as unknown as { person_id: string; memberships: { club_year_id: string } }[];
+  const familyPeople = m.household_id ? ((family ?? []) as Relative[]) : [{ id: m.id, first_name: m.first_name, last_name: m.last_name, date_of_birth: m.date_of_birth }];
+  const renewals = years
+    .map((y) => ({
+      year: y,
+      people: familyPeople
+        .filter((p) => !covered.some((c) => c.person_id === p.id && c.memberships.club_year_id === y.id))
+        .map((p): RenewPerson => ({ id: p.id, name: `${p.first_name} ${p.last_name}`, age: ageOn(p.date_of_birth, new Date(y.starts_on)) })),
+      types: ((yearTypes ?? []) as (RenewType & { club_year_id: string; sibling_order: number | null })[]).filter(
+        (t) => t.club_year_id === y.id && (t.sibling_order === null || t.sibling_order === 1),
+      ),
+    }))
+    .filter((r) => r.people.length > 0 && r.types.length > 0);
 
   const base = `/admin/members/${id}`;
   const editing = typeof query.edit === "string" ? query.edit : null;
@@ -144,6 +198,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
       {(savedKey === "added" || savedKey === "accepted") && <Notice message={SAVED[savedKey]} />}
 
       <Card id="membership" title="Membership">
+        {messages("membership")}
         {myHistory.length === 0 ? (
           <p className="text-slate-600">No memberships yet.</p>
         ) : (
@@ -160,6 +215,25 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
         <Link href="/admin/memberships" className={`mt-3 inline-block ${LINK}`}>
           Payments
         </Link>
+        {renewals.map((r) => (
+          <div key={r.year.id} className="mt-4 rounded border border-sky-200 bg-sky-50 p-4">
+            <h3 className="font-medium text-sky-950">
+              {r.year.is_renewal ? `Renew for ${r.year.label}` : `Add a membership for ${r.year.label}`}
+            </h3>
+            {!r.year.is_renewal && (
+              <p className="text-sm text-slate-600">Prices shown are for the full period. Joining part-way through is charged for the months left.</p>
+            )}
+            <RenewForm
+              yearId={r.year.id}
+              yearLabel={r.year.label}
+              people={r.people}
+              types={r.types}
+              action={adminRenewMembership}
+              extra={{ member_id: m.id }}
+              button={r.year.is_renewal ? `Renew for ${r.year.label}` : `Add membership for ${r.year.label}`}
+            />
+          </div>
+        ))}
       </Card>
 
       <Card id="contact" title="Contact details" action={edit("contact", "contact details")}>

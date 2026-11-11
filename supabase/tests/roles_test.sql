@@ -565,4 +565,33 @@ select pg_temp.expect_error($q$insert into membership_types (code, name, categor
 reset role;
 reset request.jwt.claim.sub;
 
+-- Admins renew for members: Max (no 2027 membership yet) renewed by an admin onto 2027 Club.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select admin_renew_membership((select id from people where first_name = 'Max'), (select id from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2027')), array[(select id from people where first_name = 'Max')], (select id from club_years where label = '2027'))$q$, 'Only an admin');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ declare n uuid; begin
+  n := admin_renew_membership((select id from people where first_name = 'Max'),
+         (select id from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2027')),
+         array[(select id from people where first_name = 'Max')], (select id from club_years where label = '2027'));
+  assert (select status::text || '/' || price_pence from memberships where id = n) = 'awaiting_payment/3500', 'admin renews at next year''s price';
+end $$;
+select pg_temp.expect_error($q$select admin_renew_membership((select id from people where first_name = 'Max'), (select id from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2027')), array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2027'))$q$, 'own household');
+reset role;
+reset request.jwt.claim.sub;
+
+-- Contacts for email lists: admins only, email needed, no membership or family.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select admin_add_contact('{"first_name":"Cy","last_name":"Contact","email":"cy@example.com"}')$q$, 'Only an admin');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+select pg_temp.expect_error($q$select admin_add_contact('{"first_name":"Cy","last_name":"Contact"}')$q$, 'email address is needed');
+do $$ declare c uuid; begin
+  c := admin_add_contact('{"first_name":"Cy","last_name":"Contact","email":"Cy@Example.com","news_consent":true}');
+  assert (select is_contact and news_consent and household_id is null and email = 'cy@example.com' from people where id = c), 'contact added';
+  assert not exists (select 1 from membership_people where person_id = c), 'no membership';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'
