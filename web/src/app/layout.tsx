@@ -17,7 +17,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en-GB" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         <header className="border-b border-slate-200 bg-white">
-          <nav className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-4">
+          <nav className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-4">
             {signedIn ? (
               <TopNav />
             ) : (
@@ -30,7 +30,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             )}
           </nav>
         </header>
-        <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">{children}</main>
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>
       </body>
     </html>
   );
