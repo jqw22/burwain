@@ -1,17 +1,22 @@
 -- Rename the tables that hold money received from members, so they are not
 -- confused with payments the club makes to suppliers (those are recorded in
 -- "transactions" with direction 'out').
---   payments       -> member_payments
---   payment_lines  -> member_payment_lines
+--   payments       -> member_receipts
+--   payment_lines  -> member_receipt_lines   (column payment_id -> receipt_id)
+--   transactions.payment_line_id -> receipt_line_id
 -- Policies, triggers, indexes and foreign keys follow the rename automatically.
 -- Functions store their body as text, so the ones that use these tables are
 -- recreated below with the new names (otherwise unchanged).
 
-alter table payments rename to member_payments;
-alter table payment_lines rename to member_payment_lines;
+alter table payments rename to member_receipts;
+alter table payment_lines rename to member_receipt_lines;
 
-alter table member_payments rename constraint payments_pkey to member_payments_pkey;
-alter table member_payment_lines rename constraint payment_lines_pkey to member_payment_lines_pkey;
+alter table member_receipts rename constraint payments_pkey to member_receipts_pkey;
+alter table member_receipt_lines rename constraint payment_lines_pkey to member_receipt_lines_pkey;
+
+-- Column names to match.
+alter table member_receipt_lines rename column payment_id to receipt_id;
+alter table transactions rename column payment_line_id to receipt_line_id;
 
 CREATE OR REPLACE FUNCTION public.on_payment_paid()
  RETURNS trigger
@@ -30,18 +35,18 @@ begin
   select id into fee_cat   from transaction_categories where name = 'Payment fees';
 
   update memberships set status = 'active'
-   where id in (select membership_id from member_payment_lines where payment_id = new.id);
+   where id in (select membership_id from member_receipt_lines where receipt_id = new.id);
   update boat_storages set status = 'active'
-   where id in (select boat_storage_id from member_payment_lines where payment_id = new.id);
+   where id in (select boat_storage_id from member_receipt_lines where receipt_id = new.id);
 
   insert into transactions (occurred_on, description, direction, amount_pence, category_id,
-                            method, payment_line_id, membership_type_id, recorded_by)
+                            method, receipt_line_id, membership_type_id, recorded_by)
   select coalesce(new.paid_on, current_date), pl.description, 'in', pl.amount_pence,
          case when pl.boat_storage_id is not null then store_cat else subs_cat end,
          new.method, pl.id, m.membership_type_id, new.recorded_by
-    from member_payment_lines pl
+    from member_receipt_lines pl
     left join memberships m on m.id = pl.membership_id
-   where pl.payment_id = new.id;
+   where pl.receipt_id = new.id;
 
   if new.fee_pence > 0 then
     insert into transactions (occurred_on, description, direction, amount_pence, category_id, method)
@@ -63,9 +68,9 @@ AS $function$
     join memberships m on m.id = mp.membership_id
     join club_years cy on cy.id = m.club_year_id
     join membership_types t on t.id = m.membership_type_id
-    left join member_payment_lines pl on pl.membership_id = m.id
-    left join member_payments pay on pay.id = pl.payment_id and pay.status = 'paid'
-    left join transactions tx on tx.payment_line_id = pl.id
+    left join member_receipt_lines pl on pl.membership_id = m.id
+    left join member_receipts pay on pay.id = pl.receipt_id and pay.status = 'paid'
+    left join transactions tx on tx.receipt_line_id = pl.id
    where mp.person_id = current_person_id()
       or mp.person_id in (select id from people where household_id = my_household_id())
       or has_role('finance') or has_role('admin')
@@ -83,7 +88,7 @@ begin
    where id = p_membership
      and payer_person_id = current_person_id()
      and status in ('awaiting_payment', 'pending_approval')
-     and not exists (select 1 from member_payment_lines where membership_id = p_membership);
+     and not exists (select 1 from member_receipt_lines where membership_id = p_membership);
   if not found then raise exception 'Only an unpaid membership you took out can be cancelled'; end if;
 end $function$
 ;
@@ -103,7 +108,7 @@ AS $function$
     join membership_types t on t.id = m.membership_type_id
     join people payer on payer.id = m.payer_person_id
     left join lateral (
-      select py.paid_on, py.method from member_payment_lines pl join member_payments py on py.id = pl.payment_id
+      select py.paid_on, py.method from member_receipt_lines pl join member_receipts py on py.id = pl.receipt_id
        where pl.membership_id = m.id and py.status = 'paid' order by py.paid_on desc limit 1
     ) pay on true
    where m.club_year_id = p_club_year_id
@@ -137,18 +142,18 @@ begin
   select sum(price_pence), min(payer_person_id::text)::uuid into total, payer
     from memberships where id = any(p_membership_ids);
 
-  insert into member_payments (payer_person_id, amount_pence, method, status, paid_on, recorded_by)
+  insert into member_receipts (payer_person_id, amount_pence, method, status, paid_on, recorded_by)
   values (payer, total, p_method, 'pending', p_paid_on, current_person_id())
   returning id into pay_id;
 
-  insert into member_payment_lines (payment_id, membership_id, description, amount_pence)
+  insert into member_receipt_lines (receipt_id, membership_id, description, amount_pence)
   select pay_id, m.id, t.name || ' ' || cy.label, m.price_pence
     from memberships m
     join membership_types t on t.id = m.membership_type_id
     join club_years cy on cy.id = m.club_year_id
    where m.id = any(p_membership_ids);
 
-  update member_payments set status = 'paid' where id = pay_id;   -- trigger activates and posts income
+  update member_receipts set status = 'paid' where id = pay_id;   -- trigger activates and posts income
   return pay_id;
 end $function$
 ;
