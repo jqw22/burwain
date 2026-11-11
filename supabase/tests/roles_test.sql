@@ -91,12 +91,12 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
 do $$ begin
   assert (select count(*) from people) = 1, 'finance cannot read full member records';
   assert (select count(*) from finance_member_status()) = 4, 'finance sees names and status for all memberships';
-  insert into payments (id, payer_person_id, amount_pence, fee_pence, method, status, paid_on, recorded_by)
+  insert into member_receipts (id, payer_person_id, amount_pence, fee_pence, method, status, paid_on, recorded_by)
   values ('30000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-00000000000a', 28000, 150, 'card', 'pending', '2026-03-06', '20000000-0000-0000-0000-00000000000c');
-  insert into payment_lines (payment_id, membership_id, description, amount_pence)
+  insert into member_receipt_lines (receipt_id, membership_id, description, amount_pence)
   select '30000000-0000-0000-0000-000000000001', m.id, 'Membership ' || t.code, m.price_pence
     from memberships m join membership_types t on t.id = m.membership_type_id where t.code in ('IS', 'J1');
-  update payments set status = 'paid' where id = '30000000-0000-0000-0000-000000000001';
+  update member_receipts set status = 'paid' where id = '30000000-0000-0000-0000-000000000001';
   assert (select sum(total_pence) from income_statement() where direction = 'in') = 28000, 'income posted';
   assert (select sum(total_pence) from income_statement() where direction = 'out') = 150, 'provider fee posted as a cost';
 end $$;
