@@ -276,13 +276,16 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(page).toHaveURL(/\/profile/);
 
   await page.goto("/profile");
-  // The member must confirm their details are up to date before renewing.
-  const confirm = page.getByLabel(/I confirm that all my personal details .*are up to date/);
-  await expect(confirm).not.toBeChecked();
+  // After pressing Renew, the next screen asks whether their details are up to date.
   await page.getByRole("button", { name: `Renew for ${next}` }).click();
-  await expect(page).toHaveURL(/\/profile(\?|#|$)/); // the browser stops the form until the box is ticked
-  await confirm.check();
+  const question = page.getByRole("region", { name: "Are your personal details up to date?" });
+  await expect(question).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your renewal" })).toContainText("Family for Sam");
+  await shot(page, "renew-confirm");
+  await question.getByRole("link", { name: "No, I need to update them first" }).click();
+  await expect(page).toHaveURL(/\/profile$/);
   await page.getByRole("button", { name: `Renew for ${next}` }).click();
+  await page.getByRole("button", { name: "Yes, they're up to date. Renew" }).click();
 
   // A test checkout: the order, a choice of card or Direct Debit, and a Pay button. No money is taken.
   await expect(page.getByRole("heading", { name: "Checkout" })).toBeVisible();
@@ -695,7 +698,11 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await page.goto("/admin/members/new");
   await expect(page.getByLabel("Membership type").locator("option", { hasText: name })).toHaveCount(1);
   await page.goto("/admin/types");
-  await page.getByRole("button", { name: `Make inactive: ${name}` }).click();
+  await expect(page.getByRole("button", { name: "Make inactive" })).toHaveCount(0); // only on the edit screen
+  await page.getByRole("link", { name: `Edit ${name}` }).click();
+  await expect(page.getByRole("region", { name: `Edit ${name}` })).toBeVisible();
+  await shot(page, "admin-types-edit");
+  await page.getByRole("region", { name: `Edit ${name}` }).getByRole("button", { name: "Make inactive" }).click();
   await expect(page.getByText("Membership type is now inactive.")).toBeVisible();
   await expect(page.getByRole("region", { name: /^Inactive/ }).getByRole("row", { name })).toBeVisible();
   expect(sql(`select is_open from membership_types where code = '${code}'`)).toBe("f");

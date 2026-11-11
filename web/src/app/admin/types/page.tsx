@@ -145,13 +145,27 @@ function TypeForm({ type, nextOrder, year }: { type: MembershipType | null; next
         />
         <div className="space-y-2 sm:col-span-2">
           <Checkbox label="Needs an adult member in the same family (like Junior)" name="requires_adult_member" defaultChecked={type?.requires_adult_member} />
-          <Checkbox label="Active: offered to new members, on the Join page and for renewal" name="is_open" defaultChecked={type?.is_open ?? true} />
         </div>
         <div className="flex items-center gap-4 sm:col-span-2">
           <SaveButton>{type ? "Save changes" : "Add membership type"}</SaveButton>
           <Link href={`/admin/types?year=${year.label}`} className="text-sm text-slate-600 underline">Cancel</Link>
         </div>
       </form>
+      {type && (
+        <form action={setActive} className="mt-6 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
+          <input type="hidden" name="id" value={type.id} />
+          <input type="hidden" name="year" value={year.label} />
+          <input type="hidden" name="active" value={type.is_open ? "false" : "true"} />
+          <span className="text-sm text-slate-700">
+            {type.is_open
+              ? `${type.name} is active: offered to new members, on the Join page and for renewal.`
+              : `${type.name} is inactive: not offered to anyone.`}
+          </span>
+          <SaveButton variant="secondary" pendingText="…">
+            {type.is_open ? "Make inactive" : "Make active"}
+          </SaveButton>
+        </form>
+      )}
     </Card>
   );
 }
@@ -204,7 +218,6 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
             <th className="py-2 pr-4">Covers</th>
             <th className="py-2 pr-4">Dates</th>
             <th className="py-2 pr-4">Price</th>
-            <th className="py-2 pr-4">Rules</th>
             <th className="py-2"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -220,6 +233,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
                 <td className="py-2 pr-4">
                   <strong>{t.name}</strong> <span className="text-slate-500">({t.code})</span>
                   {t.description && <span className="block max-w-md text-xs text-slate-500">{t.description}</span>}
+                  {rules.length > 0 && <span className="block max-w-md text-xs font-medium text-slate-700">{rules.join(" · ")}</span>}
                 </td>
                 <td className="py-2 pr-4">{CATEGORY[t.category]}</td>
                 <td className="py-2 pr-4">{COVER[t.cover]}</td>
@@ -228,20 +242,11 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
                   {t.ends_on < today && <span className="block text-xs text-amber-800">Ended, no longer offered</span>}
                 </td>
                 <td className="py-2 pr-4">{pounds(t.annual_price_pence)}</td>
-                <td className="py-2 pr-4 text-slate-600">{rules.length ? rules.join(", ") : "None"}</td>
                 <td className="py-2">
                   <div className="flex items-center justify-end gap-3 whitespace-nowrap">
                     <Link href={`/admin/types?year=${year.label}&edit=${t.id}#edit`} className="text-sky-800 underline" aria-label={`Edit ${t.name}`}>
                       Edit
                     </Link>
-                    <form action={setActive}>
-                      <input type="hidden" name="id" value={t.id} />
-                      <input type="hidden" name="year" value={year.label} />
-                      <input type="hidden" name="active" value={t.is_open ? "false" : "true"} />
-                      <SaveButton variant="link" pendingText="…" aria-label={`${t.is_open ? "Make inactive" : "Make active"}: ${t.name}`}>
-                        {t.is_open ? "Make inactive" : "Make active"}
-                      </SaveButton>
-                    </form>
                   </div>
                 </td>
               </tr>
@@ -293,7 +298,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
           <span className="text-sky-950">
             {nextCodes.size === 0
               ? `Set up ${nextLabel} by copying these ${year.label} types and prices, with their dates moved on a year. You can then change them for ${nextLabel}.`
-              : `${toCopy} of these types aren't in ${nextLabel} yet.`}
+              : `${toCopy === 1 ? "1 of these types isn't" : `${toCopy} of these types aren't`} in ${nextLabel} yet.`}
           </span>
           <SaveButton pendingText="Copying…">
             {nextCodes.size === 0 ? `Set up ${nextLabel} membership types` : `Copy them to ${nextLabel}`}

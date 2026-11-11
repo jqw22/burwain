@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { SaveButton } from "@/components/fields";
 import { typeDates } from "@/lib/quote";
-import { renewMemberships } from "./actions";
 
 export type RenewPerson = { id: string; name: string; age: number | null };
 export type RenewType = {
@@ -56,7 +55,7 @@ export function RenewForm({
   const type = options.find((t) => t.id === value);
 
   return (
-    <form action={renewMemberships} className="mt-2 space-y-3" aria-label={`Renew for ${yearLabel}`}>
+    <form action="/profile/renew" method="get" className="mt-2 space-y-3" aria-label={`Renew for ${yearLabel}`}>
       <input type="hidden" name="club_year_id" value={yearId} />
       <input type="hidden" name="remaining" value={people.length - chosen.length} />
       <fieldset>
@@ -108,13 +107,7 @@ export function RenewForm({
           You can renew the others separately afterwards, on a different membership type if you like.
         </p>
       )}
-      <label className="flex items-start gap-2 rounded border border-sky-300 bg-white p-3">
-        <input name="confirm" type="checkbox" required className="mt-1" />
-        <span className="text-sm">
-          I confirm that all my personal details{people.length > 1 && " (and my family's)"} are up to date.
-        </span>
-      </label>
-      <SaveButton pendingText="Renewing…">Renew for {yearLabel}</SaveButton>
+      <SaveButton pendingText="Opening…">Renew for {yearLabel}</SaveButton>
     </form>
   );
 }

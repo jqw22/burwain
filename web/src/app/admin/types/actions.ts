@@ -56,7 +56,6 @@ export async function saveType(form: FormData) {
     max_age: maxAge,
     sibling_order: sibling,
     requires_adult_member: form.get("requires_adult_member") === "on",
-    is_open: form.get("is_open") === "on",
     sort_order: sort ?? 0,
     starts_on: startsOn,
     ends_on: endsOn,
@@ -64,7 +63,7 @@ export async function saveType(form: FormData) {
 
   const { error } = id
     ? await supabase.from("membership_types").update(row).eq("id", id)
-    : await supabase.from("membership_types").insert({ ...row, club_year_id: yearId });
+    : await supabase.from("membership_types").insert({ ...row, club_year_id: yearId, is_open: true });
   if (error)
     back(year, "error", error.code === "23505" ? "duplicate" : error.message.includes("already has memberships") ? "moved" : "save", edit);
   // Show the year the type now starts in.
