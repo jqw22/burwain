@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SaveButton } from "@/components/fields";
+import { typeDates } from "@/lib/quote";
 import { renewMemberships } from "./actions";
 
 export type RenewPerson = { id: string; name: string; age: number | null };
@@ -12,6 +13,8 @@ export type RenewType = {
   cover: "individual" | "dual" | "family" | "junior";
   annual_price_pence: number;
   max_age: number | null;
+  starts_on: string;
+  ends_on: string;
 };
 
 const MAX_FAMILY = 4;
@@ -74,7 +77,7 @@ export function RenewForm({
         </div>
       </fieldset>
       <label className="block">
-        <span className="text-slate-700">Membership type for {yearLabel} (full year)</span>
+        <span className="text-slate-700">Membership type for {yearLabel}</span>
         <select
           name="type_id"
           required
@@ -89,7 +92,11 @@ export function RenewForm({
             </option>
           ))}
         </select>
-        {type?.description && <span className="mt-1 block text-sm text-slate-600">{type.description}</span>}
+        {type && (
+          <span className="mt-1 block text-sm text-slate-600">
+            {typeDates(type)}.{type.description && ` ${type.description}`}
+          </span>
+        )}
         {type?.cover === "junior" && (
           <span className="mt-1 block text-sm text-slate-600">
             Second and third juniors in a family get the sibling price automatically.

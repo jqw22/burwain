@@ -92,9 +92,10 @@ export async function RenewalCard({
   const { data: typesData } = next
     ? await supabase
         .from("membership_types")
-        .select("id, code, name, description, cover, annual_price_pence, max_age, sibling_order")
+        .select("id, code, name, description, cover, annual_price_pence, max_age, sibling_order, starts_on, ends_on")
         .eq("club_year_id", next.id)
         .eq("is_open", true)
+        .gte("ends_on", new Date().toISOString().slice(0, 10))
         .order("sort_order")
     : { data: [] };
   const nextTypes = ((typesData ?? []) as (RenewType & { code: string; sibling_order: number | null })[])

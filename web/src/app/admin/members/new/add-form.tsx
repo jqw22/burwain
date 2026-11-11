@@ -3,10 +3,11 @@
 import { useActionState, useState } from "react";
 import { Card, Field, SaveButton } from "@/components/fields";
 import { PersonFields, addButton } from "@/components/person-fields";
+import { quote, typeDates } from "@/lib/quote";
 import { adminAddMember, type AddState } from "./actions";
 
 export type Year = { id: string; label: string; is_renewal: boolean };
-export type Type = { id: string; club_year_id: string; name: string; cover: string; annual_price_pence: number; sibling_order: number | null };
+export type Type = { id: string; club_year_id: string; starts_on: string; ends_on: string; name: string; cover: string; annual_price_pence: number; sibling_order: number | null };
 export type Family = { id: string; label: string; shared: boolean };
 
 const select = "mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2";
@@ -23,7 +24,6 @@ export function AddMemberForm({
   years,
   types: allTypes,
   families,
-  months,
   canRecordPayment,
   householdId,
   today,
@@ -31,7 +31,6 @@ export function AddMemberForm({
   years: Year[];
   types: Type[];
   families: Family[];
-  months: number;
   canRecordPayment: boolean;
   householdId?: string;
   today: string;
@@ -45,7 +44,7 @@ export function AddMemberForm({
   // Each club year has its own membership types and prices.
   const types = allTypes.filter((t) => t.club_year_id === yearId);
   const renewalYear = years.find((y) => y.id === yearId)?.is_renewal ?? false;
-  const priceFor = (t: Type) => Math.round((t.annual_price_pence * (renewalYear ? 12 : months)) / 12);
+  const priceFor = (t: Type) => quote(t, today).price;
   // Switching year keeps the same membership type where that year has one with the same name.
   const changeYear = (id: string) => {
     const old = allTypes.find((t) => t.id === choice);
@@ -102,11 +101,15 @@ export function AddMemberForm({
                 ))}
               </select>
               <span className="mt-1 block text-xs text-slate-500">
-                {renewalYear
-                  ? "Full price for next year."
-                  : months < 12
-                    ? `Pro rata for the ${months} month${months === 1 ? "" : "s"} left this year.`
-                    : "Full price for this year."}
+                {type
+                  ? `${typeDates(type)}. ${
+                      quote(type, today).months < quote(type, today).total
+                        ? `Pro rata for the ${quote(type, today).months} month${quote(type, today).months === 1 ? "" : "s"} left.`
+                        : "Full price."
+                    }`
+                  : renewalYear
+                    ? "Full price for next year."
+                    : "Prices are shown in the list above."}
               </span>
             </label>
           )}

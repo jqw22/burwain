@@ -41,6 +41,10 @@ export async function saveType(form: FormData) {
   if (Number.isNaN(maxAge) || (maxAge !== null && maxAge > 120)) back(year, "error", "age", edit);
   if (Number.isNaN(sibling) || (sibling !== null && (sibling < 1 || sibling > 9))) back(year, "error", "sibling", edit);
   if (Number.isNaN(sort)) back(year, "error", "order", edit);
+  const startsOn = text(form, "starts_on");
+  const endsOn = text(form, "ends_on");
+  const isDate = (d: string | null) => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  if (!isDate(startsOn) || !isDate(endsOn) || endsOn! < startsOn!) back(year, "error", "dates", edit);
 
   const row = {
     name,
@@ -54,13 +58,17 @@ export async function saveType(form: FormData) {
     requires_adult_member: form.get("requires_adult_member") === "on",
     is_open: form.get("is_open") === "on",
     sort_order: sort ?? 0,
+    starts_on: startsOn,
+    ends_on: endsOn,
   };
 
   const { error } = id
     ? await supabase.from("membership_types").update(row).eq("id", id)
     : await supabase.from("membership_types").insert({ ...row, club_year_id: yearId });
-  if (error) back(year, "error", error.code === "23505" ? "duplicate" : "save", edit);
-  back(year, "saved", id ? "updated" : "added");
+  if (error)
+    back(year, "error", error.code === "23505" ? "duplicate" : error.message.includes("already has memberships") ? "moved" : "save", edit);
+  // Show the year the type now starts in.
+  back(startsOn!.slice(0, 4), "saved", id ? "updated" : "added");
 }
 
 export async function setActive(form: FormData) {

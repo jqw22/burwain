@@ -547,4 +547,22 @@ end $$;
 reset role;
 reset request.jwt.claim.sub;
 
+-- Each type has its own start and end date: pro rata within those dates, and not offered once ended.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ declare m uuid; begin
+  insert into membership_types (code, name, category, cover, annual_price_pence, starts_on, ends_on)
+  values ('SUM', 'Summer only', 'non_sailing', 'individual', 2000, '2026-05-01', '2026-09-30'),
+         ('WIN', 'Winter series', 'non_sailing', 'individual', 4000, '2026-11-01', '2027-02-28');
+  assert (select cy.label from membership_types t join club_years cy on cy.id = t.club_year_id where t.code = 'WIN') = '2026', 'club year follows the start date';
+  -- 5 December: 3 of Winter series' 4 months are left (December to February).
+  m := start_membership((select id from membership_types where code = 'WIN'), array['20000000-0000-0000-0000-0000000000a7'::uuid], (select id from club_years where label = '2026'));
+  assert (select price_pence::text || '/' || prorata_months from memberships where id = m) = '3000/3', 'pro rata within the type''s own dates';
+end $$;
+select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'SUM'), array['20000000-0000-0000-0000-0000000000a7'::uuid], (select id from club_years where label = '2026'))$q$, 'not available');
+select pg_temp.expect_error($q$update membership_types set starts_on = '2027-11-01', ends_on = '2028-02-28' where code = 'WIN'$q$, 'already has memberships');
+select pg_temp.expect_error($q$insert into membership_types (code, name, category, cover, annual_price_pence, starts_on, ends_on) values ('BAD', 'Bad', 'non_sailing', 'individual', 0, '2026-05-01', '2026-04-01')$q$, 'membership_types_dates');
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'

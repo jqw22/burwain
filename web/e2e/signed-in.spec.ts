@@ -262,7 +262,7 @@ test("the family's main contact renews for next year from Your details", async (
   await shot(page, "renew-before");
 
   // Members choose any of next year's types for the people ticked, starting with the same type as this year.
-  const type = box.getByLabel(`Membership type for ${next} (full year)`);
+  const type = box.getByLabel(`Membership type for ${next}`);
   await expect(type.locator("option:checked")).toHaveText("Family: £255");
   await expect(type.locator("option", { hasText: "Individual Sailing" })).toHaveCount(0); // covers one person, three are ticked
   await box.getByRole("checkbox", { name: /^Alex / }).uncheck();
@@ -670,7 +670,7 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await form.getByLabel("Name").fill(name);
   await form.getByLabel("Short code").fill(code.toLowerCase());
   await form.getByLabel("Description").fill("Windsurfing only, own board.");
-  await form.getByLabel("Price for a full year (£)").fill("60");
+  await form.getByLabel("Price for the whole period (£)").fill("60");
   await form.getByLabel("Category").selectOption("non_sailing");
   await shot(page, "admin-types-add");
   await form.getByRole("button", { name: "Add membership type" }).click();
@@ -686,7 +686,7 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await edit.getByLabel("Short code").fill("F");
   await edit.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Another membership type for this year already uses that short code.")).toBeVisible();
-  await page.getByRole("region", { name: `Edit ${name}` }).getByLabel("Price for a full year (£)").fill("65.50");
+  await page.getByRole("region", { name: `Edit ${name}` }).getByLabel("Price for the whole period (£)").fill("65.50");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Membership type saved.")).toBeVisible();
   await expect(page.getByRole("row", { name })).toContainText("£65.50");
@@ -716,9 +716,10 @@ test("an admin sets up next year's membership types by copying a year, then chan
   await expect(page.getByText("Membership types copied.")).toBeVisible();
   await expect(page.getByRole("link", { name: next, exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("region", { name: `Active for ${next}` }).getByRole("row", { name: "Family", exact: true })).toContainText("£255");
+  await expect(page.getByRole("row", { name: "Family", exact: true })).toContainText(`1 Jan ${next} to 31 Dec ${next}`);
 
   await page.getByRole("link", { name: "Edit Family" }).click();
-  await page.getByRole("region", { name: `Edit Family (${next})` }).getByLabel("Price for a full year (£)").fill("270");
+  await page.getByRole("region", { name: `Edit Family (${next})` }).getByLabel("Price for the whole period (£)").fill("270");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Membership type saved.")).toBeVisible();
   await expect(page.getByRole("row", { name: "Family", exact: true })).toContainText("£270");

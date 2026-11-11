@@ -2,12 +2,15 @@ import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { meWithRole, pounds } from "@/lib/me";
+import { typeDates } from "@/lib/quote";
 import { copyToNextYear, saveType, setActive } from "./actions";
 
-type Year = { id: string; label: string; starts_on: string };
+type Year = { id: string; label: string; starts_on: string; ends_on: string };
 type MembershipType = {
   id: string;
   club_year_id: string;
+  starts_on: string;
+  ends_on: string;
   code: string;
   name: string;
   description: string | null;
@@ -46,6 +49,8 @@ const ERRORS: Record<string, string> = {
   order: "The list position must be a whole number.",
   duplicate: "Another membership type for this year already uses that short code. Please choose a different one.",
   copy: "We couldn't copy the membership types. Please try again.",
+  dates: "Please give a start date and an end date, with the end date on or after the start date.",
+  moved: "This type already has memberships, so its start date must stay in the same year. Add a new type instead.",
   save: "We couldn't save that. Please try again.",
 };
 
@@ -79,11 +84,27 @@ function TypeForm({ type, nextOrder, year }: { type: MembershipType | null; next
           </label>
         </div>
         <Field
-          label="Price for a full year (£)"
+          label="Start date"
+          name="starts_on"
+          type="date"
+          defaultValue={type?.starts_on ?? year.starts_on}
+          required
+          hint="The first day memberships of this type cover."
+        />
+        <Field
+          label="End date"
+          name="ends_on"
+          type="date"
+          defaultValue={type?.ends_on ?? year.ends_on}
+          required
+          hint="The last day they cover. The type isn't offered after this date."
+        />
+        <Field
+          label="Price for the whole period (£)"
           name="price"
           defaultValue={type ? (type.annual_price_pence / 100).toFixed(2) : ""}
           required
-          hint={`The price for ${year.label} only. Memberships already taken keep the price they were taken at.`}
+          hint="For the whole period from the start date to the end date. People joining later pay for the months left. Memberships already taken keep their price."
         />
         <label className="block">
           <span className="text-sm font-medium">Category</span>
@@ -106,7 +127,7 @@ function TypeForm({ type, nextOrder, year }: { type: MembershipType | null; next
           name="max_age"
           type="number"
           defaultValue={type?.max_age?.toString()}
-          hint="For example 17 for juniors. Leave blank for no limit. Checked on 1 January of the membership year."
+          hint="For example 17 for juniors. Leave blank for no limit. Checked on the start date."
         />
         <Field
           label="Junior sibling number"
@@ -141,7 +162,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
   if (!allowed) return <NotAllowed />;
 
   const [{ data: yearsData }, { data: currentId }, { data }] = await Promise.all([
-    supabase.from("club_years").select("id, label, starts_on").order("starts_on"),
+    supabase.from("club_years").select("id, label, starts_on, ends_on").order("starts_on"),
     supabase.rpc("current_club_year_id"),
     supabase.from("membership_types").select("*").order("sort_order").order("name"),
   ]);
@@ -157,7 +178,8 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
   const nextYear = allYears.find((y) => y.label === nextLabel);
   const nextCodes = new Set(allTypes.filter((t) => t.club_year_id === nextYear?.id).map((t) => t.code));
   const toCopy = types.filter((t) => !nextCodes.has(t.code)).length;
-  const isFuture = year.starts_on > new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const isFuture = year.starts_on > today;
   const active = types.filter((t) => t.is_open);
   const inactive = types.filter((t) => !t.is_open);
   const edit = typeof params.edit === "string" ? params.edit : "";
@@ -180,6 +202,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
             <th className="py-2 pr-4">Membership type</th>
             <th className="py-2 pr-4">Category</th>
             <th className="py-2 pr-4">Covers</th>
+            <th className="py-2 pr-4">Dates</th>
             <th className="py-2 pr-4">Price</th>
             <th className="py-2 pr-4">Rules</th>
             <th className="py-2"><span className="sr-only">Actions</span></th>
@@ -200,6 +223,10 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
                 </td>
                 <td className="py-2 pr-4">{CATEGORY[t.category]}</td>
                 <td className="py-2 pr-4">{COVER[t.cover]}</td>
+                <td className="py-2 pr-4">
+                  {typeDates(t)}
+                  {t.ends_on < today && <span className="block text-xs text-amber-800">Ended, no longer offered</span>}
+                </td>
                 <td className="py-2 pr-4">{pounds(t.annual_price_pence)}</td>
                 <td className="py-2 pr-4 text-slate-600">{rules.length ? rules.join(", ") : "None"}</td>
                 <td className="py-2">
@@ -254,7 +281,8 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
         ))}
       </nav>
       <p className="text-slate-700">
-        Each club year has its own membership types and prices. Changing the {year.label} types doesn&apos;t affect any other year.
+        Each club year has its own membership types and prices, and each type has a start and end date. A type stops being offered after
+        its end date. Changing the {year.label} types doesn&apos;t affect any other year.
         {isFuture &&
           ` Renewals and joining for ${year.label} open 60 days before 1 January ${year.label}, once at least one type below is active.`}
       </p>
@@ -264,7 +292,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
           <input type="hidden" name="year" value={year.label} />
           <span className="text-sky-950">
             {nextCodes.size === 0
-              ? `Set up ${nextLabel} by copying these ${year.label} types and prices. You can then change them for ${nextLabel}.`
+              ? `Set up ${nextLabel} by copying these ${year.label} types and prices, with their dates moved on a year. You can then change them for ${nextLabel}.`
               : `${toCopy} of these types aren't in ${nextLabel} yet.`}
           </span>
           <SaveButton pendingText="Copying…">

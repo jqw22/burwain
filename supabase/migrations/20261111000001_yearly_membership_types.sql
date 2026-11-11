@@ -1,4 +1,6 @@
 -- Membership types are set up afresh for each club year (James, 2026-11-11).
+-- 0. Every type has its own start date and end date; memberships of that type run between them, and a type
+--    stops being offered once its end date has passed. The club year is the year the type starts in.
 -- 1. Every type belongs to one club year. Today's types become this year's types. If another year
 --    already has memberships, those types are copied into that year and its memberships moved onto the copies.
 -- 2. Admins copy one year's types into the next year as a starting point, then change prices or add or
@@ -42,9 +44,63 @@ alter table membership_types alter column club_year_id set not null;
 alter table membership_types drop constraint membership_types_code_key;
 alter table membership_types add constraint membership_types_year_code_key unique (club_year_id, code);
 create index on membership_types (club_year_id);
-comment on column membership_types.club_year_id is 'The club year this type is offered for. Each year has its own types and prices.';
+comment on column membership_types.club_year_id is 'The club year the type starts in (set from starts_on). Each year has its own types and prices.';
+
+-- 0. Start and end dates. Existing types run for their club year.
+alter table membership_types add column starts_on date, add column ends_on date;
+update membership_types t set starts_on = cy.starts_on, ends_on = cy.ends_on from club_years cy where cy.id = t.club_year_id;
+alter table membership_types
+  alter column starts_on set not null,
+  alter column ends_on set not null,
+  add constraint membership_types_dates check (ends_on >= starts_on);
+comment on column membership_types.starts_on is 'First day memberships of this type cover.';
+comment on column membership_types.ends_on is 'Last day memberships of this type cover. Not offered after this date.';
+comment on column membership_types.annual_price_pence is 'Price for the whole period from starts_on to ends_on.';
+
+-- Dates left out default to the club year's; the club year always follows the start date.
+-- A type that already has memberships can't be moved to another year.
+create function membership_type_dates() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.starts_on is null then
+    select cy.starts_on, coalesce(new.ends_on, cy.ends_on) into new.starts_on, new.ends_on
+      from club_years cy where cy.id = new.club_year_id;
+  end if;
+  if new.starts_on is null then raise exception 'A membership type needs a start date'; end if;
+  if new.ends_on is null then new.ends_on := (new.starts_on + interval '1 year' - interval '1 day')::date; end if;
+  new.club_year_id := ensure_club_year(extract(year from new.starts_on)::int);
+  if tg_op = 'UPDATE' and new.club_year_id <> old.club_year_id
+     and exists (select 1 from memberships where membership_type_id = new.id) then
+    raise exception 'This type already has memberships, so its start date must stay in %', extract(year from old.starts_on);
+  end if;
+  return new;
+end $$;
+create trigger membership_type_dates before insert or update of starts_on, ends_on, club_year_id on membership_types
+  for each row execute function membership_type_dates();
+
+-- Memberships of a type longer than a year can cover more than 12 months.
+alter table memberships drop constraint memberships_prorata_months_check;
+alter table memberships add constraint memberships_prorata_months_check check (prorata_months between 1 and 120);
+
+-- Price if bought today: the full price up to a month after the start date, then the months left
+-- (counting this month) out of the type's months.
+create or replace function membership_quote(p_type_id uuid, p_club_year_id uuid)
+returns table (price_pence integer, months integer)
+language sql stable security definer set search_path = public as $$
+  select round(t.annual_price_pence * l.months / tot.months::numeric)::int, l.months
+    from membership_types t,
+         lateral (select ((extract(year from t.ends_on) - extract(year from t.starts_on)) * 12
+                          + extract(month from t.ends_on) - extract(month from t.starts_on) + 1)::int as months) tot,
+         lateral (select case when club_today() <= t.starts_on + 30 then tot.months
+                              else greatest(1, least(tot.months,
+                                     ((extract(year from t.ends_on) - extract(year from club_today())) * 12
+                                      + extract(month from t.ends_on) - extract(month from club_today()) + 1)::int))
+                         end as months) l
+   where t.id = p_type_id
+$$;
 
 -- Copy types from one club year into another, skipping codes the target year already has.
+-- Their start and end dates move on by the same number of years.
 -- Optionally only some codes. Returns how many were copied. Not callable directly.
 create function copy_types_into(p_from uuid, p_to uuid, p_codes text[] default null) returns integer
 language plpgsql security definer set search_path = public as $$
@@ -52,11 +108,13 @@ declare
   n integer;
 begin
   with copied as (
-    insert into membership_types (club_year_id, code, name, description, category, cover, annual_price_pence,
-                                  max_age, requires_adult_member, sibling_order, is_open, sort_order)
-    select p_to, t.code, t.name, t.description, t.category, t.cover, t.annual_price_pence,
-           t.max_age, t.requires_adult_member, t.sibling_order, t.is_open, t.sort_order
-      from membership_types t
+    insert into membership_types (club_year_id, starts_on, ends_on, code, name, description, category, cover,
+                                  annual_price_pence, max_age, requires_adult_member, sibling_order, is_open, sort_order)
+    select p_to, (t.starts_on + shift.yrs)::date, (t.ends_on + shift.yrs)::date, t.code, t.name, t.description, t.category, t.cover,
+           t.annual_price_pence, t.max_age, t.requires_adult_member, t.sibling_order, t.is_open, t.sort_order
+      from membership_types t,
+           lateral (select make_interval(years => (extract(year from b.starts_on) - extract(year from a.starts_on))::int) as yrs
+                      from club_years a, club_years b where a.id = p_from and b.id = p_to) shift
      where t.club_year_id = p_from
        and (p_codes is null or t.code = any(p_codes))
        and not exists (select 1 from membership_types x where x.club_year_id = p_to and x.code = t.code)
@@ -127,7 +185,8 @@ language sql stable security definer set search_path = public as $$
   select cy.id, cy.label, cy.starts_on, cy.ends_on, cy.starts_on > club_today()
     from club_years cy
    where club_today() between cy.starts_on - renewal_notice_days() and cy.ends_on
-     and (cy.starts_on <= club_today() or exists (select 1 from membership_types t where t.club_year_id = cy.id and t.is_open))
+     and (cy.starts_on <= club_today()
+          or exists (select 1 from membership_types t where t.club_year_id = cy.id and t.is_open and t.ends_on >= club_today()))
      and current_person_id() is not null
    order by cy.starts_on
 $$;
@@ -148,7 +207,8 @@ declare
 begin
   select * into yr from club_years where id = p_club_year_id;
   if not found then raise exception 'That club year is not open for membership yet'; end if;
-  select * into mt from membership_types where id = p_type_id and is_open and club_year_id = yr.id;
+  select * into mt from membership_types
+   where id = p_type_id and is_open and club_year_id = yr.id and ends_on >= club_today();
   if not found then raise exception 'Membership type not available'; end if;
   if coalesce(cardinality(p_person_ids), 0) = 0 then raise exception 'Choose who the membership is for'; end if;
 
@@ -165,7 +225,7 @@ begin
   end if;
   if mt.max_age is not null and exists (
        select 1 from people where id = any(p_person_ids)
-       and (date_of_birth is null or date_part('year', age(yr.starts_on, date_of_birth)) > mt.max_age)) then
+       and (date_of_birth is null or date_part('year', age(mt.starts_on, date_of_birth)) > mt.max_age)) then
     raise exception 'Someone is over the age limit for % (date of birth needed)', mt.name;
   end if;
   if mt.requires_adult_member and not exists (
@@ -183,7 +243,8 @@ begin
      where m.club_year_id = yr.id and m.household_id = hh and t.sibling_order is not null
        and m.status <> 'cancelled';
     select * into mt from membership_types
-     where club_year_id = yr.id and cover = 'junior' and is_open and sibling_order <= least(juniors + 1, 3)
+     where club_year_id = yr.id and cover = 'junior' and is_open and ends_on >= club_today()
+       and sibling_order <= least(juniors + 1, 3)
      order by sibling_order desc, sort_order limit 1;
     if not found then raise exception 'Junior membership not available'; end if;
   end if;
@@ -253,7 +314,7 @@ end $$;
 revoke execute on function renew_my_membership(uuid, uuid[], uuid) from public, anon;
 grant execute on function renew_my_membership(uuid, uuid[], uuid) to authenticated;
 
--- The Join page offers each open year's own types.
+-- The Join page offers each open year's own types, until each type's end date.
 create or replace function join_options()
 returns table (type_id uuid, type_name text, description text, cover membership_cover, category membership_category,
                club_year_id uuid, club_year text, is_next_year boolean, price_pence int, months int)
@@ -262,7 +323,7 @@ language sql stable security definer set search_path = public as $$
     from membership_types t
     join club_years cy on cy.id = t.club_year_id
     cross join lateral membership_quote(t.id, cy.id) q
-   where t.is_open and t.cover <> 'junior'
+   where t.is_open and t.cover <> 'junior' and t.ends_on >= club_today()
      and club_today() between cy.starts_on - renewal_notice_days() and cy.ends_on
    order by cy.starts_on, t.sort_order
 $$;
