@@ -41,11 +41,14 @@ export function DirectionAndCategory({
         <span className="text-sm font-medium">Category</span>
         <select
           name="category_id"
+          required
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2"
         >
-          <option value="">Uncategorised</option>
+          <option value="" disabled>
+            Choose a category
+          </option>
           {shown.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}

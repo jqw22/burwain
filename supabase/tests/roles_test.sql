@@ -606,8 +606,10 @@ reset role;
 reset request.jwt.claim.sub;
 
 -- Transactions screen: finance sees who paid and a running balance from zero; members see nothing.
-insert into transactions (occurred_on, description, direction, amount_pence) values
-  ('2001-01-01', 'Test grant', 'in', 10000), ('2001-01-02', 'Test insurance', 'out', 2500);
+insert into transactions (occurred_on, description, direction, amount_pence, category_id) values
+  ('2001-01-01', 'Test grant', 'in', 10000, (select id from transaction_categories where name = 'Other income')),
+  ('2001-01-02', 'Test insurance', 'out', 2500, (select id from transaction_categories where name = 'Insurance'));
+select pg_temp.expect_error($q$insert into transactions (occurred_on, description, direction, amount_pence) values ('2001-01-03', 'No category', 'out', 100)$q$, 'transactions_category_required');
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
 do $$ begin

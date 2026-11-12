@@ -551,6 +551,9 @@ test("finance adds a supplier payment by hand from the Transactions screen", asy
   await page.goto("/admin/transactions");
   await page.getByRole("link", { name: "+ Add transaction" }).click();
   await expect(page.getByRole("heading", { name: "Add transaction", exact: true })).toBeVisible();
+  // A category must be chosen: there's no Uncategorised option.
+  await expect(page.getByLabel("Category")).toHaveAttribute("required", "");
+  await expect(page.getByLabel("Category").locator("option", { hasText: "Uncategorised" })).toHaveCount(0);
   await page.getByLabel("Money out (the club paid)").check();
   await page.getByLabel("Description").fill(`Sail repairs ${run}`);
   await page.getByLabel("Paid to / received from").fill(`Lakeside Sails ${run}`);
