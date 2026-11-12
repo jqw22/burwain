@@ -310,11 +310,11 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
                     <input type="hidden" name="starts_on" value={p.starts_on} />
                     <input type="hidden" name="ends_on" value={p.ends_on} />
                     <span className="text-sm text-sky-950">
-                      Copy {toCopy === list.length ? (toCopy === 1 ? "this type" : `all ${toCopy} types`) : `the ${toCopy} not yet copied`} to{" "}
-                      {typeDates(later)}, with the same prices to change afterwards.
+                      Copy {toCopy === list.length ? (toCopy === 1 ? "this type" : `all ${toCopy} types`) : `the ${toCopy} not yet copied`}, with
+                      the dates moved to {typeDates(later)} and the same prices to change afterwards.
                     </span>
-                    <SaveButton variant="secondary" pendingText="Copying…">
-                      Copy to {typeDates(later)}
+                    <SaveButton variant="secondary" pendingText="Copying…" aria-label={`Copy the types for ${typeDates(p)} to a year later`}>
+                      {toCopy === 1 ? "Copy it" : "Copy these types"}
                     </SaveButton>
                   </form>
                 )}
