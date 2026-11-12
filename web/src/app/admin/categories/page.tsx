@@ -63,7 +63,9 @@ export default async function CategoriesPage({
     const rows = categories
       .filter((c) => c.direction === dir)
       .sort(
+        // The fixed categories (used for member payments) go at the bottom.
         (a, b) =>
+          Number(LOCKED.has(a.name)) - Number(LOCKED.has(b.name)) ||
           Number(b.is_active) - Number(a.is_active) ||
           a.name.localeCompare(b.name),
       );
