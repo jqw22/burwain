@@ -317,7 +317,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   const links = async (name: string) => (await section(name).getByRole("link").allTextContents()).map((t) => t.trim());
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Renewal reminders", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Email templates", "Add contact"]);
-  expect(await links("Finance admin")).toEqual(["Income"]);
+  expect(await links("Finance admin")).toEqual(["Income", "Transactions"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
@@ -455,6 +455,33 @@ test("finance records a cheque for an Associate membership, which no longer need
          where p.email = 'alex-${run}@example.test' and t.code = 'A'`),
   ).toBe("active");
   await shot(page, "admin-memberships");
+});
+
+test("finance sees all transactions, newest first, with money in and out", async ({ browser }) => {
+  // A supplier payment from last week sits below a donation received today.
+  sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method)
+       select current_date - 7, 'Boat insurance ${run}', 'out'::txn_direction, 45000, id, 'bank_transfer'::payment_method from transaction_categories where name = 'Insurance'
+       union all
+       select current_date, 'Raffle donation ${run}', 'in'::txn_direction, 2550, id, 'cash'::payment_method from transaction_categories where name = 'Donations'`);
+  const page = await adminPage(browser);
+  await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Income", "Transactions"]);
+
+  const donation = page.getByRole("row", { name: new RegExp(`Raffle donation ${run}`) });
+  const insurance = page.getByRole("row", { name: new RegExp(`Boat insurance ${run}`) });
+  await expect(donation).toContainText("Donations");
+  await expect(donation).toContainText("Cash");
+  await expect(donation).toContainText("£25.50");
+  await expect(insurance).toContainText("Insurance");
+  await expect(insurance).toContainText("Bank transfer");
+  await expect(insurance).toContainText("£450");
+  // Newest first: today's donation comes before last week's insurance.
+  const rows = await page.getByRole("row").allTextContents();
+  const at = (re: RegExp) => rows.findIndex((t) => re.test(t));
+  expect(at(new RegExp(`Raffle donation ${run}`))).toBeLessThan(at(new RegExp(`Boat insurance ${run}`)));
+  await expect(page.getByText("Money out")).toBeVisible();
+  await shot(page, "admin-transactions");
 });
 
 test("an admin adds new members: joining a family, a new family paying cash, and a whole family", async ({ browser }) => {
@@ -933,6 +960,13 @@ test("a member can't open the memberships and payments page", async ({ browser }
   const page = await leadPage(browser);
   await page.goto("/admin/memberships");
   await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+});
+
+test("a member can't open the transactions page", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/admin/transactions");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+  await expect(page.getByText("Money in")).toHaveCount(0);
 });
 
 test("a member can't open the admin members page", async ({ browser }) => {
