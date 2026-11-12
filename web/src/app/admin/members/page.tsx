@@ -1,5 +1,5 @@
-import { SaveButton } from "@/components/fields";
 import Link from "next/link";
+import { LiveSearch } from "@/components/live-search";
 import { AdminNav, NotAllowed, STATUS_LABEL } from "@/components/admin";
 import { ageOn, meWithRole } from "@/lib/me";
 
@@ -10,6 +10,9 @@ type Row = {
   date_of_birth: string | null;
   email: string | null;
   mobile: string | null;
+  household_id: string | null;
+  is_contact: boolean;
+  households: { lead_person_id: string | null } | null;
 };
 type Held = {
   person_id: string;
@@ -26,11 +29,13 @@ type Membership = Held["memberships"];
 //   Future  - no membership this year, but one for a later year (e.g. joined or renewed for next year)
 //   Lapsed  - had a membership before, but not this year or later
 //   None    - has never had a membership (e.g. a family member who isn't covered)
+//   Contact - added as a contact for email lists, with no membership
 const MEMBERSHIP_STATUS = {
   active: "Active",
   future: "Future (pending)",
   lapsed: "Lapsed",
   none: "No membership",
+  contact: "Contact",
 } as const;
 type MembershipStatus = keyof typeof MEMBERSHIP_STATUS;
 const STATUS_STYLE: Record<MembershipStatus, string> = {
@@ -38,6 +43,7 @@ const STATUS_STYLE: Record<MembershipStatus, string> = {
   future: "bg-sky-50 text-sky-900",
   lapsed: "bg-slate-100 text-slate-700",
   none: "text-slate-400",
+  contact: "bg-amber-50 text-amber-900",
 };
 
 type Summary = {
@@ -73,7 +79,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
 
   let query = supabase
     .from("people")
-    .select("id, first_name, last_name, date_of_birth, email, mobile")
+    .select("id, first_name, last_name, date_of_birth, email, mobile, household_id, is_contact, households!people_household_id_fkey(lead_person_id)")
     .is("archived_at", null)
     .order("last_name")
     .order("first_name")
@@ -93,11 +99,32 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     byPerson.set(h.person_id, [...(byPerson.get(h.person_id) ?? []), h.memberships]);
   }
 
-  const all = ((people ?? []) as Row[]).map((p) => ({ ...p, ...summarise(byPerson.get(p.id) ?? [], year?.starts_on ?? "") }));
+  const all = ((people ?? []) as unknown as Row[]).map((p) => {
+    const summary = summarise(byPerson.get(p.id) ?? [], year?.starts_on ?? "");
+    return { ...p, ...summary, status: (summary.status === "none" && p.is_contact ? "contact" : summary.status) as MembershipStatus };
+  });
   const counts = Object.fromEntries(
     (Object.keys(MEMBERSHIP_STATUS) as MembershipStatus[]).map((s) => [s, all.filter((r) => r.status === s).length]),
   ) as Record<MembershipStatus, number>;
   const rows = all.filter((r) => filter === "all" || r.status === filter);
+  // Sorted by name, families stay together: the main contact first, then the rest of the family indented under them.
+  const grouped = new Set<string>();
+  if (sort === "name") {
+    const groups = new Map<string, typeof rows>();
+    for (const r of rows) {
+      const key = r.household_id ?? r.id;
+      groups.set(key, [...(groups.get(key) ?? []), r]);
+    }
+    const ordered = [...groups.values()].map((g) => {
+      const leadId = g[0].households?.lead_person_id;
+      const isLead = (r: (typeof rows)[number]) => r.id === leadId;
+      g.sort((a, b) => Number(isLead(b)) - Number(isLead(a)) || (a.date_of_birth ?? "").localeCompare(b.date_of_birth ?? ""));
+      if (g.length > 1) g.slice(1).forEach((r) => grouped.add(r.id));
+      return g;
+    });
+    ordered.sort((a, b) => a[0].last_name.localeCompare(b[0].last_name) || a[0].first_name.localeCompare(b[0].first_name));
+    rows.splice(0, rows.length, ...ordered.flat());
+  }
   if (sort === "type") {
     // By membership type, then name. People without a membership go last.
     rows.sort((a, b) => {
@@ -129,23 +156,16 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       <AdminNav current="members" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-600">Everyone on the member list, with their membership status.</p>
-        <Link href="/admin/members/new" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
-          + Add new member
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/admin/contacts/new" className="rounded border border-sky-800 bg-white px-4 py-2 font-medium text-sky-900 hover:bg-sky-50">
+            + Add contact
+          </Link>
+          <Link href="/admin/members/new" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
+            + Add new member
+          </Link>
+        </div>
       </div>
-      <form className="flex flex-wrap gap-2" role="search">
-        <label className="sr-only" htmlFor="q">Search members</label>
-        <input
-          id="q"
-          name="q"
-          defaultValue={q}
-          placeholder="Search by name or email"
-          className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-3 py-2"
-        />
-        {filter !== "all" && <input type="hidden" name="status" value={filter} />}
-        {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
-        <SaveButton pendingText="Searching…">Search</SaveButton>
-      </form>
+      <LiveSearch label="Search members" placeholder="Search by name or email" initial={q} />
       <nav aria-label="Filter by membership status" className="flex flex-wrap gap-2 text-sm">
         {(["all", ...Object.keys(MEMBERSHIP_STATUS)] as (MembershipStatus | "all")[]).map((s) => (
           <Link
@@ -183,8 +203,13 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
               const age = ageOn(p.date_of_birth);
               const m = p.shown;
               return (
-                <tr key={p.id}>
-                  <td className="px-3 py-2">
+                <tr key={p.id} className={grouped.has(p.id) ? "border-t-0 bg-slate-50/60" : undefined}>
+                  <td className={grouped.has(p.id) ? "py-2 pl-8 pr-3" : "px-3 py-2"}>
+                    {grouped.has(p.id) && (
+                      <span aria-hidden="true" className="mr-1 text-slate-400">
+                        └
+                      </span>
+                    )}
                     <Link href={`/admin/members/${p.id}`} className="text-sky-800 underline">
                       {p.last_name}, {p.first_name}
                     </Link>

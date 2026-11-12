@@ -105,7 +105,7 @@ export default async function HomePage() {
       )}
       {isAdmin && (
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="font-semibold">Admin communications</h2>
+          <h2 className="font-semibold">Communications admin</h2>
           <ul className="mt-2 space-y-1">
             <li>
               <Link href="/admin/emails" className="text-sky-800 underline">

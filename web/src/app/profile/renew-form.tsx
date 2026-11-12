@@ -40,12 +40,19 @@ export function RenewForm({
   people,
   types,
   suggested,
+  action,
+  extra = {},
+  button,
 }: {
   yearId: string;
   yearLabel: string;
   people: RenewPerson[];
   types: RenewType[];
   suggested?: string;
+  // Admins renew straight away with their own action; members go on to the confirmation screen.
+  action?: (form: FormData) => void | Promise<void>;
+  extra?: Record<string, string>;
+  button?: string;
 }) {
   const [ticked, setTicked] = useState<string[]>(people.map((p) => p.id));
   const chosen = people.filter((p) => ticked.includes(p.id));
@@ -55,7 +62,14 @@ export function RenewForm({
   const type = options.find((t) => t.id === value);
 
   return (
-    <form action="/profile/renew" method="get" className="mt-2 space-y-3" aria-label={`Renew for ${yearLabel}`}>
+    <form
+      {...(action ? { action } : { action: "/profile/renew", method: "get" })}
+      className="mt-2 space-y-3"
+      aria-label={button ?? `Renew for ${yearLabel}`}
+    >
+      {Object.entries(extra).map(([k, v]) => (
+        <input key={k} type="hidden" name={k} value={v} />
+      ))}
       <input type="hidden" name="club_year_id" value={yearId} />
       <input type="hidden" name="remaining" value={people.length - chosen.length} />
       <fieldset>
@@ -107,7 +121,7 @@ export function RenewForm({
           You can renew the others separately afterwards, on a different membership type if you like.
         </p>
       )}
-      <SaveButton pendingText="Opening…">Renew for {yearLabel}</SaveButton>
+      <SaveButton pendingText={action ? "Saving…" : "Opening…"}>{button ?? `Renew for ${yearLabel}`}</SaveButton>
     </form>
   );
 }
