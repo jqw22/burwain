@@ -317,7 +317,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   const links = async (name: string) => (await section(name).getByRole("link").allTextContents()).map((t) => t.trim());
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Renewal reminders", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Email templates", "Add contact"]);
-  expect(await links("Finance admin")).toEqual(["Income"]);
+  expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
@@ -478,6 +478,144 @@ test("finance records a cheque for an Associate membership, which no longer need
          where p.email = 'alex-${run}@example.test' and t.code = 'A'`),
   ).toBe("active");
   await shot(page, "admin-memberships");
+});
+
+test("finance sees this month's transactions with who paid, a running balance, search and date sort", async ({ browser }) => {
+  // Insurance paid on the 1st of this month, a donation today, and a grant last month (outside the default dates).
+  sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method)
+       select date_trunc('month', current_date)::date, 'Boat insurance ${run}', 'out'::txn_direction, 45000, id, 'bank_transfer'::payment_method from transaction_categories where name = 'Insurance'
+       union all
+       select (date_trunc('month', current_date) - interval '1 day')::date, 'Old grant ${run}', 'in'::txn_direction, 99900, id, 'bank_transfer'::payment_method from transaction_categories where name = 'Other income'`);
+  sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method)
+       select current_date, 'Raffle donation ${run}', 'in'::txn_direction, 2550, id, 'cash'::payment_method from transaction_categories where name = 'Donations'`);
+  const page = await adminPage(browser);
+  await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Income", "Transactions", "Categories"]);
+
+  // This month by default: last month's grant isn't shown.
+  const month = sql(`select to_char(date_trunc('month', current_date), 'YYYY-MM-DD') || '|' || to_char(date_trunc('month', current_date) + interval '1 month' - interval '1 day', 'YYYY-MM-DD')`).split("|");
+  await expect(page.getByLabel("From", { exact: true })).toHaveValue(month[0]);
+  await expect(page.getByLabel("To", { exact: true })).toHaveValue(month[1]);
+  await expect(page.getByRole("row", { name: new RegExp(`Old grant ${run}`) })).toHaveCount(0);
+
+  const donation = page.getByRole("row", { name: new RegExp(`Raffle donation ${run}`) });
+  const insurance = page.getByRole("row", { name: new RegExp(`Boat insurance ${run}`) });
+  await expect(donation).toContainText("Donations");
+  await expect(donation).toContainText("Cash");
+  await expect(donation).toContainText("£25.50");
+  await expect(insurance).toContainText("Bank transfer");
+  await expect(insurance).toContainText("£450");
+
+  // Who paid: the cheque Alex paid for their Associate membership.
+  const cheque = page.getByRole("row", { name: new RegExp(`Associate Membership .*Alex Tester${run}`) });
+  await expect(cheque).toContainText("Cheque");
+
+  // Running balance from zero over every transaction ever recorded.
+  const balance = Number(sql(`select sum(case direction when 'in' then amount_pence else -amount_pence end) from transactions`));
+  const expected = `${balance < 0 ? "−" : ""}£${(Math.abs(balance) / 100).toFixed(balance % 100 === 0 ? 0 : 2)}`;
+  await expect(donation.getByRole("cell").last()).toHaveText(expected);
+
+  // Newest first, then oldest first after clicking the Date heading.
+  const order = async () => {
+    const rows = await page.getByRole("row").allTextContents();
+    return rows.findIndex((t) => t.includes(`Raffle donation ${run}`)) < rows.findIndex((t) => t.includes(`Boat insurance ${run}`));
+  };
+  expect(await order()).toBe(true);
+  await page.getByRole("link", { name: /^Date/ }).click();
+  await expect(page.getByText("oldest first")).toBeVisible();
+  expect(await order()).toBe(false);
+
+  // A wider date range brings in last month's grant.
+  await page.getByLabel("From", { exact: true }).fill(sql(`select to_char(date_trunc('month', current_date) - interval '1 month', 'YYYY-MM-DD')`));
+  await page.getByRole("button", { name: "Show" }).click();
+  await expect(page.getByRole("row", { name: new RegExp(`Old grant ${run}`) })).toBeVisible();
+
+  // Search by who paid.
+  await page.getByLabel("Search transactions").fill(`Alex Tester${run}`);
+  await expect(page.getByRole("row", { name: new RegExp(`Boat insurance ${run}`) })).toHaveCount(0);
+  await expect(cheque).toBeVisible();
+  await page.getByLabel("Search transactions").fill("");
+  await page.goto("/admin/transactions");
+  await expect(insurance).toBeVisible();
+  await expect(insurance).toBeVisible();
+});
+
+test("finance adds a supplier payment by hand from the Transactions screen", async ({ browser }) => {
+  const page = await adminPage(browser);
+  await page.goto("/admin/transactions");
+  await page.getByRole("link", { name: "+ Add transaction" }).click();
+  await expect(page.getByRole("heading", { name: "Add transaction", exact: true })).toBeVisible();
+  await page.getByLabel("Money out (the club paid)").check();
+  await page.getByLabel("Description").fill(`Sail repairs ${run}`);
+  await page.getByLabel("Paid to / received from").fill(`Lakeside Sails ${run}`);
+  await page.getByLabel("Amount (£)").fill("0");
+  await page.getByLabel("Category").selectOption({ label: "Equipment" });
+  await page.getByLabel("How paid").selectOption("Bank transfer");
+  await shot(page, "admin-transaction-add");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Please give an amount in pounds")).toBeVisible();
+  await expect(page.getByLabel("Description")).toHaveValue(`Sail repairs ${run}`);
+
+  await page.getByLabel("Amount (£)").fill("£1,234.56");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added.")).toBeVisible();
+  const row = page.getByRole("row", { name: new RegExp(`Sail repairs ${run}`) });
+  await expect(row).toContainText(`Lakeside Sails ${run}`);
+  await expect(row).toContainText("Equipment");
+  await expect(row).toContainText("£1,234.56".replace(",", ""));
+  expect(
+    sql(`select t.direction || '|' || t.amount_pence || '|' || c.name || '|' || t.method || '|' || (t.recorded_by = p.id)
+           from transactions t join transaction_categories c on c.id = t.category_id, people p
+          where t.description = 'Sail repairs ${run}' and p.email = '${adminEmail}'`),
+  ).toBe("out|123456|Equipment|bank_transfer|true");
+
+  // A money-in category can't be used for money out.
+  await page.getByRole("link", { name: "+ Add transaction" }).click();
+  await page.getByLabel("Description").fill(`Wrong way ${run}`);
+  await page.getByLabel("Amount (£)").fill("10");
+  await page.getByLabel("Category").selectOption({ label: "Donations" });
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("That category is for money going the other way")).toBeVisible();
+  expect(sql(`select count(*) from transactions where description = 'Wrong way ${run}'`)).toBe("0");
+
+  await page.goto("/admin/transactions");
+  await shot(page, "admin-transactions");
+});
+
+test("finance adds, renames and makes inactive a transaction category", async ({ browser }) => {
+  const page = await adminPage(browser);
+  const finance = page.getByRole("main").locator("section", { has: page.getByRole("heading", { name: "Finance admin", exact: true }) });
+  await finance.getByRole("link", { name: "Categories", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Categories", exact: true })).toBeVisible();
+  // Equipment was used by the sail repairs added earlier.
+  await expect(page.getByRole("row", { name: /Equipment/ })).toContainText("1");
+  // Subscriptions is used for member payments, so it can't be renamed or made inactive.
+  await expect(page.getByRole("row", { name: /Subscriptions/ })).toContainText("used automatically for member payments");
+  await expect(page.getByRole("button", { name: "Make inactive: Subscriptions" })).toHaveCount(0);
+
+  await page.getByLabel("Category name").fill(`Coaching ${run}`);
+  await page.locator(`select[name="direction"]`).selectOption("out");
+  await page.getByRole("button", { name: "Add category" }).click();
+  await expect(page.getByText("Category added.")).toBeVisible();
+  await page.getByLabel(`Name of Coaching ${run}`).fill(`Coaching fees ${run}`);
+  await page.getByRole("button", { name: `Rename Coaching ${run}` }).click();
+  await expect(page.getByText("Category renamed.")).toBeVisible();
+  expect(sql(`select direction || '|' || is_active from transaction_categories where name = 'Coaching fees ${run}'`)).toBe("out|true");
+
+  // An inactive category isn't offered for new transactions.
+  await page.getByRole("button", { name: `Make inactive: Coaching fees ${run}` }).click();
+  await expect(page.getByText("Category is now inactive.")).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(`Coaching fees ${run}`) })).toContainText("Inactive");
+  await shot(page, "admin-categories");
+  await page.goto("/admin/transactions/new");
+  await expect(page.getByLabel("Category").locator("option", { hasText: `Coaching fees ${run}` })).toHaveCount(0);
+
+  await page.goto("/admin/categories");
+  await page.getByRole("button", { name: `Make active: Coaching fees ${run}` }).click();
+  await expect(page.getByText("Category is active again")).toBeVisible();
+  await page.goto("/admin/transactions/new");
+  await expect(page.getByLabel("Category").locator("option", { hasText: `Coaching fees ${run}` })).toHaveCount(1);
 });
 
 test("an admin adds new members: joining a family, a new family paying cash, and a whole family", async ({ browser }) => {
@@ -958,6 +1096,17 @@ test("a member can't open the membership types page", async ({ browser }) => {
 test("a member can't open the memberships and payments page", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/admin/memberships");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+});
+
+test("a member can't open the transactions page", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/admin/transactions");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+  await expect(page.getByText("Money in")).toHaveCount(0);
+  await page.goto("/admin/transactions/new");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+  await page.goto("/admin/categories");
   await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 

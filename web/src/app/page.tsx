@@ -134,6 +134,16 @@ export default async function HomePage() {
                 Income
               </Link>
             </li>
+            <li>
+              <Link href="/admin/transactions" className="text-sky-800 underline">
+                Transactions
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/categories" className="text-sky-800 underline">
+                Categories
+              </Link>
+            </li>
           </ul>
         </section>
       )}

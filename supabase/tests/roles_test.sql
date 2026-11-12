@@ -605,4 +605,29 @@ end $$;
 reset role;
 reset request.jwt.claim.sub;
 
+-- Transactions screen: finance sees who paid and a running balance from zero; members see nothing.
+insert into transactions (occurred_on, description, direction, amount_pence) values
+  ('2001-01-01', 'Test grant', 'in', 10000), ('2001-01-02', 'Test insurance', 'out', 2500);
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+do $$ begin
+  assert (select balance_pence from club_transactions('2001-01-02', '2001-01-02')) = 7500, 'balance runs from the first transaction';
+  assert (select count(*) from club_transactions('2001-01-01', '2001-01-31')) = 2, 'date range';
+  assert (select count(*) from club_transactions(null, null) where paid_by is not null) = (select count(*) from transactions where receipt_line_id is not null), 'payer named on member receipts';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ begin assert (select count(*) from club_transactions(null, null)) = 0, 'members see no transactions'; end $$;
+reset role;
+reset request.jwt.claim.sub;
+
+-- Categories: member payments' categories are locked; others can be renamed and made inactive.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.expect_error($q$update transaction_categories set name = 'Subs' where name = 'Subscriptions'$q$, 'used automatically');
+select pg_temp.expect_error($q$update transaction_categories set is_active = false where name = 'Payment fees'$q$, 'used automatically');
+update transaction_categories set is_active = false where name = 'Venue';
+do $$ begin assert not (select is_active from transaction_categories where name = 'Venue'), 'venue inactive'; end $$;
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'
