@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LiveSearch } from "@/components/live-search";
-import { AdminNav, NotAllowed, STATUS_LABEL } from "@/components/admin";
+import { AdminNav, NotAllowed } from "@/components/admin";
 import { ageOn, meWithRole } from "@/lib/me";
 import { ukToday } from "@/lib/quote";
 
@@ -64,11 +64,21 @@ function summarise(ms: Membership[], today: string): Summary {
   return { status: "none", shown: null, next: null };
 }
 
-// Renewal status, for people with a membership running today:
-//   n/a          - it ends more than the renewal notice (60 days) from today
-//   Outstanding  - it ends within the notice period, and the next membership isn't paid (or doesn't exist yet)
-//   Paid         - the next membership (starting later) is paid
-// People with no membership running today show a dash.
+// Only these have filter buttons. Future and No membership people still appear under All.
+const FILTERS = ["active", "lapsed"] as const;
+type Filter = (typeof FILTERS)[number];
+
+// A lapsed member's renewal shows as Outstanding for this many days after their membership ended.
+const LAPSED_WINDOW_DAYS = 90;
+
+// Renewal status:
+//   Active members:
+//     n/a          - membership ends more than the renewal notice (60 days) from today
+//     Outstanding  - it ends within the notice period, and the next membership isn't paid (or doesn't exist yet)
+//     Paid         - the next membership (starting later) is paid
+//   Lapsed members:
+//     Outstanding  - for 90 days after their membership ended
+// Everyone else shows a dash.
 const RENEWAL_STATUS = { outstanding: "Outstanding", paid: "Paid", na: "n/a" } as const;
 type RenewalStatus = keyof typeof RENEWAL_STATUS;
 const RENEWAL_STYLE: Record<RenewalStatus, string> = {
@@ -77,10 +87,12 @@ const RENEWAL_STYLE: Record<RenewalStatus, string> = {
   na: "text-slate-500",
 };
 function renewalOf(s: Summary, today: string, noticeDays: number): RenewalStatus | null {
-  if (s.status !== "active" || !s.shown?.membership_types) return null;
-  if (s.next?.status === "active") return "paid";
+  if (!s.shown?.membership_types) return null;
   const ends = new Date(`${s.shown.membership_types.ends_on}T00:00:00Z`).getTime();
   const daysLeft = Math.round((ends - new Date(`${today}T00:00:00Z`).getTime()) / 86_400_000);
+  if (s.status === "lapsed") return daysLeft >= -LAPSED_WINDOW_DAYS ? "outstanding" : null;
+  if (s.status !== "active") return null;
+  if (s.next?.status === "active") return "paid";
   return daysLeft > noticeDays ? "na" : "outstanding";
 }
 
@@ -95,9 +107,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
 
   // Letters, digits, spaces, @ . - ' only, so the search can't break the query.
   const q = (typeof params.q === "string" ? params.q : "").replace(/[^\p{L}\p{N} @.\-']/gu, "").trim();
-  const filter = (typeof params.status === "string" && params.status in MEMBERSHIP_STATUS ? params.status : "all") as
-    | MembershipStatus
-    | "all";
+  const filter = (FILTERS.includes(params.status as Filter) ? params.status : "all") as Filter | "all";
   const sort = params.sort === "type" ? "type" : "name";
   const renewalFilter = (typeof params.renewal === "string" && params.renewal in RENEWAL_STATUS ? params.renewal : "all") as
     | RenewalStatus
@@ -127,7 +137,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     byPerson.set(h.person_id, [...(byPerson.get(h.person_id) ?? []), h.memberships]);
   }
 
-  const all = ((people ?? []) as unknown as Row[]).map((p) => {
+  const everyone = ((people ?? []) as unknown as Row[]).map((p) => {
     const summary = summarise(byPerson.get(p.id) ?? [], today);
     return {
       ...p,
@@ -136,9 +146,9 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       renewal: renewalOf(summary, today, noticeDays),
     };
   });
-  const counts = Object.fromEntries(
-    (Object.keys(MEMBERSHIP_STATUS) as MembershipStatus[]).map((s) => [s, all.filter((r) => r.status === s).length]),
-  ) as Record<MembershipStatus, number>;
+  // Contacts (email list only, no membership) aren't members, so they aren't listed here.
+  const all = everyone.filter((r) => r.status !== "contact");
+  const counts = Object.fromEntries(FILTERS.map((s) => [s, all.filter((r) => r.status === s).length])) as Record<Filter, number>;
   const renewalCounts = Object.fromEntries(
     (Object.keys(RENEWAL_STATUS) as RenewalStatus[]).map((s) => [s, all.filter((r) => r.renewal === s).length]),
   ) as Record<RenewalStatus, number>;
@@ -197,16 +207,42 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       <h1 className="text-2xl font-semibold">Members</h1>
       <AdminNav current="members" />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">Everyone on the member list, with their membership status.</p>
+        <p className="text-sm text-slate-600">Everyone on the member list, with their membership and renewal status.</p>
         <div className="flex flex-wrap gap-2">
           <Link href="/admin/members/new" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
             + Add new member
           </Link>
         </div>
       </div>
+      <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700" open>
+        <summary className="cursor-pointer font-medium text-slate-900">How status and renewal are worked out</summary>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <div>
+            <h2 className="font-medium text-slate-900">Status</h2>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              <li><strong>Active</strong>: has a membership running today.</li>
+              <li><strong>Lapsed</strong>: had a membership, but it has ended (or was marked lapsed).</li>
+              <li><strong>Future (pending)</strong>: nothing running today, but a membership starts later.</li>
+              <li><strong>No membership</strong>: on the list but never had a membership, e.g. a family member who isn&apos;t covered.</li>
+            </ul>
+          </div>
+          <div>
+            <h2 className="font-medium text-slate-900">Renewal</h2>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              <li><strong>n/a</strong>: active, and their membership ends more than {noticeDays} days from today.</li>
+              <li>
+                <strong>Outstanding</strong>: active and ending within {noticeDays} days with next year not yet paid, or lapsed within the
+                last {LAPSED_WINDOW_DAYS} days.
+              </li>
+              <li><strong>Paid</strong>: their next membership is paid.</li>
+              <li><strong>–</strong>: none of these (e.g. lapsed more than {LAPSED_WINDOW_DAYS} days ago).</li>
+            </ul>
+          </div>
+        </div>
+      </details>
       <LiveSearch label="Search members" placeholder="Search by name or email" initial={q} />
       <nav aria-label="Filter by membership status" className="flex flex-wrap gap-2 text-sm">
-        {(["all", ...Object.keys(MEMBERSHIP_STATUS)] as (MembershipStatus | "all")[]).map((s) => (
+        {(["all", ...FILTERS] as (Filter | "all")[]).map((s) => (
           <Link
             key={s}
             href={href({ status: s })}
@@ -249,7 +285,6 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
             <tr>
               {sortHeader("name", "Name")}
               {sortHeader("type", "Type")}
-              <th className="px-3 py-2 font-medium">Payment</th>
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Renewal</th>
             </tr>
@@ -279,18 +314,6 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                       </>
                     ) : (
                       <span className="text-slate-400">None</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {m && p.status !== "lapsed" ? (
-                      <span className="whitespace-nowrap">{STATUS_LABEL[m.status] ?? m.status}</span>
-                    ) : (
-                      <span className="text-slate-400">–</span>
-                    )}
-                    {p.next && (
-                      <span className="block text-xs text-slate-500">
-                        From {month(p.next.membership_types?.starts_on)}: {STATUS_LABEL[p.next.status] ?? p.next.status}
-                      </span>
                     )}
                   </td>
                   <td className="px-3 py-2">
