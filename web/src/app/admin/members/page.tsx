@@ -10,7 +10,6 @@ type Row = {
   last_name: string;
   date_of_birth: string | null;
   email: string | null;
-  mobile: string | null;
   household_id: string | null;
   is_contact: boolean;
   households: { lead_person_id: string | null } | null;
@@ -83,7 +82,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
 
   let query = supabase
     .from("people")
-    .select("id, first_name, last_name, date_of_birth, email, mobile, household_id, is_contact, households!people_household_id_fkey(lead_person_id)")
+    .select("id, first_name, last_name, date_of_birth, email, household_id, is_contact, households!people_household_id_fkey(lead_person_id)")
     .is("archived_at", null)
     .order("last_name")
     .order("first_name")
@@ -195,8 +194,6 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               {sortHeader("name", "Name")}
-              <th className="px-3 py-2 font-medium">Email</th>
-              <th className="px-3 py-2 font-medium">Mobile</th>
               {sortHeader("type", "Type")}
               <th className="px-3 py-2 font-medium">Payment</th>
               <th className="px-3 py-2 font-medium">Status</th>
@@ -219,8 +216,6 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                     </Link>
                     {age !== null && age < 18 && <span className="ml-2 text-xs text-slate-500">junior, {age}</span>}
                   </td>
-                  <td className="px-3 py-2">{p.email}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{p.mobile}</td>
                   <td className="px-3 py-2">
                     {m ? (
                       <>
