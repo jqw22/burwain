@@ -15,7 +15,7 @@ export default async function ContactAddedPage({ searchParams }: PageProps<"/adm
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Contact added</h1>
-      <AdminNav current="members" />
+      <AdminNav current="contacts" />
       <div className="rounded border border-green-300 bg-green-50 p-4 text-green-900" role="status">
         {person ? (
           <p>

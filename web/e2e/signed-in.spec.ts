@@ -328,7 +328,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
   const bar = page.getByRole("navigation", { name: "Membership admin" });
   await expect(page.getByRole("heading", { name: "Membership", exact: true })).toBeVisible();
-  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Import"]);
+  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Renewal reminders", "Import"]);
   await page.goto("/");
   await shot(page, "admin-home");
 });
@@ -863,6 +863,9 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   await expect(page.getByRole("link", { name: "+ Add contact" })).toHaveCount(0);
   await page.goto("/");
   await page.getByRole("link", { name: "Add contact", exact: true }).click();
+  // It sits under Communications, with the Communications tabs.
+  await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link")).toHaveText(["Email templates", "Add contact"]);
   const form = page.getByRole("form", { name: "Add a contact" });
   await form.getByLabel("First name").fill("Cass");
   await form.getByLabel("Last name").fill(`Contact${run}`);
@@ -1044,7 +1047,7 @@ test("an admin previews, tests and sends renewal reminders, and a daily limit is
   // Found in the Membership admin box on Home.
   await page.goto("/");
   await page.getByRole("link", { name: "Renewal reminders", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Membership", exact: true })).toBeVisible();
   const rita = page.getByRole("row", { name: `Rita Remind${run}` });
   await expect(rita).toContainText("Individual Sailing");
   await expect(rita).toContainText("£185");

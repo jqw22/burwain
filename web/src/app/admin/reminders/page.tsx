@@ -66,7 +66,7 @@ export default async function RemindersPage({ searchParams }: PageProps<"/admin/
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Communications</h1>
+      <h1 className="text-2xl font-semibold">Membership</h1>
       <AdminNav current="reminders" />
       <Notice message={saved} />
       {error && (
