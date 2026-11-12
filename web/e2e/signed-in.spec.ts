@@ -457,30 +457,64 @@ test("finance records a cheque for an Associate membership, which no longer need
   await shot(page, "admin-memberships");
 });
 
-test("finance sees all transactions, newest first, with money in and out", async ({ browser }) => {
-  // A supplier payment from last week sits below a donation received today.
+test("finance sees this month's transactions with who paid, a running balance, search and date sort", async ({ browser }) => {
+  // Insurance paid on the 1st of this month, a donation today, and a grant last month (outside the default dates).
   sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method)
-       select current_date - 7, 'Boat insurance ${run}', 'out'::txn_direction, 45000, id, 'bank_transfer'::payment_method from transaction_categories where name = 'Insurance'
+       select date_trunc('month', current_date)::date, 'Boat insurance ${run}', 'out'::txn_direction, 45000, id, 'bank_transfer'::payment_method from transaction_categories where name = 'Insurance'
        union all
+       select (date_trunc('month', current_date) - interval '1 day')::date, 'Old grant ${run}', 'in'::txn_direction, 99900, id, 'bank_transfer'::payment_method from transaction_categories where name = 'Other income'`);
+  sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method)
        select current_date, 'Raffle donation ${run}', 'in'::txn_direction, 2550, id, 'cash'::payment_method from transaction_categories where name = 'Donations'`);
   const page = await adminPage(browser);
   await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Income", "Transactions"]);
 
+  // This month by default: last month's grant isn't shown.
+  const month = sql(`select to_char(date_trunc('month', current_date), 'YYYY-MM-DD') || '|' || to_char(date_trunc('month', current_date) + interval '1 month' - interval '1 day', 'YYYY-MM-DD')`).split("|");
+  await expect(page.getByLabel("From", { exact: true })).toHaveValue(month[0]);
+  await expect(page.getByLabel("To", { exact: true })).toHaveValue(month[1]);
+  await expect(page.getByRole("row", { name: new RegExp(`Old grant ${run}`) })).toHaveCount(0);
+
   const donation = page.getByRole("row", { name: new RegExp(`Raffle donation ${run}`) });
   const insurance = page.getByRole("row", { name: new RegExp(`Boat insurance ${run}`) });
   await expect(donation).toContainText("Donations");
   await expect(donation).toContainText("Cash");
   await expect(donation).toContainText("£25.50");
-  await expect(insurance).toContainText("Insurance");
   await expect(insurance).toContainText("Bank transfer");
   await expect(insurance).toContainText("£450");
-  // Newest first: today's donation comes before last week's insurance.
-  const rows = await page.getByRole("row").allTextContents();
-  const at = (re: RegExp) => rows.findIndex((t) => re.test(t));
-  expect(at(new RegExp(`Raffle donation ${run}`))).toBeLessThan(at(new RegExp(`Boat insurance ${run}`)));
-  await expect(page.getByText("Money out")).toBeVisible();
+
+  // Who paid: the cheque Alex paid for their Associate membership.
+  const cheque = page.getByRole("row", { name: new RegExp(`Associate Membership .*Alex Tester${run}`) });
+  await expect(cheque).toContainText("Cheque");
+
+  // Running balance from zero over every transaction ever recorded.
+  const balance = Number(sql(`select sum(case direction when 'in' then amount_pence else -amount_pence end) from transactions`));
+  const expected = `${balance < 0 ? "−" : ""}£${(Math.abs(balance) / 100).toFixed(balance % 100 === 0 ? 0 : 2)}`;
+  await expect(donation.getByRole("cell").last()).toHaveText(expected);
+
+  // Newest first, then oldest first after clicking the Date heading.
+  const order = async () => {
+    const rows = await page.getByRole("row").allTextContents();
+    return rows.findIndex((t) => t.includes(`Raffle donation ${run}`)) < rows.findIndex((t) => t.includes(`Boat insurance ${run}`));
+  };
+  expect(await order()).toBe(true);
+  await page.getByRole("link", { name: /^Date/ }).click();
+  await expect(page.getByText("oldest first")).toBeVisible();
+  expect(await order()).toBe(false);
+
+  // A wider date range brings in last month's grant.
+  await page.getByLabel("From", { exact: true }).fill(sql(`select to_char(date_trunc('month', current_date) - interval '1 month', 'YYYY-MM-DD')`));
+  await page.getByRole("button", { name: "Show" }).click();
+  await expect(page.getByRole("row", { name: new RegExp(`Old grant ${run}`) })).toBeVisible();
+
+  // Search by who paid.
+  await page.getByLabel("Search transactions").fill(`Alex Tester${run}`);
+  await expect(page.getByRole("row", { name: new RegExp(`Boat insurance ${run}`) })).toHaveCount(0);
+  await expect(cheque).toBeVisible();
+  await page.getByLabel("Search transactions").fill("");
+  await page.goto("/admin/transactions");
+  await expect(insurance).toBeVisible();
   await shot(page, "admin-transactions");
 });
 
