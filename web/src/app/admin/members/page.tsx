@@ -160,9 +160,6 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-600">Everyone on the member list, with their membership status.</p>
         <div className="flex flex-wrap gap-2">
-          <Link href="/admin/contacts/new" className="rounded border border-sky-800 bg-white px-4 py-2 font-medium text-sky-900 hover:bg-sky-50">
-            + Add contact
-          </Link>
           <Link href="/admin/members/new" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
             + Add new member
           </Link>

@@ -315,8 +315,8 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   const page = await adminPage(browser);
   const section = (name: string) => page.getByRole("main").locator("section", { has: page.getByRole("heading", { name, exact: true }) });
   const links = async (name: string) => (await section(name).getByRole("link").allTextContents()).map((t) => t.trim());
-  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
-  expect(await links("Communications admin")).toEqual(["Email templates", "Renewal reminders"]);
+  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Renewal reminders", "Import", "Public join form"]);
+  expect(await links("Communications admin")).toEqual(["Email templates", "Add contact"]);
   expect(await links("Finance admin")).toEqual(["Income"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
@@ -685,8 +685,11 @@ test("an admin renews a membership for a member", async ({ browser }) => {
 
 test("an admin adds a contact for the email list, with no membership", async ({ browser }) => {
   const page = await adminPage(browser);
+  // Found in the Communications admin box on Home, not on the Members screen.
   await page.goto("/admin/members");
-  await page.getByRole("link", { name: "+ Add contact" }).click();
+  await expect(page.getByRole("link", { name: "+ Add contact" })).toHaveCount(0);
+  await page.goto("/");
+  await page.getByRole("link", { name: "Add contact", exact: true }).click();
   const form = page.getByRole("form", { name: "Add a contact" });
   await form.getByLabel("First name").fill("Cass");
   await form.getByLabel("Last name").fill(`Contact${run}`);
@@ -862,7 +865,7 @@ test("an admin previews, tests and sends renewal reminders, and a daily limit is
     `);
   }
   const page = await adminPage(browser);
-  // Found in the Communications admin box on Home.
+  // Found in the Membership admin box on Home.
   await page.goto("/");
   await page.getByRole("link", { name: "Renewal reminders", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Renewal reminders", exact: true })).toBeVisible();
