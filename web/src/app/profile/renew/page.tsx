@@ -44,7 +44,7 @@ export default async function ConfirmRenewalPage({ searchParams }: PageProps<"/p
       <Card title="Are your personal details up to date?">
         <p className="text-slate-700">
           Please check your contact details, address, medical information and preferences
-          {personIds.length > 1 && ", and your family's"} on Your details before you renew.
+          {personIds.length > 1 && ", and your family's"} on the Member page before you renew.
         </p>
         <form action={renewMemberships} className="mt-4 flex flex-wrap items-center gap-4">
           <input type="hidden" name="type_id" value={type.id} />

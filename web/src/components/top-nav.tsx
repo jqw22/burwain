@@ -4,35 +4,37 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 // The top bar links. The page you're on is shown bold and underlined.
-// Admin pages count as Home, because they're reached from the Home page.
+// Member is the landing page. Admin sits on the right, for admin and finance logins only,
+// and admin pages count as Admin because they're reached from it.
 const LINKS = [
-  { href: "/", label: "Home", match: (p: string) => p === "/" || p.startsWith("/admin") || p.startsWith("/membership") },
-  { href: "/profile", label: "Your details", match: (p: string) => p.startsWith("/profile") || p.startsWith("/family") },
+  { href: "/profile", label: "Member", match: (p: string) => p.startsWith("/profile") || p.startsWith("/family") || p.startsWith("/membership") },
   { href: "/directory", label: "Directory", match: (p: string) => p.startsWith("/directory") },
 ];
+const ADMIN = { href: "/", label: "Admin", match: (p: string) => p === "/" || p.startsWith("/admin") };
 
-export function TopNav() {
+export function TopNav({ showAdmin }: { showAdmin: boolean }) {
   const path = usePathname();
+  const link = (l: typeof ADMIN, extra = "") => {
+    const here = l.match(path);
+    return (
+      <Link
+        key={l.href}
+        href={l.href}
+        aria-current={here ? "page" : undefined}
+        className={
+          (here ? "font-bold text-sky-900 underline decoration-2 underline-offset-8" : "text-slate-700 hover:text-sky-900") +
+          extra
+        }
+      >
+        {l.label}
+      </Link>
+    );
+  };
   return (
     <>
-      {LINKS.map((l) => {
-        const here = l.match(path);
-        return (
-          <Link
-            key={l.href}
-            href={l.href}
-            aria-current={here ? "page" : undefined}
-            className={
-              here
-                ? "font-bold text-sky-900 underline decoration-2 underline-offset-8"
-                : "text-slate-700 hover:text-sky-900"
-            }
-          >
-            {l.label}
-          </Link>
-        );
-      })}
-      <form action="/auth/signout" method="post" className="ml-auto">
+      {LINKS.map((l) => link(l))}
+      {showAdmin && link(ADMIN, " ml-auto")}
+      <form action="/auth/signout" method="post" className={showAdmin ? undefined : "ml-auto"}>
         <button type="submit" className="text-sm text-slate-600 underline hover:text-sky-900">
           Sign out
         </button>

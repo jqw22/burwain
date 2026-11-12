@@ -81,14 +81,14 @@ async function signIn(page: Page, email: string) {
   await requestCode(page, email);
   await page.getByLabel("6-digit code").fill(await latestCode(email));
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/localhost:3100\/$/);
+  await expect(page).toHaveURL(/localhost:3100\/profile$/);
 }
 
 // The link in the same email still works too, in the browser that asked for it.
 async function signInWithLink(page: Page, email: string) {
   await requestCode(page, email);
   await page.goto(await latestLink(email));
-  await expect(page).toHaveURL(/localhost:3100\/$/);
+  await expect(page).toHaveURL(/localhost:3100\/profile$/);
 }
 
 // Sign the lead in once and share the session, as a real member would stay signed in.
@@ -150,13 +150,15 @@ async function shot(page: Page, name: string) {
 
 test("a member signs in with an email link and sees their membership", async ({ browser }) => {
   const page = await leadPage(browser);
+  // Members land on the Member page; the Admin page sends them back there.
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Welcome, Sam" })).toBeVisible();
-  await expect(page.getByText(/Family \(\d{4}\):/)).toBeVisible();
-  await expect(page.getByText("Paid")).toBeVisible();
-  // Sign out is in the top bar, and the page you're on is marked there.
+  await expect(page).toHaveURL(/\/profile$/);
+  await expect(page.getByRole("heading", { name: "Welcome Sam", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Family for Sam, Alex, Robin: £255\s*Paid/);
+  // Sign out is in the top bar, and the page you're on is marked there. Members don't see Admin.
   await expect(page.getByRole("banner").getByRole("button", { name: "Sign out" })).toBeVisible();
-  await expect(page.getByRole("banner").getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("banner").getByRole("link", { name: "Member" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveCount(0);
   await expect(page.getByRole("main").getByRole("button", { name: "Sign out" })).toHaveCount(0);
   // The login is now linked to Sam's member record.
   expect(sql(`select auth_user_id is not null from people where email = '${leadEmail}'`)).toBe("t");
@@ -300,7 +302,7 @@ test("the family's main contact renews for next year from Your details", async (
   await page.getByRole("button", { name: "Pay £255" }).click();
   await expect(page.getByText("Your payment of £255 by Direct Debit is confirmed.")).toBeVisible();
   await shot(page, "checkout-confirmed");
-  await page.getByRole("link", { name: "Back to Your details" }).click();
+  await page.getByRole("link", { name: "Back to Member" }).click();
   await expect(page.getByRole("region", { name: "Your membership" }).getByText(/Family for Sam, Alex, Robin: £255\s*Awaiting payment/)).toBeVisible();
   await expect(page.getByRole("link", { name: "Pay now" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Renew", exact: true })).toHaveCount(0);
@@ -315,6 +317,9 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   const page = await adminPage(browser);
   const section = (name: string) => page.getByRole("main").locator("section", { has: page.getByRole("heading", { name, exact: true }) });
   const links = async (name: string) => (await section(name).getByRole("link").allTextContents()).map((t) => t.trim());
+  await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Renewal reminders", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Email templates", "Add contact"]);
   expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories"]);
@@ -621,7 +626,7 @@ test("finance adds, renames and makes inactive a transaction category", async ({
 test("an admin adds new members: joining a family, a new family paying cash, and a whole family", async ({ browser }) => {
   const page = await adminPage(browser);
   // Members not in a family can't set one up themselves any more.
-  await page.getByRole("link", { name: "Your details" }).click();
+  await page.getByRole("link", { name: "Member", exact: true }).click();
   await expect(page.getByRole("button", { name: "Set up my family" })).toHaveCount(0);
   await expect(page.getByText("You're not in a family group.")).toBeVisible();
 
@@ -810,7 +815,7 @@ test("members see a directory of adult members, without payment status", async (
   await expect(page.getByRole("link", { name: new RegExp(`Tester${run}, Sam`) })).toHaveCount(0);
   await expect(page.getByText("Paid", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("banner").getByRole("link", { name: "Directory" })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("banner").getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("banner").getByRole("link", { name: "Member" })).not.toHaveAttribute("aria-current", "page");
   await shot(page, "directory");
 
   // Search by name.

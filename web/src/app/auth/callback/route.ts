@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   if (!code) return NextResponse.redirect(new URL("/login?error=link", request.url));
 
-  const response = NextResponse.redirect(new URL("/", request.url));
+  const response = NextResponse.redirect(new URL("/profile", request.url));
   response.headers.set("Cache-Control", "private, no-store");
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
