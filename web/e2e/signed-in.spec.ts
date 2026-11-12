@@ -515,6 +515,48 @@ test("finance sees this month's transactions with who paid, a running balance, s
   await page.getByLabel("Search transactions").fill("");
   await page.goto("/admin/transactions");
   await expect(insurance).toBeVisible();
+  await expect(insurance).toBeVisible();
+});
+
+test("finance adds a supplier payment by hand from the Transactions screen", async ({ browser }) => {
+  const page = await adminPage(browser);
+  await page.goto("/admin/transactions");
+  await page.getByRole("link", { name: "+ Add transaction" }).click();
+  await expect(page.getByRole("heading", { name: "Add transaction", exact: true })).toBeVisible();
+  await page.getByLabel("Money out (the club paid)").check();
+  await page.getByLabel("Description").fill(`Sail repairs ${run}`);
+  await page.getByLabel("Paid to / received from").fill(`Lakeside Sails ${run}`);
+  await page.getByLabel("Amount (£)").fill("0");
+  await page.getByLabel("Category").selectOption({ label: "Equipment" });
+  await page.getByLabel("How paid").selectOption("Bank transfer");
+  await shot(page, "admin-transaction-add");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Please give an amount in pounds")).toBeVisible();
+  await expect(page.getByLabel("Description")).toHaveValue(`Sail repairs ${run}`);
+
+  await page.getByLabel("Amount (£)").fill("£1,234.56");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added.")).toBeVisible();
+  const row = page.getByRole("row", { name: new RegExp(`Sail repairs ${run}`) });
+  await expect(row).toContainText(`Lakeside Sails ${run}`);
+  await expect(row).toContainText("Equipment");
+  await expect(row).toContainText("£1,234.56".replace(",", ""));
+  expect(
+    sql(`select t.direction || '|' || t.amount_pence || '|' || c.name || '|' || t.method || '|' || (t.recorded_by = p.id)
+           from transactions t join transaction_categories c on c.id = t.category_id, people p
+          where t.description = 'Sail repairs ${run}' and p.email = '${adminEmail}'`),
+  ).toBe("out|123456|Equipment|bank_transfer|true");
+
+  // A money-in category can't be used for money out.
+  await page.getByRole("link", { name: "+ Add transaction" }).click();
+  await page.getByLabel("Description").fill(`Wrong way ${run}`);
+  await page.getByLabel("Amount (£)").fill("10");
+  await page.getByLabel("Category").selectOption({ label: "Donations" });
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("That category is for money going the other way")).toBeVisible();
+  expect(sql(`select count(*) from transactions where description = 'Wrong way ${run}'`)).toBe("0");
+
+  await page.goto("/admin/transactions");
   await shot(page, "admin-transactions");
 });
 
@@ -1001,6 +1043,8 @@ test("a member can't open the transactions page", async ({ browser }) => {
   await page.goto("/admin/transactions");
   await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
   await expect(page.getByText("Money in")).toHaveCount(0);
+  await page.goto("/admin/transactions/new");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 
 test("a member can't open the admin members page", async ({ browser }) => {

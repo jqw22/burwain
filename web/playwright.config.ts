@@ -3,7 +3,13 @@ import { defineConfig, devices } from "@playwright/test";
 // Smoke tests against a production build. Needs `npm run build` first.
 export default defineConfig({
   testDir: "./e2e",
-  use: { baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" },
+  use: {
+    baseURL: "http://localhost:3100",
+    locale: "en-GB",
+    timezoneId: "Europe/London",
+    // Start the browser in UK English so date boxes show dd/mm/yyyy, as members' UK browsers do.
+    launchOptions: { args: ["--lang=en-GB"], env: { ...process.env, LANG: "en_GB.UTF-8", LANGUAGE: "en_GB" } },
+  },
   webServer: {
     command: "npm run start -- -p 3100",
     url: "http://localhost:3100/login",

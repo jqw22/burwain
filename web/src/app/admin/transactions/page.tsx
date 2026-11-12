@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
-import { Card, SaveButton } from "@/components/fields";
+import { Card, Notice, SaveButton } from "@/components/fields";
 import { LiveSearch } from "@/components/live-search";
 import { meWithRole, pounds, ukDate } from "@/lib/me";
 
@@ -45,7 +45,8 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/adm
   const params = await searchParams;
   const { supabase, allowed: isAdmin } = await meWithRole("admin");
   const { data: financeRole } = await supabase.rpc("has_role", { r: "finance" });
-  if (!isAdmin && !financeRole) return <NotAllowed who="club admins and finance" />;
+  const isFinance = Boolean(financeRole);
+  if (!isAdmin && !isFinance) return <NotAllowed who="club admins and finance" />;
 
   const month = thisMonth();
   let from = isDate(params.from) ? params.from : month.from;
@@ -78,6 +79,14 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/adm
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Transactions</h1>
       <AdminNav current="transactions" />
+      <Notice message={params.saved === "added" ? "Transaction added." : undefined} />
+      {isFinance && (
+        <div className="flex justify-end">
+          <Link href="/admin/transactions/new" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
+            + Add transaction
+          </Link>
+        </div>
+      )}
 
       <form className="flex flex-wrap items-end gap-3">
         <label className="block">
@@ -98,7 +107,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/adm
         )}
       </form>
 
-      <LiveSearch label="Search transactions" placeholder="Search by description, who paid, category or amount" initial={q} />
+      <LiveSearch label="Search transactions" placeholder="Search by description, who paid or was paid, category or amount" initial={q} />
 
       <dl className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -138,7 +147,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/adm
                     </Link>
                   </th>
                   <th className="py-2 pr-4">Description</th>
-                  <th className="py-2 pr-4">Who paid</th>
+                  <th className="py-2 pr-4">Paid by / to</th>
                   <th className="py-2 pr-4">Category</th>
                   <th className="py-2 pr-4">How paid</th>
                   <th className="py-2 pr-4 text-right">In</th>
