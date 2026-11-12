@@ -317,7 +317,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   const links = async (name: string) => (await section(name).getByRole("link").allTextContents()).map((t) => t.trim());
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Renewal reminders", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Email templates", "Add contact"]);
-  expect(await links("Finance admin")).toEqual(["Income", "Transactions"]);
+  expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
@@ -468,7 +468,7 @@ test("finance sees this month's transactions with who paid, a running balance, s
   const page = await adminPage(browser);
   await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Income", "Transactions"]);
+  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Income", "Transactions", "Categories"]);
 
   // This month by default: last month's grant isn't shown.
   const month = sql(`select to_char(date_trunc('month', current_date), 'YYYY-MM-DD') || '|' || to_char(date_trunc('month', current_date) + interval '1 month' - interval '1 day', 'YYYY-MM-DD')`).split("|");
@@ -558,6 +558,41 @@ test("finance adds a supplier payment by hand from the Transactions screen", asy
 
   await page.goto("/admin/transactions");
   await shot(page, "admin-transactions");
+});
+
+test("finance adds, renames and makes inactive a transaction category", async ({ browser }) => {
+  const page = await adminPage(browser);
+  const finance = page.getByRole("main").locator("section", { has: page.getByRole("heading", { name: "Finance admin", exact: true }) });
+  await finance.getByRole("link", { name: "Categories", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Categories", exact: true })).toBeVisible();
+  // Equipment was used by the sail repairs added earlier.
+  await expect(page.getByRole("row", { name: /Equipment/ })).toContainText("1");
+  // Subscriptions is used for member payments, so it can't be renamed or made inactive.
+  await expect(page.getByRole("row", { name: /Subscriptions/ })).toContainText("used automatically for member payments");
+  await expect(page.getByRole("button", { name: "Make inactive: Subscriptions" })).toHaveCount(0);
+
+  await page.getByLabel("Category name").fill(`Coaching ${run}`);
+  await page.locator(`select[name="direction"]`).selectOption("out");
+  await page.getByRole("button", { name: "Add category" }).click();
+  await expect(page.getByText("Category added.")).toBeVisible();
+  await page.getByLabel(`Name of Coaching ${run}`).fill(`Coaching fees ${run}`);
+  await page.getByRole("button", { name: `Rename Coaching ${run}` }).click();
+  await expect(page.getByText("Category renamed.")).toBeVisible();
+  expect(sql(`select direction || '|' || is_active from transaction_categories where name = 'Coaching fees ${run}'`)).toBe("out|true");
+
+  // An inactive category isn't offered for new transactions.
+  await page.getByRole("button", { name: `Make inactive: Coaching fees ${run}` }).click();
+  await expect(page.getByText("Category is now inactive.")).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(`Coaching fees ${run}`) })).toContainText("Inactive");
+  await shot(page, "admin-categories");
+  await page.goto("/admin/transactions/new");
+  await expect(page.getByLabel("Category").locator("option", { hasText: `Coaching fees ${run}` })).toHaveCount(0);
+
+  await page.goto("/admin/categories");
+  await page.getByRole("button", { name: `Make active: Coaching fees ${run}` }).click();
+  await expect(page.getByText("Category is active again")).toBeVisible();
+  await page.goto("/admin/transactions/new");
+  await expect(page.getByLabel("Category").locator("option", { hasText: `Coaching fees ${run}` })).toHaveCount(1);
 });
 
 test("an admin adds new members: joining a family, a new family paying cash, and a whole family", async ({ browser }) => {
@@ -1044,6 +1079,8 @@ test("a member can't open the transactions page", async ({ browser }) => {
   await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
   await expect(page.getByText("Money in")).toHaveCount(0);
   await page.goto("/admin/transactions/new");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+  await page.goto("/admin/categories");
   await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 

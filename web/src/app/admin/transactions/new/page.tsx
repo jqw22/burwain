@@ -13,6 +13,7 @@ const ERRORS: Record<string, string> = {
   description: "Please say what the transaction was for.",
   amount: "Please give an amount in pounds, more than £0, for example 125.50.",
   category: "That category is for money going the other way. Please pick another.",
+  inactive: "That category is no longer in use. Please pick another.",
   save: "We couldn't save that transaction. Please check the details and try again.",
 };
 const METHODS = [
@@ -30,7 +31,7 @@ export default async function NewTransactionPage({ searchParams }: PageProps<"/a
   const { supabase, allowed } = await meWithRole("finance");
   if (!allowed) return <NotAllowed who="finance logins" />;
 
-  const { data } = await supabase.from("transaction_categories").select("id, name, direction").order("name");
+  const { data } = await supabase.from("transaction_categories").select("id, name, direction").eq("is_active", true).order("name");
   const categories = (data ?? []) as Category[];
   const v = (k: string) => (typeof params[k] === "string" ? (params[k] as string) : "");
   const error = ERRORS[v("error")];

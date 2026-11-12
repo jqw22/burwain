@@ -19,6 +19,7 @@ const SECTIONS = {
   reminders: "comms",
   memberships: "finance",
   transactions: "finance",
+  categories: "finance",
 } as const;
 const LINKS = [
   { key: "members", href: "/admin/members", label: "Members" },
@@ -29,6 +30,7 @@ const LINKS = [
   { key: "reminders", href: "/admin/reminders", label: "Renewal reminders" },
   { key: "memberships", href: "/admin/memberships", label: "Income" },
   { key: "transactions", href: "/admin/transactions", label: "Transactions" },
+  { key: "categories", href: "/admin/categories", label: "Categories" },
 ] as const;
 const SECTION_NAME = { membership: "Membership admin", comms: "Communications admin", finance: "Finance admin" };
 

@@ -30,8 +30,9 @@ export async function addTransaction(form: FormData) {
   if (!description) back("description", keep);
   if (!Number.isFinite(amount) || pence <= 0) back("amount", keep);
   if (categoryId) {
-    const { data: cat } = await supabase.from("transaction_categories").select("direction").eq("id", categoryId).single();
+    const { data: cat } = await supabase.from("transaction_categories").select("direction, is_active").eq("id", categoryId).single();
     if (cat?.direction !== direction) back("category", keep);
+    if (!cat.is_active) back("inactive", keep);
   }
 
   const { error } = await supabase.from("transactions").insert({

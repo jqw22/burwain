@@ -620,4 +620,14 @@ do $$ begin assert (select count(*) from club_transactions(null, null)) = 0, 'me
 reset role;
 reset request.jwt.claim.sub;
 
+-- Categories: member payments' categories are locked; others can be renamed and made inactive.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.expect_error($q$update transaction_categories set name = 'Subs' where name = 'Subscriptions'$q$, 'used automatically');
+select pg_temp.expect_error($q$update transaction_categories set is_active = false where name = 'Payment fees'$q$, 'used automatically');
+update transaction_categories set is_active = false where name = 'Venue';
+do $$ begin assert not (select is_active from transaction_categories where name = 'Venue'), 'venue inactive'; end $$;
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'
