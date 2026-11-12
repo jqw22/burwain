@@ -89,6 +89,11 @@ export default async function HomePage() {
               </Link>
             </li>
             <li>
+              <Link href="/admin/reminders" className="text-sky-800 underline">
+                Renewal reminders
+              </Link>
+            </li>
+            <li>
               <Link href="/admin/import" className="text-sky-800 underline">
                 Import
               </Link>
@@ -113,8 +118,8 @@ export default async function HomePage() {
               </Link>
             </li>
             <li>
-              <Link href="/admin/reminders" className="text-sky-800 underline">
-                Renewal reminders
+              <Link href="/admin/contacts/new" className="text-sky-800 underline">
+                Add contact
               </Link>
             </li>
           </ul>

@@ -315,8 +315,8 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   const page = await adminPage(browser);
   const section = (name: string) => page.getByRole("main").locator("section", { has: page.getByRole("heading", { name, exact: true }) });
   const links = async (name: string) => (await section(name).getByRole("link").allTextContents()).map((t) => t.trim());
-  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
-  expect(await links("Communications admin")).toEqual(["Email templates", "Renewal reminders"]);
+  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Renewal reminders", "Import", "Public join form"]);
+  expect(await links("Communications admin")).toEqual(["Email templates", "Add contact"]);
   expect(await links("Finance admin")).toEqual(["Income"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
@@ -357,13 +357,13 @@ test("an admin finds a member, edits them and views their medical details", asyn
   // The family stays together: Sam (main contact) first, then Alex and Robin indented under them.
   const names = (await page.getByRole("row").allTextContents()).slice(1).map((t) => t.match(/Tester\w*, (Sam|Alex|Robin)/)?.[1]);
   expect(names).toEqual(["Sam", "Alex", "Robin"]);
-  // Separate Type, Payment and Status columns; no Postcode.
+  // Separate Type, Payment and Status columns; no Postcode, Email or Mobile.
   const headers = (await page.getByRole("columnheader").allTextContents()).map((t) => t.replace("▲", "").trim());
-  expect(headers).toEqual(["Name", "Email", "Mobile", "Type", "Payment", "Status", "Renewal"]);
+  expect(headers).toEqual(["Name", "Type", "Payment", "Status", "Renewal"]);
   const sam = page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) });
-  await expect(sam.getByRole("cell").nth(3)).toHaveText("Family");
-  await expect(sam.getByRole("cell").nth(4)).toContainText("Paid");
-  await expect(sam.getByRole("cell").nth(5)).toHaveText("Active");
+  await expect(sam.getByRole("cell").nth(1)).toHaveText("Family");
+  await expect(sam.getByRole("cell").nth(2)).toContainText("Paid");
+  await expect(sam.getByRole("cell").nth(3)).toHaveText("Active");
   // Renewal: Outstanding within 60 days of Sam's membership ending (unless next year's is paid), otherwise n/a.
   const renewal = sql(`
     select case when exists (
@@ -374,7 +374,7 @@ test("an admin finds a member, edits them and views their medical details", asyn
       from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
       join membership_types t on t.id = m.membership_type_id
      where p.email = '${leadEmail}' and current_date between t.starts_on and t.ends_on and m.status <> 'cancelled' limit 1`);
-  await expect(sam.getByRole("cell").nth(6)).toHaveText(renewal);
+  await expect(sam.getByRole("cell").nth(4)).toHaveText(renewal);
   await page.getByRole("navigation", { name: "Filter by renewal status" }).getByRole("link", { name: new RegExp(`^${renewal} \\(\\d+\\)$`) }).click();
   await expect(page).toHaveURL(/renewal=/);
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toBeVisible();
@@ -702,8 +702,11 @@ test("an admin renews a membership for a member", async ({ browser }) => {
 
 test("an admin adds a contact for the email list, with no membership", async ({ browser }) => {
   const page = await adminPage(browser);
+  // Found in the Communications admin box on Home, not on the Members screen.
   await page.goto("/admin/members");
-  await page.getByRole("link", { name: "+ Add contact" }).click();
+  await expect(page.getByRole("link", { name: "+ Add contact" })).toHaveCount(0);
+  await page.goto("/");
+  await page.getByRole("link", { name: "Add contact", exact: true }).click();
   const form = page.getByRole("form", { name: "Add a contact" });
   await form.getByLabel("First name").fill("Cass");
   await form.getByLabel("Last name").fill(`Contact${run}`);
@@ -879,7 +882,7 @@ test("an admin previews, tests and sends renewal reminders, and a daily limit is
     `);
   }
   const page = await adminPage(browser);
-  // Found in the Communications admin box on Home.
+  // Found in the Membership admin box on Home.
   await page.goto("/");
   await page.getByRole("link", { name: "Renewal reminders", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Renewal reminders", exact: true })).toBeVisible();
