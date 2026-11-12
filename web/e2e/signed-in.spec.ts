@@ -357,14 +357,34 @@ test("an admin finds a member, edits them and views their medical details", asyn
   // The family stays together: Sam (main contact) first, then Alex and Robin indented under them.
   const names = (await page.getByRole("row").allTextContents()).slice(1).map((t) => t.match(/Tester\w*, (Sam|Alex|Robin)/)?.[1]);
   expect(names).toEqual(["Sam", "Alex", "Robin"]);
-  // Separate Type, Payment and Status columns; no Postcode, Email or Mobile.
+  // Type, Status and Renewal columns; no Payment, Postcode, Email or Mobile.
   const headers = (await page.getByRole("columnheader").allTextContents()).map((t) => t.replace("▲", "").trim());
-  expect(headers).toEqual(["Name", "Type", "Payment", "Status"]);
+  expect(headers).toEqual(["Name", "Type", "Status", "Renewal"]);
   const sam = page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) });
   await expect(sam.getByRole("cell").nth(1)).toHaveText("Family");
-  await expect(sam.getByRole("cell").nth(2)).toContainText("Paid");
-  await expect(sam.getByRole("cell").nth(3)).toHaveText("Active");
+  await expect(sam.getByRole("cell").nth(2)).toHaveText("Active");
+  // The rules are explained at the top, and only Active and Lapsed have filter buttons.
+  await expect(page.getByText("How status and renewal are worked out")).toBeVisible();
+  const statusFilters = page.getByRole("navigation", { name: "Filter by membership status" }).getByRole("link");
+  await expect(statusFilters).toHaveText([/^All \(\d+\)$/, /^Active \(\d+\)$/, /^Lapsed \(\d+\)$/]);
+  // Renewal: Outstanding within 60 days of Sam's membership ending (unless next year's is paid), otherwise n/a.
+  const renewal = sql(`
+    select case when exists (
+             select 1 from memberships m2 join membership_types t2 on t2.id = m2.membership_type_id
+               join membership_people mp2 on mp2.membership_id = m2.id
+              where mp2.person_id = p.id and t2.starts_on > current_date and m2.status = 'active') then 'Paid'
+           when t.ends_on - current_date > 60 then 'n/a' else 'Outstanding' end
+      from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
+      join membership_types t on t.id = m.membership_type_id
+     where p.email = '${leadEmail}' and current_date between t.starts_on and t.ends_on and m.status <> 'cancelled' limit 1`);
+  await expect(sam.getByRole("cell").nth(3)).toHaveText(renewal);
+  await page.getByRole("navigation", { name: "Filter by renewal status" }).getByRole("link", { name: new RegExp(`^${renewal} \\(\\d+\\)$`) }).click();
+  await expect(page).toHaveURL(/renewal=/);
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) })).toBeVisible();
   await shot(page, "admin-members");
+  await page.getByRole("link", { name: "Any", exact: true }).click();
+  await expect(page).not.toHaveURL(/renewal=/);
 
   // Filter by membership status. Pat's membership this year has lapsed.
   sql(`
@@ -376,7 +396,10 @@ test("an admin finds a member, edits them and views their medical details", asyn
   `);
   await page.reload();
   await page.getByRole("link", { name: /^Lapsed \(\d+\)$/ }).click();
-  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Pat`) })).toContainText("Lapsed");
+  const pat = page.getByRole("row", { name: new RegExp(`Tester${run}, Pat`) });
+  await expect(pat.getByRole("cell").nth(2)).toHaveText("Lapsed");
+  // Lapsed within the last 90 days, so the renewal is Outstanding.
+  await expect(pat.getByRole("cell").nth(3)).toHaveText("Outstanding");
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toHaveCount(0);
   await shot(page, "admin-members-lapsed");
   await page.getByRole("link", { name: /^Active \(\d+\)$/ }).click();
@@ -834,12 +857,15 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   await form.getByLabel("Email", { exact: true }).fill(`cass-${run}@example.test`);
   await shot(page, "admin-add-contact");
   await form.getByRole("button", { name: "Add contact" }).click();
-  await expect(page.getByText("Contact added.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Contact added" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText(`Cass Contact${run} (cass-${run}@example.test) has been added`);
+  await expect(page.getByRole("link", { name: "Add another contact" })).toBeVisible();
   expect(sql(`select is_contact, news_consent, household_id is null from people where email = 'cass-${run}@example.test'`)).toBe("t|t|t");
+  // Contacts aren't members, so they aren't on the Members list.
   await page.goto(`/admin/members?q=Contact${run}`);
-  await expect(page.getByRole("row", { name: new RegExp(`Contact${run}, Cass`) })).toContainText("Contact");
-  await page.getByRole("link", { name: /^Contact \(\d+\)$/ }).click();
-  await expect(page.getByRole("row", { name: new RegExp(`Contact${run}, Cass`) })).toBeVisible();
+  await expect(page.getByText(/0 people matching/)).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(`Contact${run}, Cass`) })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Contact \(\d+\)$/ })).toHaveCount(0);
 });
 
 test("an admin adds a membership type, changes its price and makes it inactive", async ({ browser }) => {
