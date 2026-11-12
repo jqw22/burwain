@@ -117,7 +117,6 @@ export async function adminRenewMembership(form: FormData) {
     p_person: id,
     p_type_id: String(form.get("type_id") ?? ""),
     p_person_ids: people,
-    p_club_year_id: String(form.get("club_year_id") ?? ""),
   });
   if (error) {
     const known: [string, string][] = [

@@ -5,14 +5,14 @@ import { fillPlaceholders } from "@/lib/email";
 import { emailSendingEnabled } from "@/lib/mailer";
 import { meWithRole, pounds, ukDate } from "@/lib/me";
 import { sendTest } from "./actions";
-import { valuesFor, type Recipient } from "./render";
+import { renewalYear, valuesFor, type Recipient } from "./render";
 import { SendForm } from "./send-form";
 
 type Campaign = { id: string; sent_at: string | null; recipient_count: number | null; people: { first_name: string; last_name: string } | null };
 
 const ERRORS: Record<string, string> = {
   admin: "Only club admins can send renewal reminders.",
-  closed: "Renewals for next year aren't open yet.",
+  closed: "There are no membership types to renew onto yet.",
   template: "There's no renewal reminder template. Add one on the Email templates page.",
   noemail: "Your own record has no email address, so we can't send you a test.",
   nobody: "There's nobody to remind, so there's nothing to test with.",
@@ -26,15 +26,14 @@ export default async function RemindersPage({ searchParams }: PageProps<"/admin/
   const { supabase, allowed } = await meWithRole("admin");
   if (!allowed) return <NotAllowed />;
 
-  const { data: years } = await supabase.rpc("open_club_years");
-  const year = ((years ?? []) as { id: string; label: string; is_renewal: boolean }[]).find((y) => y.is_renewal);
+  const year = await renewalYear(supabase);
   const { data: template } = await supabase
     .from("email_templates")
     .select("id, name, subject, body")
     .eq("purpose", "renewal_reminder")
     .maybeSingle();
 
-  const { data: recipientData } = year ? await supabase.rpc("renewal_reminder_recipients", { p_club_year_id: year.id }) : { data: [] };
+  const { data: recipientData } = year ? await supabase.rpc("renewal_reminder_recipients") : { data: [] };
   const all = (recipientData ?? []) as Recipient[];
   const withEmail = all.filter((r) => r.email);
   const noEmail = all.filter((r) => !r.email);
@@ -46,7 +45,6 @@ export default async function RemindersPage({ searchParams }: PageProps<"/admin/
         .from("email_campaigns")
         .select("id, sent_at, recipient_count, people!email_campaigns_created_by_fkey(first_name, last_name)")
         .eq("purpose", "renewal_reminder")
-        .eq("club_year_id", year.id)
         .order("created_at", { ascending: false })
         .limit(10)
     : { data: [] };
@@ -79,7 +77,7 @@ export default async function RemindersPage({ searchParams }: PageProps<"/admin/
 
       {!year ? (
         <Card title="Not open yet">
-          <p className="text-slate-700">Renewal reminders can be sent once renewals for next year open, 60 days before 1 January.</p>
+          <p className="text-slate-700">Renewal reminders can be sent once next year&apos;s membership types are set up (an active type starting after today). They go to members whose membership ends within 60 days.</p>
         </Card>
       ) : !template ? (
         <Card title="No reminder template">
@@ -144,7 +142,7 @@ export default async function RemindersPage({ searchParams }: PageProps<"/admin/
 
           <Card title="Sent so far">
             {campaigns.length === 0 ? (
-              <p className="text-slate-700">No reminders sent for {year.label} yet.</p>
+              <p className="text-slate-700">No renewal reminders sent yet.</p>
             ) : (
               <ul className="divide-y divide-slate-100 text-sm">
                 {campaigns.map((c) => (

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { renewalYear } from "../reminders/render";
 import { headers } from "next/headers";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice } from "@/components/fields";
@@ -28,16 +29,15 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
   const { supabase, allowed } = await meWithRole("admin");
   if (!allowed) return <NotAllowed />;
 
-  const [{ data }, { data: yearsData }] = await Promise.all([
+  const [{ data }, year] = await Promise.all([
     supabase.from("email_templates").select("id, name, purpose, subject, body, updated_at").order("name"),
-    supabase.rpc("open_club_years"),
+    renewalYear(supabase),
   ]);
   const templates = (data ?? []) as Template[];
-  const years = (yearsData ?? []) as { label: string; is_renewal: boolean }[];
   const h = await headers();
   const host = h.get("host");
   const examples = exampleValues({
-    renewal_year: years.find((y) => y.is_renewal)?.label ?? String(new Date().getFullYear() + 1),
+    renewal_year: year?.label ?? String(new Date().getFullYear() + 1),
     ...(host ? { renewal_link: `${host.startsWith("localhost") ? "http" : "https"}://${host}/profile#renew` } : {}),
   });
 

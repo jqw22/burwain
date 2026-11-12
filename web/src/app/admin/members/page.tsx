@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LiveSearch } from "@/components/live-search";
 import { AdminNav, NotAllowed, STATUS_LABEL } from "@/components/admin";
 import { ageOn, meWithRole } from "@/lib/me";
+import { ukToday } from "@/lib/quote";
 
 type Row = {
   id: string;
@@ -18,16 +19,15 @@ type Held = {
   person_id: string;
   memberships: {
     status: string;
-    club_years: { label: string; starts_on: string } | null;
-    membership_types: { name: string } | null;
+    membership_types: { name: string; starts_on: string; ends_on: string } | null;
   };
 };
 type Membership = Held["memberships"];
 
 // Membership status, worked out from each person's memberships:
-//   Active  - has a membership for this club year
-//   Future  - no membership this year, but one for a later year (e.g. joined or renewed for next year)
-//   Lapsed  - had a membership before, but not this year or later
+//   Active  - has a membership running today (between its type's start and end dates)
+//   Future  - none running today, but one starting later (e.g. joined or renewed for next year)
+//   Lapsed  - had a membership before, but it has ended
 //   None    - has never had a membership (e.g. a family member who isn't covered)
 //   Contact - added as a contact for email lists, with no membership
 const MEMBERSHIP_STATUS = {
@@ -49,21 +49,25 @@ const STATUS_STYLE: Record<MembershipStatus, string> = {
 type Summary = {
   status: MembershipStatus;
   shown: Membership | null; // the membership the Type and Payment columns describe
-  next: Membership | null; // an active member's membership for a later year, if they have one
+  next: Membership | null; // an active member's membership starting later, if they have one
 };
 
-function summarise(ms: Membership[], currentStart: string): Summary {
-  const live = ms.filter((m) => m.status !== "lapsed" && m.club_years);
-  const current = live.find((m) => m.club_years!.starts_on === currentStart) ?? null;
+function summarise(ms: Membership[], today: string): Summary {
+  const live = ms.filter((m) => m.status !== "lapsed" && m.membership_types);
+  const current = live.find((m) => m.membership_types!.starts_on <= today && m.membership_types!.ends_on >= today) ?? null;
   const later = live
-    .filter((m) => m.club_years!.starts_on > currentStart)
-    .sort((a, b) => a.club_years!.starts_on.localeCompare(b.club_years!.starts_on));
+    .filter((m) => m.membership_types!.starts_on > today)
+    .sort((a, b) => a.membership_types!.starts_on.localeCompare(b.membership_types!.starts_on));
   if (current) return { status: "active", shown: current, next: later[0] ?? null };
   if (later.length > 0) return { status: "future", shown: later[0], next: null };
-  const past = [...ms].sort((a, b) => (b.club_years?.starts_on ?? "").localeCompare(a.club_years?.starts_on ?? ""));
+  const past = [...ms].sort((a, b) => (b.membership_types?.starts_on ?? "").localeCompare(a.membership_types?.starts_on ?? ""));
   if (past.length > 0) return { status: "lapsed", shown: past[0], next: null };
   return { status: "none", shown: null, next: null };
 }
+
+// "Jan 2027" style label for when a membership starts.
+const month = (d: string | undefined) =>
+  d ? new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }) : "";
 
 export default async function MembersPage({ searchParams }: PageProps<"/admin/members">) {
   const params = await searchParams;
@@ -86,12 +90,12 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     .limit(1000);
   if (q) query = query.or(`first_name.ilike.*${q}*,last_name.ilike.*${q}*,email.ilike.*${q}*`);
 
-  const [{ data: people }, { data: yearId }] = await Promise.all([query, supabase.rpc("current_club_year_id")]);
-  const [{ data: year }, { data: held }] = await Promise.all([
-    supabase.from("club_years").select("starts_on").eq("id", yearId as string).single<{ starts_on: string }>(),
+  const today = ukToday();
+  const [{ data: people }, { data: held }] = await Promise.all([
+    query,
     supabase
       .from("membership_people")
-      .select("person_id, memberships!inner(status, club_years(label, starts_on), membership_types(name))")
+      .select("person_id, memberships!inner(status, membership_types(name, starts_on, ends_on))")
       .neq("memberships.status", "cancelled"),
   ]);
   const byPerson = new Map<string, Membership[]>();
@@ -100,7 +104,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
   }
 
   const all = ((people ?? []) as unknown as Row[]).map((p) => {
-    const summary = summarise(byPerson.get(p.id) ?? [], year?.starts_on ?? "");
+    const summary = summarise(byPerson.get(p.id) ?? [], today);
     return { ...p, ...summary, status: (summary.status === "none" && p.is_contact ? "contact" : summary.status) as MembershipStatus };
   });
   const counts = Object.fromEntries(
@@ -221,7 +225,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                     {m ? (
                       <>
                         {m.membership_types?.name}
-                        {p.status !== "active" && <span className="text-xs text-slate-500"> ({m.club_years?.label})</span>}
+                        {p.status !== "active" && <span className="text-xs text-slate-500"> ({p.status === "future" ? "from" : "ended"} {month(p.status === "future" ? m.membership_types?.starts_on : m.membership_types?.ends_on)})</span>}
                       </>
                     ) : (
                       <span className="text-slate-400">None</span>
@@ -235,7 +239,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                     )}
                     {p.next && (
                       <span className="block text-xs text-slate-500">
-                        {p.next.club_years?.label}: {STATUS_LABEL[p.next.status] ?? p.next.status}
+                        From {month(p.next.membership_types?.starts_on)}: {STATUS_LABEL[p.next.status] ?? p.next.status}
                       </span>
                     )}
                   </td>

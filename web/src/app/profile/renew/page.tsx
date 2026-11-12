@@ -14,10 +14,9 @@ export default async function ConfirmRenewalPage({ searchParams }: PageProps<"/p
   const { supabase } = await requireMe();
   const list = (v: string | string[] | undefined) => (Array.isArray(v) ? v : v ? [v] : []);
   const typeId = list(params.type_id)[0] ?? "";
-  const yearId = list(params.club_year_id)[0] ?? "";
   const remaining = list(params.remaining)[0] ?? "0";
   const personIds = list(params.person);
-  if (!typeId || !yearId) redirect("/profile#renew");
+  if (!typeId) redirect("/profile#renew");
   if (personIds.length === 0) redirect("/profile?error=who#renew");
 
   const [{ data: typeData }, { data: peopleData }] = await Promise.all([
@@ -49,7 +48,6 @@ export default async function ConfirmRenewalPage({ searchParams }: PageProps<"/p
         </p>
         <form action={renewMemberships} className="mt-4 flex flex-wrap items-center gap-4">
           <input type="hidden" name="type_id" value={type.id} />
-          <input type="hidden" name="club_year_id" value={yearId} />
           <input type="hidden" name="remaining" value={remaining} />
           <input type="hidden" name="confirm" value="on" />
           {personIds.map((id) => (

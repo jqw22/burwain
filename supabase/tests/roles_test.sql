@@ -19,6 +19,12 @@ begin
 end $$;
 grant execute on function pg_temp.expect_error(text, text) to public;
 
+-- Test helper: the signed-in person takes out a membership themselves (the app only lets admins add,
+-- but the membership rules are the same). The old year argument is ignored.
+create or replace function pg_temp.start_membership(p_type uuid, p_people uuid[], p_year uuid default null) returns uuid
+language sql security definer as $$ select create_membership(current_person_id(), p_type, p_people) $$;
+grant execute on function pg_temp.start_membership(uuid, uuid[], uuid) to public;
+
 -- Fixtures: Alice (household lead) with junior Bob; Carol finance; Dave superadmin; Eve another household.
 insert into auth.users values
   ('00000000-0000-0000-0000-00000000000a'), ('00000000-0000-0000-0000-00000000000c'),
@@ -39,7 +45,7 @@ insert into user_roles (person_id, role) values
   ('20000000-0000-0000-0000-00000000000d', 'superadmin');
 
 -- 2027 has no membership types yet: admins set them up later in these tests.
-delete from membership_types where club_year_id = (select id from club_years where label = '2027');
+delete from membership_types where starts_on = '2027-01-01';
 
 -- Fix "today" so pricing doesn't depend on when the tests run.
 create or replace function club_today() returns date language sql stable as $$ select '2026-01-05'::date $$;
@@ -49,15 +55,15 @@ set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 do $$ begin
   assert (select count(*) from people) = 2, 'Alice should see only herself and Bob';
-  perform start_membership((select id from membership_types where code = 'IS'), array['20000000-0000-0000-0000-00000000000a'::uuid], (select id from club_years where label = '2026'));
-  perform start_membership((select id from membership_types where code = 'J1'), array['20000000-0000-0000-0000-00000000000b'::uuid], (select id from club_years where label = '2026'));
+  perform pg_temp.start_membership((select id from membership_types where code = 'IS'), array['20000000-0000-0000-0000-00000000000a'::uuid]);
+  perform pg_temp.start_membership((select id from membership_types where code = 'J1'), array['20000000-0000-0000-0000-00000000000b'::uuid]);
   assert (select price_pence from memberships m join membership_types t on t.id = m.membership_type_id where t.code = 'IS') = 18500, 'IS full price';
   assert (select price_pence from memberships m join membership_types t on t.id = m.membership_type_id where t.code = 'J1') = 9500, 'J1 full price';
 end $$;
 select pg_temp.expect_error($q$update people set first_joined_on = '2000-01-01' where first_name = 'Alice'$q$, 'Only an admin');
 select pg_temp.expect_error($q$insert into memberships (club_year_id, membership_type_id, payer_person_id, price_pence) select (select id from club_years limit 1), (select id from membership_types where code = 'IS'), '20000000-0000-0000-0000-00000000000a', 0$q$, 'row-level security');
-select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'IS'), array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2026'))$q$, 'own household');
-select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'U21'), array['20000000-0000-0000-0000-00000000000a'::uuid], (select id from club_years where label = '2026'))$q$, 'age limit');
+select pg_temp.expect_error($q$select pg_temp.start_membership((select id from membership_types where code = 'IS'), array['20000000-0000-0000-0000-00000000000e'::uuid])$q$, 'own household');
+select pg_temp.expect_error($q$select pg_temp.start_membership((select id from membership_types where code = 'U21'), array['20000000-0000-0000-0000-00000000000a'::uuid])$q$, 'age limit');
 do $$ begin
   insert into people (household_id, first_name, last_name, date_of_birth)
   values ('10000000-0000-0000-0000-000000000001', 'Cleo', 'Junior', '2016-02-02');
@@ -79,8 +85,8 @@ set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
 do $$ begin
   assert (select count(*) from people) = 1, 'Eve should see only herself';
-  perform start_membership((select id from membership_types where code = 'C'), array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2026'));
-  perform start_membership((select id from membership_types where code = 'A'), array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2026'));
+  perform pg_temp.start_membership((select id from membership_types where code = 'C'), array['20000000-0000-0000-0000-00000000000e'::uuid]);
+  perform pg_temp.start_membership((select id from membership_types where code = 'A'), array['20000000-0000-0000-0000-00000000000e'::uuid]);
   assert (select price_pence from memberships m join membership_types t on t.id = m.membership_type_id where t.code = 'C') = 1500, 'July join pays 6/12';
   assert (select status::text from memberships m join membership_types t on t.id = m.membership_type_id where t.code = 'A') = 'awaiting_payment', 'Associate no longer needs approval';
 end $$;
@@ -123,7 +129,7 @@ end $$;
 reset role;
 set role anon;
 select pg_temp.expect_error($q$select * from member_directory()$q$, 'permission denied');
-select pg_temp.expect_error($q$select start_membership(gen_random_uuid(), array[]::uuid[], gen_random_uuid())$q$, 'permission denied');
+select pg_temp.expect_error($q$select renew_my_membership(gen_random_uuid(), array[]::uuid[])$q$, 'permission denied');
 select pg_temp.expect_error($q$select * from people$q$, 'permission denied');
 reset role;
 
@@ -163,41 +169,42 @@ create or replace function club_today() returns date language sql stable as $$ s
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 do $$ begin
-  assert (select count(*) from open_club_years()) = 1, '15 October: only 2026 is open';
+  assert (select count(*) from my_renewals()) = 0, '15 October: too early to renew (2026 ends 31 December)';
 end $$;
-select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'IS'), array['20000000-0000-0000-0000-00000000000a'::uuid], (select id from club_years where label = '2027'))$q$, 'not open');
 -- Cleo (added earlier) is Alice's second junior: picking J1 gets J2 pricing automatically. October = 3/12.
 do $$ declare m uuid; begin
-  m := start_membership((select id from membership_types where code = 'J1'), array[(select id from people where first_name = 'Cleo')], (select id from club_years where label = '2026'));
+  m := pg_temp.start_membership((select id from membership_types where code = 'J1'), array[(select id from people where first_name = 'Cleo')]);
   assert (select t.code from memberships x join membership_types t on t.id = x.membership_type_id where x.id = m) = 'J2', 'second junior priced as J2';
   assert (select price_pence from memberships where id = m) = 1750, 'J2 £70 x 3/12';
   perform cancel_my_membership(m);
   assert (select status::text from memberships where id = m) = 'cancelled', 'unpaid membership cancelled';
 end $$;
 select pg_temp.expect_error($q$select cancel_my_membership((select m.id from memberships m join membership_types t on t.id = m.membership_type_id where t.code = 'IS'))$q$, 'Only an unpaid');
-select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'D'), array['20000000-0000-0000-0000-00000000000a'::uuid, (select id from people where first_name = 'Bob')], (select id from club_years where label = '2026'))$q$, 'already has');
+select pg_temp.expect_error($q$select pg_temp.start_membership((select id from membership_types where code = 'D'), array['20000000-0000-0000-0000-00000000000a'::uuid, (select id from people where first_name = 'Bob')])$q$, 'already has');
 reset role;
 create or replace function club_today() returns date language sql stable as $$ select '2026-12-05'::date $$;
 set role authenticated;
 do $$ begin
-  assert (select count(*) from open_club_years() where is_renewal) = 0, '5 December: 2027 renewals wait for 2027 types';
+  assert (select count(*) from my_renewals() where not renewed) = 2, '5 December: Alice and Bob are due to renew';
+  assert not exists (select 1 from membership_types where starts_on > club_today()), 'no types starting later yet';
 end $$;
-select pg_temp.expect_error($q$select copy_membership_types((select id from club_years where label = '2026'))$q$, 'Only club admins');
+select pg_temp.expect_error($q$select copy_membership_type((select id from membership_types where code = 'C'))$q$, 'Only club admins');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
 do $$ begin
-  assert copy_membership_types((select id from club_years where label = '2026')) = 11, 'admin copies 2026 types into 2027';
-  assert copy_membership_types((select id from club_years where label = '2026')) = 0, 'copying again adds nothing';
-  update membership_types set annual_price_pence = 3500 where code = 'C' and club_year_id = (select id from club_years where label = '2027');
-  assert (select annual_price_pence from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2026')) = 3000, '2026 price unchanged';
-  perform copy_membership_types((select id from club_years where label = '2027'));
-  assert (select count(*) from membership_types t join club_years cy on cy.id = t.club_year_id where cy.label = '2028') = 11, 'copying 2027 sets up 2028';
+  assert (select count(copy_membership_type(id)) from membership_types where starts_on = '2026-01-01') = 11, 'admin copies the 2026 types';
+  assert (select starts_on::text || ' to ' || ends_on from membership_types where code = 'F' and starts_on > '2026-01-01') = '2027-01-01 to 2027-12-31', 'copy is a year later';
+  assert (select count(*) from membership_type_activities a join membership_types t on t.id = a.membership_type_id where t.starts_on = '2027-01-01') = 9, 'activities copied';
+  update membership_types set annual_price_pence = 3500 where code = 'C' and starts_on = '2027-01-01';
+  assert (select annual_price_pence from membership_types where code = 'C' and starts_on = '2026-01-01') = 3000, '2026 price unchanged';
+  perform copy_membership_type((select id from membership_types where code = 'F' and starts_on = '2027-01-01'));
+  assert exists (select 1 from membership_types where code = 'F' and starts_on = '2028-01-01'), 'copying a 2027 type makes a 2028 one';
 end $$;
+select pg_temp.expect_error($q$select copy_membership_type((select id from membership_types where code = 'C' and starts_on = '2026-01-01'))$q$, 'There is already a C type');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 do $$ declare m uuid; begin
-  assert (select count(*) from open_club_years() where is_renewal) = 1, '5 December: 2027 renewals open';
-  m := start_membership((select id from membership_types where code = 'F' and club_year_id = (select id from club_years where label = '2027')),
-         array['20000000-0000-0000-0000-00000000000a'::uuid, (select id from people where first_name = 'Bob')],
-         (select id from club_years where label = '2027'));
+  m := renew_my_membership((select id from membership_types where code = 'F' and starts_on = '2027-01-01'),
+         array['20000000-0000-0000-0000-00000000000a'::uuid, (select id from people where first_name = 'Bob')]);
+  assert (select count(*) from my_renewals() where not renewed) = 0, 'Alice and Bob are renewed';
   assert (select price_pence from memberships where id = m) = 25500, 'renewing before 1 January is full price';
 end $$;
 reset role;
@@ -317,7 +324,7 @@ reset role;
 reset request.jwt.claim.sub;
 insert into people (id, first_name, last_name, date_of_birth) values ('20000000-0000-0000-0000-0000000000a1', 'Gil', 'Solo', '1975-01-01');
 insert into memberships (id, club_year_id, membership_type_id, payer_person_id, status, price_pence)
-values ('40000000-0000-0000-0000-0000000000a1', current_club_year_id(), (select id from membership_types where code = 'F' and club_year_id = current_club_year_id()), '20000000-0000-0000-0000-0000000000a1', 'active', 25500);
+values ('40000000-0000-0000-0000-0000000000a1', current_club_year_id(), (select id from membership_types where code = 'F' and starts_on = '2026-01-01'), '20000000-0000-0000-0000-0000000000a1', 'active', 25500);
 insert into membership_people values ('40000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1');
 insert into households (id, lead_person_id) values ('10000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1');
 update people set household_id = '10000000-0000-0000-0000-0000000000a1' where id = '20000000-0000-0000-0000-0000000000a1';
@@ -339,8 +346,7 @@ do $$ declare ivy uuid; jo uuid; hh uuid; m uuid; begin
   ivy := admin_add_member(jsonb_build_object('people', jsonb_build_array(jsonb_build_object('first_name', 'Ivy', 'last_name', 'New', 'date_of_birth', '1985-03-03',
            'email', 'Ivy@Example.com', 'news_consent', true, 'medical_details', 'Asthma', 'medical_consent', true,
            'qualifications', jsonb_build_array(jsonb_build_object('name', 'RYA Level 2', 'expires_on', '2030-01-01')))), 'address_line1', '5 Bay Rd', 'postcode', 'bb5 5aa',
-           'type_id', (select id from membership_types where code = 'A' and club_year_id = (select id from club_years where label = '2027')),
-           'club_year_id', (select id from club_years where label = '2027'),
+           'type_id', (select id from membership_types where code = 'A' and starts_on = '2027-01-01'),
            'payment_method', 'cash', 'paid_on', '2026-11-01'));
   select household_id into hh from people where id = ivy;
   assert (select lead_person_id from households where id = hh) = ivy, 'Ivy is main contact of her new family';
@@ -363,8 +369,7 @@ do $$ declare ivy uuid; jo uuid; hh uuid; m uuid; begin
   -- Lou gets a Junior membership of their own instead of Family cover.
   jo := admin_add_member(jsonb_build_object('people', jsonb_build_array(jsonb_build_object('first_name', 'Lou', 'last_name', 'Lead', 'date_of_birth', '2016-01-01')),
            'household_id', '10000000-0000-0000-0000-000000000001',
-           'type_id', (select id from membership_types where code = 'J1' and club_year_id = (select id from club_years where label = '2026')),
-           'club_year_id', (select id from club_years where label = '2026')));
+           'type_id', (select id from membership_types where code = 'J1' and starts_on = '2026-01-01')));
   assert (select string_agg(t.code, ',') from membership_people mp join memberships m on m.id = mp.membership_id
            join membership_types t on t.id = m.membership_type_id
           where mp.person_id = jo and m.club_year_id = (select id from club_years where label = '2026')) = 'J2',
@@ -377,24 +382,23 @@ end $$;
 reset role;
 reset request.jwt.claim.sub;
 
-\echo 'Members renew into any of next year''s types, for people on this year''s memberships'
+\echo 'Members renew into any type starting later, for people whose membership ends within 60 days'
 -- club_today is 2026-12-05, so 2027 renewals are open. Eve holds C and A for 2026; 2027 C costs £35.
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
 do $$ declare n uuid; begin
-  n := renew_my_membership((select id from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2027')),
-         array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2027'));
+  n := renew_my_membership((select id from membership_types where code = 'C' and starts_on = '2027-01-01'),
+         array['20000000-0000-0000-0000-00000000000e'::uuid]);
   assert (select price_pence from memberships where id = n) = 3500, 'next year''s price for that type';
   assert (select status::text from memberships where id = n) = 'awaiting_payment', 'straight to payment';
-  n := renew_my_membership((select id from membership_types where code = 'RC' and club_year_id = (select id from club_years where label = '2027')),
-         array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2027'));
+  n := renew_my_membership((select id from membership_types where code = 'RC' and starts_on = '2027-01-01'),
+         array['20000000-0000-0000-0000-00000000000e'::uuid]);
   assert (select t.name from memberships m join membership_types t on t.id = m.membership_type_id where m.id = n) = 'RC Laser Membership', 'can choose a different type';
 end $$;
-select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'A' and club_year_id = (select id from club_years where label = '2026')), array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2027'))$q$, 'not available');
-select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'A' and club_year_id = (select id from club_years where label = '2027')), array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2026'))$q$, 'not open');
+select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'A' and starts_on = '2026-01-01'), array['20000000-0000-0000-0000-00000000000e'::uuid])$q$, 'starts after today');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
-select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2027')), array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2027'))$q$, 'this year''s memberships');
-select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'J1' and club_year_id = (select id from club_years where label = '2027')), array[(select id from people where first_name = 'Cleo')], (select id from club_years where label = '2027'))$q$, 'this year''s memberships');
+select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'C' and starts_on = '2027-01-01'), array['20000000-0000-0000-0000-00000000000e'::uuid])$q$, 'due for renewal');
+select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'J1' and starts_on = '2027-01-01'), array[(select id from people where first_name = 'Cleo')])$q$, 'due for renewal');
 reset role;
 reset request.jwt.claim.sub;
 
@@ -406,11 +410,11 @@ select pg_temp.expect_error($q$select admin_add_member(jsonb_build_object('addre
 select pg_temp.expect_error($q$select admin_add_member(jsonb_build_object('address_line1', '1 A', 'postcode', 'BB1',
   'people', jsonb_build_array(jsonb_build_object('first_name', 'A', 'last_name', 'B', 'date_of_birth', '1980-01-01', 'medical_details', 'x'))))$q$, 'consent');
 select pg_temp.expect_error($q$select admin_add_member(jsonb_build_object('address_line1', '1 A', 'postcode', 'BB1',
-  'type_id', (select id from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2026')), 'club_year_id', (select id from club_years where label = '2026'),
+  'type_id', (select id from membership_types where code = 'C' and starts_on = '2026-01-01'),
   'people', jsonb_build_array(jsonb_build_object('first_name', 'A', 'last_name', 'B'), jsonb_build_object('first_name', 'C', 'last_name', 'D'))))$q$, 'exactly one');
 do $$ declare first uuid; hh uuid; m uuid; begin
   first := admin_add_member(jsonb_build_object('address_line1', '8 Weir Rd', 'postcode', 'BB8 8WW',
-    'type_id', (select id from membership_types where code = 'F' and club_year_id = (select id from club_years where label = '2027')), 'club_year_id', (select id from club_years where label = '2027'),
+    'type_id', (select id from membership_types where code = 'F' and starts_on = '2027-01-01'),
     'people', jsonb_build_array(
       jsonb_build_object('first_name', 'Pat', 'last_name', 'Weir', 'date_of_birth', '1979-01-01'),
       jsonb_build_object('first_name', 'Quin', 'last_name', 'Weir', 'date_of_birth', '1981-01-01'),
@@ -441,26 +445,26 @@ do $$ begin
 end $$;
 select pg_temp.expect_error($q$select * from membership_applications$q$, 'permission denied');
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'individual' limit 1),
-  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '1 A', 'postcode', 'BB1',
+  'address_line1', '1 A', 'postcode', 'BB1',
   'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'date_of_birth', '1982-02-02', 'email', 'a@example.com'))))$q$, 'already uses that email');
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'dual' limit 1),
-  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '1 A', 'postcode', 'BB1',
+  'address_line1', '1 A', 'postcode', 'BB1',
   'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'date_of_birth', '1982-02-02', 'email', 'ann@example.com'))))$q$, 'exactly two');
 select pg_temp.expect_error($q$select accept_application(gen_random_uuid())$q$, 'permission denied');
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'individual' limit 1),
-  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '1 A', 'postcode', 'BB1',
+  'address_line1', '1 A', 'postcode', 'BB1',
   'people', jsonb_build_array(jsonb_build_object('first_name', 'Nod', 'last_name', 'Apply', 'email', 'nod@example.com'))))$q$, 'Date of birth is needed');
-select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Family' and is_next_year limit 1),
-  'club_year_id', (select club_year_id from join_options() where is_next_year limit 1), 'address_line1', '3 Dam Rd', 'postcode', 'bb3 3cc',
+select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Family' and starts_on = '2027-01-01' limit 1),
+  'address_line1', '3 Dam Rd', 'postcode', 'bb3 3cc',
   'household_id', '10000000-0000-0000-0000-000000000001', 'payment_method', 'cash',
   'people', jsonb_build_array(
     jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'date_of_birth', '1982-02-02', 'email', 'Ann@Example.com', 'medical_details', 'Asthma', 'medical_consent', true),
     jsonb_build_object('first_name', 'Ben', 'last_name', 'Apply', 'date_of_birth', '2016-01-01')))) \gset app_
 select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
-  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
+  'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
   'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'date_of_birth', '1990-01-01', 'email', 'spam@example.com', 'medical_details', 'x', 'medical_consent', true)))) \gset spam_
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
-  'club_year_id', (select club_year_id from join_options() limit 1), 'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
+  'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
   'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'date_of_birth', '1990-01-01', 'email', 'spam@example.com'))))$q$, 'already an application');
 reset role;
 set role authenticated;
@@ -496,22 +500,22 @@ values ('20000000-0000-0000-0000-0000000000a7', '00000000-0000-0000-0000-0000000
 insert into user_roles (person_id, role) values ('20000000-0000-0000-0000-0000000000a7', 'admin');
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
-select pg_temp.expect_error($q$insert into membership_types (club_year_id, code, name, category, cover, annual_price_pence) values ((select id from club_years where label = '2026'), 'W', 'Windsurf', 'non_sailing', 'individual', 5000)$q$, 'row-level security');
+select pg_temp.expect_error($q$insert into membership_types (starts_on, code, name, category, cover, annual_price_pence) values ('2026-01-01', 'W', 'Windsurf', 'non_sailing', 'individual', 5000)$q$, 'row-level security');
 do $$ begin
   update membership_types set annual_price_pence = 1 where code = 'C';
-  assert (select annual_price_pence from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2026')) = 3000, 'members can''t change prices';
+  assert (select annual_price_pence from membership_types where code = 'C' and starts_on = '2026-01-01') = 3000, 'members can''t change prices';
 end $$;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
 do $$ begin
-  insert into membership_types (club_year_id, code, name, category, cover, annual_price_pence, sort_order) values ((select id from club_years where label = '2026'), 'W', 'Windsurf', 'non_sailing', 'individual', 5000, 120);
+  insert into membership_types (starts_on, code, name, category, cover, annual_price_pence, sort_order) values ('2026-01-01', 'W', 'Windsurf', 'non_sailing', 'individual', 5000, 120);
   update membership_types set annual_price_pence = 5500, is_open = false where code = 'W';
   assert (select annual_price_pence = 5500 and not is_open from membership_types where code = 'W'), 'admin edits and makes inactive';
   assert not exists (select 1 from join_options() where type_name = 'Windsurf'), 'inactive type not offered on Join';
   delete from membership_types where code = 'W';
   assert exists (select 1 from membership_types where code = 'W'), 'admins can''t delete types';
 end $$;
-select pg_temp.expect_error($q$insert into membership_types (club_year_id, code, name, category, cover, annual_price_pence) values ((select id from club_years where label = '2026'), 'bad code', 'X', 'non_sailing', 'individual', 0)$q$, 'membership_types_code_format');
-select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'W'), array['20000000-0000-0000-0000-0000000000a7'::uuid], (select id from club_years where label = '2026'))$q$, 'not available');
+select pg_temp.expect_error($q$insert into membership_types (starts_on, code, name, category, cover, annual_price_pence) values ('2026-01-01', 'bad code', 'X', 'non_sailing', 'individual', 0)$q$, 'membership_types_code_format');
+select pg_temp.expect_error($q$select pg_temp.start_membership((select id from membership_types where code = 'W'), array['20000000-0000-0000-0000-0000000000a7'::uuid])$q$, 'not available');
 reset role;
 reset request.jwt.claim.sub;
 
@@ -535,14 +539,14 @@ reset request.jwt.claim.sub;
 -- Renewal reminders go to whoever renews, only for memberships not yet renewed; admins only.
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
-select pg_temp.expect_error($q$select * from renewal_reminder_recipients((select id from club_years where label = '2027'))$q$, 'Admins only');
+select pg_temp.expect_error($q$select * from renewal_reminder_recipients()$q$, 'Admins only');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
-do $$ declare y uuid := (select id from club_years where label = '2027'); begin
-  assert not exists (select 1 from renewal_reminder_recipients(y) where email = 'a@example.com'), 'Alice is already covered for 2027';
-  assert not exists (select 1 from renewal_reminder_recipients(y) where email = 'e@example.com'), 'Eve has renewed for 2027';
-  assert (select membership_types from renewal_reminder_recipients(y) where first_name = 'Max') = 'Individual Sailing, Junior', 'Max renews for himself and his junior';
-  assert not exists (select 1 from renewal_reminder_recipients(y) where first_name = 'Bob'), 'juniors aren''t emailed';
-  assert (select count(*) from renewal_reminder_recipients(y) r group by r.person_id order by 1 desc limit 1) = 1, 'one row per person';
+do $$ begin
+  assert not exists (select 1 from renewal_reminder_recipients() where email = 'a@example.com'), 'Alice is already covered for 2027';
+  assert not exists (select 1 from renewal_reminder_recipients() where email = 'e@example.com'), 'Eve has renewed for 2027';
+  assert (select membership_types from renewal_reminder_recipients() where first_name = 'Max') = 'Individual Sailing, Junior', 'Max renews for himself and his junior';
+  assert not exists (select 1 from renewal_reminder_recipients() where first_name = 'Bob'), 'juniors aren''t emailed';
+  assert (select count(*) from renewal_reminder_recipients() r group by r.person_id order by 1 desc limit 1) = 1, 'one row per person';
 end $$;
 reset role;
 reset request.jwt.claim.sub;
@@ -554,13 +558,20 @@ do $$ declare m uuid; begin
   insert into membership_types (code, name, category, cover, annual_price_pence, starts_on, ends_on)
   values ('SUM', 'Summer only', 'non_sailing', 'individual', 2000, '2026-05-01', '2026-09-30'),
          ('WIN', 'Winter series', 'non_sailing', 'individual', 4000, '2026-11-01', '2027-02-28');
-  assert (select cy.label from membership_types t join club_years cy on cy.id = t.club_year_id where t.code = 'WIN') = '2026', 'club year follows the start date';
   -- 5 December: 3 of Winter series' 4 months are left (December to February).
-  m := start_membership((select id from membership_types where code = 'WIN'), array['20000000-0000-0000-0000-0000000000a7'::uuid], (select id from club_years where label = '2026'));
+  m := pg_temp.start_membership((select id from membership_types where code = 'WIN'), array['20000000-0000-0000-0000-0000000000a7'::uuid]);
   assert (select price_pence::text || '/' || prorata_months from memberships where id = m) = '3000/3', 'pro rata within the type''s own dates';
+  assert (select cy.label from memberships x join club_years cy on cy.id = x.club_year_id where x.id = m) = '2026', 'filed under the year it starts';
+  update membership_types set starts_on = '2027-11-01', ends_on = '2028-02-28' where code = 'WIN';
+  assert (select cy.label from memberships x join club_years cy on cy.id = x.club_year_id where x.id = m) = '2027', 'moving the dates moves the membership''s year';
+  update membership_types set starts_on = '2026-11-01', ends_on = '2027-02-28' where code = 'WIN';
+  -- Any period: June to March, offered on Join from 60 days before it starts.
+  insert into membership_types (code, name, category, cover, annual_price_pence, starts_on, ends_on)
+  values ('JUN', 'June to March', 'non_sailing', 'individual', 5000, '2027-06-01', '2028-03-31');
+  assert not exists (select 1 from join_options() where type_name = 'June to March'), 'not on Join in December';
+  assert (select months from membership_quote((select id from membership_types where code = 'JUN'))) = 10, 'ten months, full price';
 end $$;
-select pg_temp.expect_error($q$select start_membership((select id from membership_types where code = 'SUM'), array['20000000-0000-0000-0000-0000000000a7'::uuid], (select id from club_years where label = '2026'))$q$, 'not available');
-select pg_temp.expect_error($q$update membership_types set starts_on = '2027-11-01', ends_on = '2028-02-28' where code = 'WIN'$q$, 'already has memberships');
+select pg_temp.expect_error($q$select pg_temp.start_membership((select id from membership_types where code = 'SUM'), array['20000000-0000-0000-0000-0000000000a7'::uuid])$q$, 'not available');
 select pg_temp.expect_error($q$insert into membership_types (code, name, category, cover, annual_price_pence, starts_on, ends_on) values ('BAD', 'Bad', 'non_sailing', 'individual', 0, '2026-05-01', '2026-04-01')$q$, 'membership_types_dates');
 reset role;
 reset request.jwt.claim.sub;
@@ -568,15 +579,15 @@ reset request.jwt.claim.sub;
 -- Admins renew for members: Max (no 2027 membership yet) renewed by an admin onto 2027 Club.
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
-select pg_temp.expect_error($q$select admin_renew_membership((select id from people where first_name = 'Max'), (select id from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2027')), array[(select id from people where first_name = 'Max')], (select id from club_years where label = '2027'))$q$, 'Only an admin');
+select pg_temp.expect_error($q$select admin_renew_membership((select id from people where first_name = 'Max'), (select id from membership_types where code = 'C' and starts_on = '2027-01-01'), array[(select id from people where first_name = 'Max')])$q$, 'Only an admin');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
 do $$ declare n uuid; begin
   n := admin_renew_membership((select id from people where first_name = 'Max'),
-         (select id from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2027')),
-         array[(select id from people where first_name = 'Max')], (select id from club_years where label = '2027'));
+         (select id from membership_types where code = 'C' and starts_on = '2027-01-01'),
+         array[(select id from people where first_name = 'Max')]);
   assert (select status::text || '/' || price_pence from memberships where id = n) = 'awaiting_payment/3500', 'admin renews at next year''s price';
 end $$;
-select pg_temp.expect_error($q$select admin_renew_membership((select id from people where first_name = 'Max'), (select id from membership_types where code = 'C' and club_year_id = (select id from club_years where label = '2027')), array['20000000-0000-0000-0000-00000000000e'::uuid], (select id from club_years where label = '2027'))$q$, 'own household');
+select pg_temp.expect_error($q$select admin_renew_membership((select id from people where first_name = 'Max'), (select id from membership_types where code = 'C' and starts_on = '2027-01-01'), array['20000000-0000-0000-0000-00000000000e'::uuid])$q$, 'own household');
 reset role;
 reset request.jwt.claim.sub;
 

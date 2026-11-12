@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { Card, SaveButton } from "@/components/fields";
 import { PersonFields, addButton } from "@/components/person-fields";
+import { typeDates } from "@/lib/quote";
 import { submitApplication, type JoinState } from "./actions";
 
 export type JoinOption = {
@@ -11,15 +12,21 @@ export type JoinOption = {
   description: string | null;
   cover: "individual" | "dual" | "family" | "junior";
   category: "sailing" | "non_sailing";
-  club_year_id: string;
-  club_year: string;
-  is_next_year: boolean;
+  starts_on: string;
+  ends_on: string;
   price_pence: number;
   months: number;
 };
 
 const select = "mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2";
 const MAX_FAMILY = 4;
+
+// How many months a type runs for, counting the first and last months.
+function monthsIn(o: { starts_on: string; ends_on: string }) {
+  const [sy, sm] = o.starts_on.split("-").map(Number);
+  const [ey, em] = o.ends_on.split("-").map(Number);
+  return (ey - sy) * 12 + em - sm + 1;
+}
 
 function pounds(pence: number) {
   return `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
@@ -28,12 +35,11 @@ function pounds(pence: number) {
 export function JoinForm({ options }: { options: JoinOption[] }) {
   const [state, action] = useActionState<JoinState, FormData>(submitApplication, {});
   const v = state.values ?? {};
-  const years = [...new Map(options.map((o) => [o.club_year_id, o])).values()];
-  const [yearId, setYearId] = useState(v.club_year_id ?? years[0]?.club_year_id ?? "");
   const [typeId, setTypeId] = useState(v.type_id ?? "");
   const [extra, setExtra] = useState(Math.max(Number(v.people_count ?? 1) - 1, 0));
-  const forYear = options.filter((o) => o.club_year_id === yearId);
-  const chosen = forYear.find((o) => o.type_id === typeId);
+  const chosen = options.find((o) => o.type_id === typeId);
+  // Show each type's dates in the list when they don't all run for the same dates.
+  const mixed = new Set(options.map((o) => `${o.starts_on}|${o.ends_on}`)).size > 1;
   const people = chosen?.cover === "dual" ? 2 : chosen?.cover === "family" ? Math.min(1 + extra, MAX_FAMILY) : 1;
 
   if (state.done) {
@@ -62,7 +68,7 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
       )}
       <input type="hidden" name="people_count" value={people} />
       <input type="hidden" name="type_label" value={chosen?.type_name ?? ""} />
-      <input type="hidden" name="year_label" value={chosen?.club_year ?? ""} />
+      <input type="hidden" name="year_label" value={chosen ? typeDates(chosen) : ""} />
       <input type="hidden" name="price_label" value={chosen ? pounds(chosen.price_pence) : ""} />
       {/* Hidden from people; bots fill it in. */}
       <div aria-hidden="true" className="absolute left-[-9999px] h-px w-px overflow-hidden">
@@ -78,9 +84,10 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
             <span className="text-sm font-medium">Membership type</span>
             <select name="type_id" required value={typeId} onChange={(e) => setTypeId(e.target.value)} className={select}>
               <option value="">Choose…</option>
-              {forYear.map((o) => (
+              {options.map((o) => (
                 <option key={o.type_id} value={o.type_id}>
-                  {o.type_name}: {pounds(o.price_pence)}
+                  {o.type_name}
+                  {mixed && ` (${typeDates(o)})`}: {pounds(o.price_pence)}
                 </option>
               ))}
             </select>
@@ -89,27 +96,14 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
                 "Dual covers 2 adults and Family up to 4 people, including children. Every other type covers one person."}
             </span>
           </label>
-          {years.length > 1 ? (
-            <label className="block">
-              <span className="text-sm font-medium">Starting</span>
-              <select name="club_year_id" value={yearId} onChange={(e) => setYearId(e.target.value)} className={select}>
-                {years.map((y) => (
-                  <option key={y.club_year_id} value={y.club_year_id}>
-                    {y.is_next_year ? `${y.club_year} (next year, full year)` : `${y.club_year} (now${y.months < 12 ? `, ${y.months} months left` : ""})`}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <input type="hidden" name="club_year_id" value={yearId} />
+          {chosen && (
+            <p className="text-sm text-slate-700 sm:pt-6">
+              Membership runs from {typeDates(chosen)}.
+              {chosen.price_pence > 0 && chosen.months < monthsIn(chosen) &&
+                ` You're joining part-way through, so the price is for the ${chosen.months} month${chosen.months === 1 ? "" : "s"} left.`}
+            </p>
           )}
         </div>
-        {chosen && !chosen.is_next_year && chosen.months < 12 && (
-          <p className="mt-3 text-sm text-slate-600">
-            You&apos;re joining part-way through the year, so the price is for the {chosen.months} month
-            {chosen.months === 1 ? "" : "s"} left.
-          </p>
-        )}
       </Card>
 
       {chosen &&

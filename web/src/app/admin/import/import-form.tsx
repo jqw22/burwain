@@ -69,7 +69,7 @@ export function ImportForm({ years, currentYearId }: { years: Year[]; currentYea
         <form action={action} className="space-y-4">
           <input type="hidden" name="rows" value={JSON.stringify(state.rows)} />
           <label className="block">
-            <span className="text-sm font-medium">Add their memberships to club year</span>
+            <span className="text-sm font-medium">Use the membership types starting in</span>
             <select name="club_year_id" defaultValue={currentYearId ?? years[0]?.id} className="mt-1 block rounded border border-slate-300 bg-white px-3 py-2">
               {years.map((y) => (
                 <option key={y.id} value={y.id}>

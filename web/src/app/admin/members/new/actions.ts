@@ -57,7 +57,7 @@ export async function adminAddMember(_prev: AddState, form: FormData): Promise<A
   const family = String(form.get("family") ?? "new");
   const fields = [
     "address_line1", "address_line2", "address_line3", "address_line4", "postcode",
-    "type_id", "club_year_id", "payment_method", "paid_on",
+    "type_id", "payment_method", "paid_on",
   ];
   const p: Record<string, unknown> = Object.fromEntries(fields.map((f) => [f, text(form, f)]));
   p.household_id = family === "existing" ? text(form, "household_id") : null;

@@ -23,7 +23,6 @@ const KNOWN: [string, string][] = [
   ["covers exactly two", "Dual membership covers two adults. Please fill in both."],
   ["age limit", "Someone is over the age limit for that membership, or their date of birth is missing."],
   ["Up to 4", "A Family membership covers up to 4 people."],
-  ["not open", "That club year isn't open for joining."],
   ["not available", "That membership type isn't available at the moment."],
   ["Too many", "We're getting a lot of applications right now. Please try again in an hour."],
 ];
@@ -45,7 +44,6 @@ export async function submitApplication(_prev: JoinState, form: FormData): Promi
 
   const p = {
     type_id: text(form, "type_id"),
-    club_year_id: text(form, "club_year_id"),
     address_line1: text(form, "address_line1"),
     address_line2: text(form, "address_line2"),
     address_line3: text(form, "address_line3"),

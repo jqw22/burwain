@@ -1,15 +1,14 @@
 import Link from "next/link";
 import { Card, Notice, SaveButton } from "@/components/fields";
 import { pounds, requireMe } from "@/lib/me";
+import { quote, typeDates, ukToday } from "@/lib/quote";
 import { payTest } from "./actions";
 
-type Year = { id: string; label: string; is_renewal: boolean };
 type Membership = {
   id: string;
   price_pence: number;
   prorata_months: number;
-  club_years: { label: string } | null;
-  membership_types: { name: string } | null;
+  membership_types: { name: string; starts_on: string; ends_on: string; annual_price_pence: number } | null;
   membership_people: { people: { first_name: string } | null }[];
 };
 
@@ -47,12 +46,12 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
   }
 
   const { data: me } = await supabase.from("people").select("household_id").eq("id", personId).single<{ household_id: string | null }>();
-  const { data: yearsData } = await supabase.rpc("open_club_years");
-  const years = (yearsData ?? []) as Year[];
   const query = supabase
     .from("memberships")
-    .select("id, price_pence, prorata_months, club_years(label), membership_types(name), membership_people(people(first_name))")
-    .in("club_year_id", years.map((y) => y.id))
+    .select(
+      "id, price_pence, prorata_months, membership_types!inner(name, starts_on, ends_on, annual_price_pence), membership_people(people(first_name))",
+    )
+    .gte("membership_types.ends_on", ukToday())
     .eq("status", "awaiting_payment")
     .order("created_at");
   const { data } = await (me?.household_id ? query.eq("household_id", me.household_id) : query.eq("payer_person_id", personId));
@@ -78,10 +77,12 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
                 {owed.map((m) => (
                   <tr key={m.id}>
                     <td className="py-2 pr-4">
-                      <strong>{m.membership_types?.name}</strong> {m.club_years?.label}
+                      <strong>{m.membership_types?.name}</strong>
+                      <span className="block text-slate-600">{m.membership_types && typeDates(m.membership_types)}</span>
                       <span className="block text-slate-600">
                         {m.membership_people.map((p) => p.people?.first_name).filter(Boolean).join(", ")}
-                        {m.prorata_months < 12 && ` (${m.prorata_months} months)`}
+                        {m.membership_types && m.prorata_months < quote(m.membership_types, m.membership_types.starts_on).total &&
+                          ` (${m.prorata_months} months)`}
                       </span>
                     </td>
                     <td className="py-2 text-right">{pounds(m.price_pence)}</td>

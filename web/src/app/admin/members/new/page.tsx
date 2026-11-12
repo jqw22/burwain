@@ -1,6 +1,7 @@
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { meWithRole } from "@/lib/me";
-import { AddMemberForm, type Family, type Type, type Year } from "./add-form";
+import { ukToday } from "@/lib/quote";
+import { AddMemberForm, type Family, type Type } from "./add-form";
 
 type Household = { id: string; postcode: string | null; address_line1: string | null; lead_person_id: string | null };
 type Person = { id: string; first_name: string; last_name: string; household_id: string | null };
@@ -11,27 +12,27 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
   const { supabase, allowed } = await meWithRole("admin");
   if (!allowed) return <NotAllowed />;
 
-  const [{ data: years }, { data: types }, { data: households }, { data: people }, { data: isFinance }] = await Promise.all([
-    supabase.rpc("open_club_years"),
+  const today = ukToday();
+  const [{ data: types }, { data: households }, { data: people }, { data: isFinance }] = await Promise.all([
     supabase
       .from("membership_types")
-      .select("id, club_year_id, starts_on, ends_on, name, cover, annual_price_pence, sibling_order")
+      .select("id, starts_on, ends_on, name, cover, annual_price_pence, sibling_order")
       .eq("is_open", true)
-      .gte("ends_on", new Date().toISOString().slice(0, 10))
+      .gte("ends_on", today)
+      .order("starts_on")
       .order("sort_order"),
     supabase.from("households").select("id, postcode, address_line1, lead_person_id"),
     supabase.from("people").select("id, first_name, last_name, household_id").is("archived_at", null).not("household_id", "is", null),
     supabase.rpc("has_role", { r: "finance" }),
   ]);
-  // Families holding a Family or Dual membership this year or next: the only ones new members can join.
+  // Families holding a Family or Dual membership that hasn't ended: the only ones new members can join.
   const { data: shared } = await supabase
     .from("memberships")
-    .select("household_id, membership_types!inner(cover), club_years!inner(ends_on)")
+    .select("household_id, membership_types!inner(cover, ends_on)")
     .neq("status", "cancelled")
     .in("membership_types.cover", ["family", "dual"])
-    .gte("club_years.ends_on", new Date().toISOString().slice(0, 10));
+    .gte("membership_types.ends_on", today);
   const sharing = new Set(((shared ?? []) as { household_id: string | null }[]).map((m) => m.household_id));
-  const yearList = (years ?? []) as Year[];
   const everyone = (people ?? []) as Person[];
   const families: Family[] = ((households ?? []) as Household[])
     .map((h) => {
@@ -57,12 +58,11 @@ export default async function AddMemberPage({ searchParams }: PageProps<"/admin/
         can log in with it straight away.
       </p>
       <AddMemberForm
-        years={yearList}
         types={(types ?? []) as Type[]}
         families={families}
         canRecordPayment={Boolean(isFinance)}
         householdId={typeof params.household === "string" ? params.household : undefined}
-        today={new Date().toISOString().slice(0, 10)}
+        today={today}
       />
     </div>
   );
