@@ -327,7 +327,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   // The Members bar no longer has Add new member, Income or Email templates.
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
   const bar = page.getByRole("navigation", { name: "Membership admin" });
-  await expect(page.getByRole("heading", { name: "Members", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Membership", exact: true })).toBeVisible();
   await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Import"]);
   await page.goto("/");
   await shot(page, "admin-home");
@@ -467,7 +467,7 @@ test("finance records a cheque for an Associate membership, which no longer need
   `);
   const page = await adminPage(browser);
   await page.getByRole("link", { name: "Income", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Income", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
   await expect(page.getByText("Awaiting approval")).toHaveCount(0);
 
   await page.getByRole("checkbox", { name: `Mark Associate Membership for Alex Tester${run} as paid` }).check();
@@ -495,7 +495,7 @@ test("finance sees this month's transactions with who paid, a running balance, s
        select current_date, 'Raffle donation ${run}', 'in'::txn_direction, 2550, id, 'cash'::payment_method from transaction_categories where name = 'Donations'`);
   const page = await adminPage(browser);
   await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Income", "Transactions", "Categories"]);
 
   // This month by default: last month's grant isn't shown.
@@ -592,7 +592,7 @@ test("finance adds, renames and makes inactive a transaction category", async ({
   const page = await adminPage(browser);
   const finance = page.getByRole("main").locator("section", { has: page.getByRole("heading", { name: "Finance admin", exact: true }) });
   await finance.getByRole("link", { name: "Categories", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Categories", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
   // Equipment was used by the sail repairs added earlier.
   await expect(page.getByRole("row", { name: /Equipment/ })).toContainText("1");
   // Subscriptions is used for member payments, so it can't be renamed or made inactive.
@@ -879,7 +879,7 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   const page = await adminPage(browser);
   await page.goto("/admin/members");
   await page.getByRole("link", { name: "Membership types" }).click();
-  await expect(page.getByRole("heading", { name: "Membership types", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Membership", exact: true })).toBeVisible();
   await expect(page.getByRole("row", { name: "Family", exact: true }).first()).toContainText("£255");
 
   await page.getByRole("link", { name: "Add a membership type" }).click();
@@ -973,7 +973,7 @@ test("an admin edits the renewal reminder email with a live preview, and adds an
   // Found in the Communications admin box on Home.
   await page.goto("/");
   await page.getByRole("link", { name: "Email templates", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Email templates", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
   await expect(page.getByRole("row", { name: "Renewal reminder" })).toContainText("Renewal reminder");
 
   await page.getByRole("link", { name: "Edit Renewal reminder" }).click();
@@ -1037,7 +1037,7 @@ test("an admin previews, tests and sends renewal reminders, and a daily limit is
   // Found in the Membership admin box on Home.
   await page.goto("/");
   await page.getByRole("link", { name: "Renewal reminders", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Renewal reminders", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
   const rita = page.getByRole("row", { name: `Rita Remind${run}` });
   await expect(rita).toContainText("Individual Sailing");
   await expect(rita).toContainText("£185");
