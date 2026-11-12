@@ -19,5 +19,5 @@ export async function addContact(form: FormData) {
     const key = error.message.includes("already uses") ? "email" : error.message.includes("name") ? "name" : error.message.includes("email") ? "noemail" : "save";
     redirect(`/admin/contacts/new?error=${key}`);
   }
-  redirect(`/admin/members/${data}?saved=contact`);
+  redirect(`/admin/contacts/added?id=${data}`);
 }
