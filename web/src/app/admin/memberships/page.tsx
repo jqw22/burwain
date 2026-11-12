@@ -62,7 +62,7 @@ export default async function MembershipsPage({ searchParams }: PageProps<"/admi
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Income</h1>
+      <h1 className="text-2xl font-semibold">Finance</h1>
       <AdminNav current="memberships" />
       <Notice message={saved} />
       {error && <p className="rounded bg-red-50 p-3 text-red-800">{error}</p>}
