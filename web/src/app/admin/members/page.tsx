@@ -10,7 +10,6 @@ type Row = {
   last_name: string;
   date_of_birth: string | null;
   email: string | null;
-  mobile: string | null;
   household_id: string | null;
   is_contact: boolean;
   households: { lead_person_id: string | null } | null;
@@ -65,6 +64,26 @@ function summarise(ms: Membership[], today: string): Summary {
   return { status: "none", shown: null, next: null };
 }
 
+// Renewal status, for people with a membership running today:
+//   n/a          - it ends more than the renewal notice (60 days) from today
+//   Outstanding  - it ends within the notice period, and the next membership isn't paid (or doesn't exist yet)
+//   Paid         - the next membership (starting later) is paid
+// People with no membership running today show a dash.
+const RENEWAL_STATUS = { outstanding: "Outstanding", paid: "Paid", na: "n/a" } as const;
+type RenewalStatus = keyof typeof RENEWAL_STATUS;
+const RENEWAL_STYLE: Record<RenewalStatus, string> = {
+  outstanding: "bg-amber-50 text-amber-900",
+  paid: "bg-emerald-50 text-emerald-900",
+  na: "text-slate-500",
+};
+function renewalOf(s: Summary, today: string, noticeDays: number): RenewalStatus | null {
+  if (s.status !== "active" || !s.shown?.membership_types) return null;
+  if (s.next?.status === "active") return "paid";
+  const ends = new Date(`${s.shown.membership_types.ends_on}T00:00:00Z`).getTime();
+  const daysLeft = Math.round((ends - new Date(`${today}T00:00:00Z`).getTime()) / 86_400_000);
+  return daysLeft > noticeDays ? "na" : "outstanding";
+}
+
 // "Jan 2027" style label for when a membership starts.
 const month = (d: string | undefined) =>
   d ? new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }) : "";
@@ -80,10 +99,13 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     | MembershipStatus
     | "all";
   const sort = params.sort === "type" ? "type" : "name";
+  const renewalFilter = (typeof params.renewal === "string" && params.renewal in RENEWAL_STATUS ? params.renewal : "all") as
+    | RenewalStatus
+    | "all";
 
   let query = supabase
     .from("people")
-    .select("id, first_name, last_name, date_of_birth, email, mobile, household_id, is_contact, households!people_household_id_fkey(lead_person_id)")
+    .select("id, first_name, last_name, date_of_birth, email, household_id, is_contact, households!people_household_id_fkey(lead_person_id)")
     .is("archived_at", null)
     .order("last_name")
     .order("first_name")
@@ -91,13 +113,15 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
   if (q) query = query.or(`first_name.ilike.*${q}*,last_name.ilike.*${q}*,email.ilike.*${q}*`);
 
   const today = ukToday();
-  const [{ data: people }, { data: held }] = await Promise.all([
+  const [{ data: people }, { data: held }, { data: notice }] = await Promise.all([
     query,
     supabase
       .from("membership_people")
       .select("person_id, memberships!inner(status, membership_types(name, starts_on, ends_on))")
       .neq("memberships.status", "cancelled"),
+    supabase.rpc("renewal_notice_days"),
   ]);
+  const noticeDays = typeof notice === "number" ? notice : 60;
   const byPerson = new Map<string, Membership[]>();
   for (const h of (held ?? []) as unknown as Held[]) {
     byPerson.set(h.person_id, [...(byPerson.get(h.person_id) ?? []), h.memberships]);
@@ -105,12 +129,20 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
 
   const all = ((people ?? []) as unknown as Row[]).map((p) => {
     const summary = summarise(byPerson.get(p.id) ?? [], today);
-    return { ...p, ...summary, status: (summary.status === "none" && p.is_contact ? "contact" : summary.status) as MembershipStatus };
+    return {
+      ...p,
+      ...summary,
+      status: (summary.status === "none" && p.is_contact ? "contact" : summary.status) as MembershipStatus,
+      renewal: renewalOf(summary, today, noticeDays),
+    };
   });
   const counts = Object.fromEntries(
     (Object.keys(MEMBERSHIP_STATUS) as MembershipStatus[]).map((s) => [s, all.filter((r) => r.status === s).length]),
   ) as Record<MembershipStatus, number>;
-  const rows = all.filter((r) => filter === "all" || r.status === filter);
+  const renewalCounts = Object.fromEntries(
+    (Object.keys(RENEWAL_STATUS) as RenewalStatus[]).map((s) => [s, all.filter((r) => r.renewal === s).length]),
+  ) as Record<RenewalStatus, number>;
+  const rows = all.filter((r) => (filter === "all" || r.status === filter) && (renewalFilter === "all" || r.renewal === renewalFilter));
   // Sorted by name, families stay together: the main contact first, then the rest of the family indented under them.
   const grouped = new Set<string>();
   if (sort === "name") {
@@ -140,8 +172,14 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
 
   // Links that keep the current search and filter while changing one thing.
   const href = (change: Record<string, string>) => {
-    const next = new URLSearchParams({ ...(q && { q }), ...(filter !== "all" && { status: filter }), ...(sort !== "name" && { sort }), ...change });
-    for (const [k, v] of [...next]) if (v === "" || (k === "sort" && v === "name") || (k === "status" && v === "all")) next.delete(k);
+    const next = new URLSearchParams({
+      ...(q && { q }),
+      ...(filter !== "all" && { status: filter }),
+      ...(renewalFilter !== "all" && { renewal: renewalFilter }),
+      ...(sort !== "name" && { sort }),
+      ...change,
+    });
+    for (const [k, v] of [...next]) if (v === "" || (k === "sort" && v === "name") || ((k === "status" || k === "renewal") && v === "all")) next.delete(k);
     const s = next.toString();
     return s ? `/admin/members?${s}` : "/admin/members";
   };
@@ -161,9 +199,6 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-600">Everyone on the member list, with their membership status.</p>
         <div className="flex flex-wrap gap-2">
-          <Link href="/admin/contacts/new" className="rounded border border-sky-800 bg-white px-4 py-2 font-medium text-sky-900 hover:bg-sky-50">
-            + Add contact
-          </Link>
           <Link href="/admin/members/new" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
             + Add new member
           </Link>
@@ -186,6 +221,24 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
           </Link>
         ))}
       </nav>
+      <nav aria-label="Filter by renewal status" className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-slate-600">Renewal:</span>
+        {(["all", ...Object.keys(RENEWAL_STATUS)] as (RenewalStatus | "all")[]).map((s) => (
+          <Link
+            key={s}
+            href={href({ renewal: s })}
+            aria-current={renewalFilter === s ? "true" : undefined}
+            className={
+              renewalFilter === s
+                ? "rounded-full bg-sky-800 px-3 py-1 font-medium text-white"
+                : "rounded-full border border-slate-300 bg-white px-3 py-1 text-slate-700 hover:border-sky-800"
+            }
+          >
+            {s === "all" ? "Any" : RENEWAL_STATUS[s]}
+            {s !== "all" && ` (${renewalCounts[s]})`}
+          </Link>
+        ))}
+      </nav>
       <p className="text-sm text-slate-600">
         Showing {rows.length} {rows.length === 1 ? "person" : "people"}
         {q && <> matching &ldquo;{q}&rdquo;</>}, sorted by {sort === "type" ? "membership type" : "name"}.
@@ -195,11 +248,10 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               {sortHeader("name", "Name")}
-              <th className="px-3 py-2 font-medium">Email</th>
-              <th className="px-3 py-2 font-medium">Mobile</th>
               {sortHeader("type", "Type")}
               <th className="px-3 py-2 font-medium">Payment</th>
               <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Renewal</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -219,8 +271,6 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                     </Link>
                     {age !== null && age < 18 && <span className="ml-2 text-xs text-slate-500">junior, {age}</span>}
                   </td>
-                  <td className="px-3 py-2">{p.email}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{p.mobile}</td>
                   <td className="px-3 py-2">
                     {m ? (
                       <>
@@ -245,6 +295,18 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                   </td>
                   <td className="px-3 py-2">
                     <span className={`whitespace-nowrap rounded px-2 py-0.5 ${STATUS_STYLE[p.status]}`}>{MEMBERSHIP_STATUS[p.status]}</span>
+                  </td>
+                  <td className="px-3 py-2">
+                    {p.renewal ? (
+                      <span
+                        className={`whitespace-nowrap rounded px-2 py-0.5 ${RENEWAL_STYLE[p.renewal]}`}
+                        title={p.renewal === "na" ? `Renewal opens ${noticeDays} days before ${p.shown?.membership_types?.ends_on}` : undefined}
+                      >
+                        {RENEWAL_STATUS[p.renewal]}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">–</span>
+                    )}
                   </td>
                 </tr>
               );
