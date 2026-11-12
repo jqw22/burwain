@@ -5,6 +5,7 @@ import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { EditLink, FormButtons, Item, LINK } from "@/app/profile/ui";
 import { ageOn, meWithRole, PERSON_FIELDS, pounds, ukDate, type Person } from "@/lib/me";
 import { RenewForm, type RenewPerson, type RenewType } from "@/app/profile/renew-form";
+import { quote, ukToday } from "@/lib/quote";
 import {
   adminAddQualification,
   adminRenewMembership,
@@ -105,48 +106,30 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
   const { data: sharedData } = household
     ? await supabase
         .from("memberships")
-        .select("id, membership_types!inner(cover), club_years!inner(ends_on)")
+        .select("id, membership_types!inner(cover, ends_on)")
         .eq("household_id", household.id)
         .neq("status", "cancelled")
         .in("membership_types.cover", ["family", "dual"])
-        .gte("club_years.ends_on", new Date().toISOString().slice(0, 10))
+        .gte("membership_types.ends_on", ukToday())
         .limit(1)
     : { data: [] };
   const canAddToFamily = (sharedData ?? []).length > 0;
 
-  // Renewing or adding a membership for this member and their family: for each open club year, the people
-  // not yet covered that year, and that year's active membership types.
-  const { data: openYears } = await supabase.rpc("open_club_years");
-  const years = (openYears ?? []) as { id: string; label: string; starts_on: string; is_renewal: boolean }[];
-  const familyIds = m.household_id ? ((family ?? []) as Relative[]).map((r) => r.id) : [m.id];
-  const [{ data: coveredData }, { data: yearTypes }] = await Promise.all([
-    supabase
-      .from("membership_people")
-      .select("person_id, memberships!inner(club_year_id, status)")
-      .in("person_id", familyIds)
-      .in("memberships.club_year_id", years.map((y) => y.id))
-      .neq("memberships.status", "cancelled"),
-    supabase
-      .from("membership_types")
-      .select("id, club_year_id, name, description, cover, annual_price_pence, max_age, sibling_order, starts_on, ends_on")
-      .in("club_year_id", years.map((y) => y.id))
-      .eq("is_open", true)
-      .gte("ends_on", new Date().toISOString().slice(0, 10))
-      .order("sort_order"),
-  ]);
-  const covered = (coveredData ?? []) as unknown as { person_id: string; memberships: { club_year_id: string } }[];
+  // Renewing or adding a membership for this member and their family: any active type that hasn't ended,
+  // priced as if bought today. The database stops anyone having two of the same kind for the same dates.
+  const today0 = ukToday();
+  const { data: openTypes } = await supabase
+    .from("membership_types")
+    .select("id, name, description, cover, annual_price_pence, max_age, sibling_order, starts_on, ends_on")
+    .eq("is_open", true)
+    .gte("ends_on", today0)
+    .order("starts_on")
+    .order("sort_order");
   const familyPeople = m.household_id ? ((family ?? []) as Relative[]) : [{ id: m.id, first_name: m.first_name, last_name: m.last_name, date_of_birth: m.date_of_birth }];
-  const renewals = years
-    .map((y) => ({
-      year: y,
-      people: familyPeople
-        .filter((p) => !covered.some((c) => c.person_id === p.id && c.memberships.club_year_id === y.id))
-        .map((p): RenewPerson => ({ id: p.id, name: `${p.first_name} ${p.last_name}`, age: ageOn(p.date_of_birth, new Date(y.starts_on)) })),
-      types: ((yearTypes ?? []) as (RenewType & { club_year_id: string; sibling_order: number | null })[]).filter(
-        (t) => t.club_year_id === y.id && (t.sibling_order === null || t.sibling_order === 1),
-      ),
-    }))
-    .filter((r) => r.people.length > 0 && r.types.length > 0);
+  const renewPeople = familyPeople.map((p): RenewPerson => ({ id: p.id, name: `${p.first_name} ${p.last_name}`, date_of_birth: p.date_of_birth }));
+  const renewTypes = ((openTypes ?? []) as (RenewType & { sibling_order: number | null })[])
+    .filter((t) => t.sibling_order === null || t.sibling_order === 1)
+    .map((t) => ({ ...t, annual_price_pence: quote(t, today0).price }));
 
   const base = `/admin/members/${id}`;
   const editing = typeof query.edit === "string" ? query.edit : null;
@@ -215,25 +198,22 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
         <Link href="/admin/memberships" className={`mt-3 inline-block ${LINK}`}>
           Payments
         </Link>
-        {renewals.map((r) => (
-          <div key={r.year.id} className="mt-4 rounded border border-sky-200 bg-sky-50 p-4">
-            <h3 className="font-medium text-sky-950">
-              {r.year.is_renewal ? `Renew for ${r.year.label}` : `Add a membership for ${r.year.label}`}
-            </h3>
-            {!r.year.is_renewal && (
-              <p className="text-sm text-slate-600">Prices shown are for the full period. Joining part-way through is charged for the months left.</p>
-            )}
+        {renewTypes.length > 0 && (
+          <div className="mt-4 rounded border border-sky-200 bg-sky-50 p-4">
+            <h3 className="font-medium text-sky-950">Renew or add a membership</h3>
+            <p className="text-sm text-slate-600">
+              Any active membership type that hasn&apos;t ended. Prices are what they&apos;d pay today: types that have already started are
+              charged for the months left.
+            </p>
             <RenewForm
-              yearId={r.year.id}
-              yearLabel={r.year.label}
-              people={r.people}
-              types={r.types}
+              people={renewPeople}
+              types={renewTypes}
               action={adminRenewMembership}
               extra={{ member_id: m.id }}
-              button={r.year.is_renewal ? `Renew for ${r.year.label}` : `Add membership for ${r.year.label}`}
+              button="Save membership"
             />
           </div>
-        ))}
+        )}
       </Card>
 
       <Card id="contact" title="Contact details" action={edit("contact", "contact details")}>

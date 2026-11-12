@@ -6,8 +6,7 @@ import { PersonFields, addButton } from "@/components/person-fields";
 import { quote, typeDates } from "@/lib/quote";
 import { adminAddMember, type AddState } from "./actions";
 
-export type Year = { id: string; label: string; is_renewal: boolean };
-export type Type = { id: string; club_year_id: string; starts_on: string; ends_on: string; name: string; cover: string; annual_price_pence: number; sibling_order: number | null };
+export type Type = { id: string; starts_on: string; ends_on: string; name: string; cover: string; annual_price_pence: number; sibling_order: number | null };
 export type Family = { id: string; label: string; shared: boolean };
 
 const select = "mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2";
@@ -21,14 +20,12 @@ const JOIN = "join";
 
 
 export function AddMemberForm({
-  years,
-  types: allTypes,
+  types,
   families,
   canRecordPayment,
   householdId,
   today,
 }: {
-  years: Year[];
   types: Type[];
   families: Family[];
   canRecordPayment: boolean;
@@ -39,18 +36,10 @@ export function AddMemberForm({
   const v = state.values ?? {};
   // Starts blank. "Join an existing family" adds someone to a family already in the club.
   const [choice, setChoice] = useState(v.type_choice ?? (householdId ? JOIN : ""));
-  const [yearId, setYearId] = useState(v.club_year_id ?? years[0]?.id ?? "");
   const [extra, setExtra] = useState(Math.max(Number(v.people_count ?? 1) - 1, 0));
-  // Each club year has its own membership types and prices.
-  const types = allTypes.filter((t) => t.club_year_id === yearId);
-  const renewalYear = years.find((y) => y.id === yearId)?.is_renewal ?? false;
   const priceFor = (t: Type) => quote(t, today).price;
-  // Switching year keeps the same membership type where that year has one with the same name.
-  const changeYear = (id: string) => {
-    const old = allTypes.find((t) => t.id === choice);
-    if (old) setChoice(allTypes.find((t) => t.club_year_id === id && t.name === old.name)?.id ?? "");
-    setYearId(id);
-  };
+  // Show each type's dates in the list when they don't all run for the same dates.
+  const mixed = new Set(types.map((t) => `${t.starts_on}|${t.ends_on}`)).size > 1;
   const joining = choice === JOIN;
   const type = types.find((t) => t.id === choice);
   const cover = type?.cover;
@@ -81,7 +70,8 @@ export function AddMemberForm({
                 .filter((t) => !t.sibling_order || t.sibling_order === 1)
                 .map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.cover === "junior" ? "Junior" : t.name}: {pounds(priceFor(t))}
+                    {t.cover === "junior" ? "Junior" : t.name}
+                    {mixed && ` (${typeDates(t)})`}: {pounds(priceFor(t))}
                   </option>
                 ))}
               <option value={JOIN}>Join existing family / dual membership</option>
@@ -90,28 +80,13 @@ export function AddMemberForm({
               Dual covers 2 adults and Family up to {MAX_FAMILY} people. Every other type covers one person.
             </span>
           </label>
-          {!joining && (
-            <label className="block">
-              <span className="text-sm font-medium">Club year</span>
-              <select name="club_year_id" value={yearId} onChange={(e) => changeYear(e.target.value)} className={select}>
-                {years.map((y) => (
-                  <option key={y.id} value={y.id}>
-                    {y.label}
-                  </option>
-                ))}
-              </select>
-              <span className="mt-1 block text-xs text-slate-500">
-                {type
-                  ? `${typeDates(type)}. ${
-                      quote(type, today).months < quote(type, today).total
-                        ? `Pro rata for the ${quote(type, today).months} month${quote(type, today).months === 1 ? "" : "s"} left.`
-                        : "Full price."
-                    }`
-                  : renewalYear
-                    ? "Full price for next year."
-                    : "Prices are shown in the list above."}
-              </span>
-            </label>
+          {!joining && type && (
+            <p className="text-sm text-slate-700 sm:pt-6">
+              {typeDates(type)}.{" "}
+              {quote(type, today).months < quote(type, today).total
+                ? `Pro rata for the ${quote(type, today).months} month${quote(type, today).months === 1 ? "" : "s"} left.`
+                : "Full price."}
+            </p>
           )}
         </div>
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { SaveButton } from "@/components/fields";
 import { typeDates } from "@/lib/quote";
 
-export type RenewPerson = { id: string; name: string; age: number | null };
+export type RenewPerson = { id: string; name: string; date_of_birth: string | null };
 export type RenewType = {
   id: string;
   name: string;
@@ -22,21 +22,26 @@ function pounds(pence: number) {
   return `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
 }
 
-// Does this type suit the people ticked? Checks how many people it covers and any age limit.
+// Age on a date (both YYYY-MM-DD).
+function ageOn(dob: string, on: string) {
+  const [by, bm, bd] = dob.split("-").map(Number);
+  const [y, m, d] = on.split("-").map(Number);
+  return y - by - (m < bm || (m === bm && d < bd) ? 1 : 0);
+}
+
+// Does this type suit the people ticked? Checks how many people it covers and any age limit (on the start date).
 function fits(t: RenewType, people: RenewPerson[]) {
   const n = people.length;
   if (n === 0) return false;
   if ((t.cover === "individual" || t.cover === "junior") && n !== 1) return false;
   if (t.cover === "dual" && n !== 2) return false;
   if (t.cover === "family" && n > MAX_FAMILY) return false;
-  if (t.max_age !== null && people.some((p) => p.age === null || p.age > t.max_age!)) return false;
+  if (t.max_age !== null && people.some((p) => p.date_of_birth === null || ageOn(p.date_of_birth, t.starts_on) > t.max_age!)) return false;
   return true;
 }
 
-// Renewing for next year: tick who the membership is for, then pick any of next year's types that suits them.
+// Renewing: tick who the membership is for, then pick any of the types offered that suits them.
 export function RenewForm({
-  yearId,
-  yearLabel,
   people,
   types,
   suggested,
@@ -44,8 +49,6 @@ export function RenewForm({
   extra = {},
   button,
 }: {
-  yearId: string;
-  yearLabel: string;
   people: RenewPerson[];
   types: RenewType[];
   suggested?: string;
@@ -60,17 +63,18 @@ export function RenewForm({
   const [typeId, setTypeId] = useState(suggested ?? "");
   const value = options.some((t) => t.id === typeId) ? typeId : "";
   const type = options.find((t) => t.id === value);
+  // Show each type's dates in the list when they don't all run for the same dates.
+  const mixed = new Set(types.map((t) => `${t.starts_on}|${t.ends_on}`)).size > 1;
 
   return (
     <form
       {...(action ? { action } : { action: "/profile/renew", method: "get" })}
       className="mt-2 space-y-3"
-      aria-label={button ?? `Renew for ${yearLabel}`}
+      aria-label={button ?? "Renew"}
     >
       {Object.entries(extra).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}
-      <input type="hidden" name="club_year_id" value={yearId} />
       <input type="hidden" name="remaining" value={people.length - chosen.length} />
       <fieldset>
         <legend className="text-slate-700">Who is this membership for?</legend>
@@ -90,7 +94,7 @@ export function RenewForm({
         </div>
       </fieldset>
       <label className="block">
-        <span className="text-slate-700">Membership type for {yearLabel}</span>
+        <span className="text-slate-700">Membership type</span>
         <select
           name="type_id"
           required
@@ -101,7 +105,8 @@ export function RenewForm({
           <option value="">{options.length ? "Choose…" : "No membership type suits the people ticked"}</option>
           {options.map((t) => (
             <option key={t.id} value={t.id}>
-              {t.cover === "junior" ? "Junior" : t.name}: {pounds(t.annual_price_pence)}
+              {t.cover === "junior" ? "Junior" : t.name}
+              {mixed && ` (${typeDates(t)})`}: {pounds(t.annual_price_pence)}
             </option>
           ))}
         </select>
@@ -121,7 +126,7 @@ export function RenewForm({
           You can renew the others separately afterwards, on a different membership type if you like.
         </p>
       )}
-      <SaveButton pendingText={action ? "Saving…" : "Opening…"}>{button ?? `Renew for ${yearLabel}`}</SaveButton>
+      <SaveButton pendingText={action ? "Saving…" : "Opening…"}>{button ?? "Renew"}</SaveButton>
     </form>
   );
 }

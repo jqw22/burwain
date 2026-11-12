@@ -18,3 +18,15 @@ export function typeDates(t: { starts_on: string; ends_on: string }) {
     new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   return `${f(t.starts_on)} to ${f(t.ends_on)}`;
 }
+
+// The same date a year later (29 February becomes 28 February), as the database's "+ 1 year" does.
+export function yearLater(d: string) {
+  const [y, m, day] = d.split("-").map(Number);
+  const last = new Date(Date.UTC(y + 1, m, 0)).getUTCDate();
+  return `${y + 1}-${String(m).padStart(2, "0")}-${String(Math.min(day, last)).padStart(2, "0")}`;
+}
+
+// Today's date in the UK, as YYYY-MM-DD.
+export function ukToday() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+}

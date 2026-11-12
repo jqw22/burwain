@@ -37,11 +37,11 @@ const ERRORS: Record<string, string> = {
   age: "Someone is over the age limit for that membership, or their date of birth is missing.",
   adult: "A junior needs an adult in the family with a membership for the same year. Please renew the adult membership first.",
   duplicate: "Someone you ticked already has that kind of membership for the year.",
-  closed: "Renewals for that year aren't open yet.",
+  closed: "Renewals aren't open yet.",
   unavailable: "That membership type isn't available at the moment.",
   confirm: "Please tick the box to confirm your personal details are up to date.",
   four: "A Family membership covers up to 4 people. Please tick fewer names.",
-  notmember: "Only people with a membership this year can be renewed. To add someone new, please contact the membership secretary.",
+  notmember: "Only people whose membership is ending soon can be renewed. To add someone new, please contact the membership secretary.",
   lead: "Your family's main contact renews for everyone.",
   renew: "We couldn't renew. Please try again, or contact the membership secretary.",
 };

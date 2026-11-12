@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { fillPlaceholders, textToHtml } from "@/lib/email";
 import { sendEmails, type OutgoingEmail } from "@/lib/mailer";
 import { meWithRole } from "@/lib/me";
-import { valuesFor, type Recipient, type Template } from "./render";
+import { renewalYear, valuesFor, type Recipient, type Template } from "./render";
 
 async function render(t: Template, r: Recipient, yearLabel: string, to: string, prefix = ""): Promise<OutgoingEmail> {
   const values = await valuesFor(r, yearLabel);
@@ -20,8 +20,7 @@ function back(query: string): never {
 async function load() {
   const { supabase, personId, allowed } = await meWithRole("admin");
   if (!allowed) back("error=admin");
-  const { data: years } = await supabase.rpc("open_club_years");
-  const year = ((years ?? []) as { id: string; label: string; is_renewal: boolean }[]).find((y) => y.is_renewal);
+  const year = await renewalYear(supabase);
   if (!year) back("error=closed");
   const { data: template } = await supabase
     .from("email_templates")
@@ -29,7 +28,7 @@ async function load() {
     .eq("purpose", "renewal_reminder")
     .maybeSingle();
   if (!template) back("error=template");
-  const { data } = await supabase.rpc("renewal_reminder_recipients", { p_club_year_id: year.id });
+  const { data } = await supabase.rpc("renewal_reminder_recipients");
   return { supabase, personId, year, template: template as Template, recipients: (data ?? []) as Recipient[] };
 }
 
@@ -56,7 +55,6 @@ export async function sendReminders(form: FormData) {
       body: template.body,
       purpose: "renewal_reminder",
       template_id: template.id,
-      club_year_id: year.id,
       is_news: false,
       created_by: personId,
       recipient_count: list.length,

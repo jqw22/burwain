@@ -69,7 +69,7 @@ export default async function MembershipsPage({ searchParams }: PageProps<"/admi
 
       <form className="flex flex-wrap items-end gap-2">
         <label className="block">
-          <span className="text-sm font-medium">Club year</span>
+          <span className="text-sm font-medium">Memberships starting in</span>
           <select
             name="year"
             defaultValue={year?.id}
@@ -100,7 +100,7 @@ export default async function MembershipsPage({ searchParams }: PageProps<"/admi
         </div>
       </dl>
 
-      <Card title={`All memberships for ${year?.label ?? "this year"}`}>
+      <Card title={`All memberships starting in ${year?.label ?? "this year"}`}>
         {rows.length === 0 ? (
           <p className="text-slate-600">No memberships yet.</p>
         ) : (
