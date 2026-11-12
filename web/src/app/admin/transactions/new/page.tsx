@@ -3,6 +3,7 @@ import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, SaveButton } from "@/components/fields";
 import { meWithRole } from "@/lib/me";
 import { addTransaction } from "../actions";
+import { DirectionAndCategory } from "./direction-category";
 
 type Category = { id: string; name: string; direction: "in" | "out" };
 
@@ -46,19 +47,7 @@ export default async function NewTransactionPage({ searchParams }: PageProps<"/a
 
       <Card title="Transaction details">
         <form action={addTransaction} className="space-y-4">
-          <fieldset>
-            <legend className="text-sm font-medium">Money in or out?</legend>
-            <div className="mt-1 flex gap-6">
-              <label className="flex items-center gap-2">
-                <input type="radio" name="direction" value="out" defaultChecked={direction === "out"} />
-                Money out (the club paid)
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="direction" value="in" defaultChecked={direction === "in"} />
-                Money in (the club received)
-              </label>
-            </div>
-          </fieldset>
+          <DirectionAndCategory categories={categories} direction={direction === "in" ? "in" : "out"} categoryId={v("category_id")} />
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium">Date</span>
@@ -78,26 +67,6 @@ export default async function NewTransactionPage({ searchParams }: PageProps<"/a
             <input name="party" placeholder="For example: the supplier's name" defaultValue={v("party")} className={input} />
           </label>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-sm font-medium">Category</span>
-              <select name="category_id" defaultValue={v("category_id")} className={input}>
-                <option value="">Uncategorised</option>
-                <optgroup label="Money out">
-                  {categories.filter((c) => c.direction === "out").map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Money in">
-                  {categories.filter((c) => c.direction === "in").map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            </label>
             <label className="block">
               <span className="text-sm font-medium">How paid</span>
               <select name="method" defaultValue={v("method") || "bank_transfer"} className={input}>

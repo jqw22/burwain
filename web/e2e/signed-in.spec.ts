@@ -505,7 +505,7 @@ test("finance sees this month's transactions with who paid, a running balance, s
   await expect(donation).toContainText("Cash");
   await expect(donation).toContainText("£25.50");
   await expect(insurance).toContainText("Bank transfer");
-  await expect(insurance).toContainText("£450");
+  await expect(insurance).toContainText("£450.00");
 
   // Who paid: the cheque Alex paid for their Associate membership.
   const cheque = page.getByRole("row", { name: new RegExp(`Associate Membership .*Alex Tester${run}`) });
@@ -513,7 +513,7 @@ test("finance sees this month's transactions with who paid, a running balance, s
 
   // Running balance from zero over every transaction ever recorded.
   const balance = Number(sql(`select sum(case direction when 'in' then amount_pence else -amount_pence end) from transactions`));
-  const expected = `${balance < 0 ? "−" : ""}£${(Math.abs(balance) / 100).toFixed(balance % 100 === 0 ? 0 : 2)}`;
+  const expected = `${balance < 0 ? "−" : ""}£${(Math.abs(balance) / 100).toLocaleString("en-GB", { minimumFractionDigits: 2 })}`;
   await expect(donation.getByRole("cell").last()).toHaveText(expected);
 
   // Newest first, then oldest first after clicking the Date heading.
@@ -563,21 +563,23 @@ test("finance adds a supplier payment by hand from the Transactions screen", asy
   const row = page.getByRole("row", { name: new RegExp(`Sail repairs ${run}`) });
   await expect(row).toContainText(`Lakeside Sails ${run}`);
   await expect(row).toContainText("Equipment");
-  await expect(row).toContainText("£1,234.56".replace(",", ""));
+  await expect(row).toContainText("£1,234.56");
   expect(
     sql(`select t.direction || '|' || t.amount_pence || '|' || c.name || '|' || t.method || '|' || (t.recorded_by = p.id)
            from transactions t join transaction_categories c on c.id = t.category_id, people p
           where t.description = 'Sail repairs ${run}' and p.email = '${adminEmail}'`),
   ).toBe("out|123456|Equipment|bank_transfer|true");
 
-  // A money-in category can't be used for money out.
+  // Money out only offers money-out categories, and money in only money-in ones.
   await page.getByRole("link", { name: "+ Add transaction" }).click();
-  await page.getByLabel("Description").fill(`Wrong way ${run}`);
-  await page.getByLabel("Amount (£)").fill("10");
-  await page.getByLabel("Category").selectOption({ label: "Donations" });
-  await page.getByRole("button", { name: "Add transaction" }).click();
-  await expect(page.getByText("That category is for money going the other way")).toBeVisible();
-  expect(sql(`select count(*) from transactions where description = 'Wrong way ${run}'`)).toBe("0");
+  const option = (name: string) => page.getByLabel("Category").locator("option", { hasText: new RegExp(`^${name}$`) });
+  await expect(option("Equipment")).toHaveCount(1);
+  await expect(option("Donations")).toHaveCount(0);
+  await page.getByLabel("Category").selectOption({ label: "Equipment" });
+  await page.getByLabel("Money in (the club received)").check();
+  await expect(option("Donations")).toHaveCount(1);
+  await expect(option("Equipment")).toHaveCount(0);
+  await expect(page.getByLabel("Category")).toHaveValue("");
 
   await page.goto("/admin/transactions");
   await shot(page, "admin-transactions");
@@ -592,6 +594,11 @@ test("finance adds, renames and makes inactive a transaction category", async ({
   await expect(page.getByRole("row", { name: /Equipment/ })).toContainText("1");
   // Subscriptions is used for member payments, so it can't be renamed or made inactive.
   await expect(page.getByRole("row", { name: /Subscriptions/ })).toContainText("used automatically for member payments");
+  // The fixed categories sit at the bottom of each list.
+  const names = async (title: string) =>
+    (await page.getByRole("region", { name: title }).getByRole("row").allTextContents()).slice(1).map((t) => t.trim());
+  expect((await names("Money out categories")).at(-1)).toContain("Payment fees");
+  expect((await names("Money in categories")).slice(-2).map((t) => t.split(" ")[0])).toEqual(["Boat", "Subscriptions"]);
   await expect(page.getByRole("button", { name: "Make inactive: Subscriptions" })).toHaveCount(0);
 
   await page.getByLabel("Category name").fill(`Coaching ${run}`);

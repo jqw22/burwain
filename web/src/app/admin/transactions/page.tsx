@@ -28,7 +28,9 @@ const METHOD: Record<string, string> = {
 
 const isDate = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 // Money with a minus sign when below zero.
-const signed = (pence: number) => `${pence < 0 ? "−" : ""}${pounds(Math.abs(pence))}`;
+// Money always to 2 decimal places, with commas for thousands (£1,234.50).
+const money = (pence: number) => `£${(pence / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const signed = (pence: number) => `${pence < 0 ? "−" : ""}${money(Math.abs(pence))}`;
 
 // Today's month in the UK, as first and last day (YYYY-MM-DD).
 function thisMonth() {
@@ -59,7 +61,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/adm
   const inRange = (data ?? []) as Row[];
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (r: Row) => {
-    const text = [r.description, r.category, r.paid_by, r.method && METHOD[r.method], ukDate(r.occurred_on), pounds(r.amount_pence)]
+    const text = [r.description, r.category, r.paid_by, r.method && METHOD[r.method], ukDate(r.occurred_on), pounds(r.amount_pence), money(r.amount_pence)]
       .join(" ")
       .toLowerCase();
     return words.every((w) => text.includes(w));
@@ -112,11 +114,11 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/adm
       <dl className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <dt className="text-sm text-slate-600">Money in</dt>
-          <dd className="text-xl font-semibold">{pounds(moneyIn)}</dd>
+          <dd className="text-xl font-semibold">{money(moneyIn)}</dd>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <dt className="text-sm text-slate-600">Money out</dt>
-          <dd className="text-xl font-semibold">{pounds(moneyOut)}</dd>
+          <dd className="text-xl font-semibold">{money(moneyOut)}</dd>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <dt className="text-sm text-slate-600">Difference</dt>
@@ -166,8 +168,8 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/adm
                     <td className="py-2 pr-4">{r.paid_by ?? ""}</td>
                     <td className="py-2 pr-4">{r.category ?? "Uncategorised"}</td>
                     <td className="py-2 pr-4">{r.method ? (METHOD[r.method] ?? r.method) : ""}</td>
-                    <td className="whitespace-nowrap py-2 pr-4 text-right">{r.direction === "in" ? pounds(r.amount_pence) : ""}</td>
-                    <td className="whitespace-nowrap py-2 pr-4 text-right">{r.direction === "out" ? pounds(r.amount_pence) : ""}</td>
+                    <td className="whitespace-nowrap py-2 pr-4 text-right">{r.direction === "in" ? money(r.amount_pence) : ""}</td>
+                    <td className="whitespace-nowrap py-2 pr-4 text-right">{r.direction === "out" ? money(r.amount_pence) : ""}</td>
                     <td className="whitespace-nowrap py-2 text-right">{signed(r.balance_pence)}</td>
                   </tr>
                 ))}
