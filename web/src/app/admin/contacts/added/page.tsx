@@ -33,7 +33,7 @@ export default async function ContactAddedPage({ searchParams }: PageProps<"/adm
           Add another contact
         </Link>
         <Link href="/" className="text-sm text-slate-600 underline">
-          Back to Home
+          Back to Admin
         </Link>
       </div>
     </div>

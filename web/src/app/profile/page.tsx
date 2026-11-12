@@ -138,7 +138,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Your details</h1>
+      <h1 className="text-2xl font-semibold">Welcome {me?.first_name}</h1>
 
       <RenewalCard
         supabase={supabase}

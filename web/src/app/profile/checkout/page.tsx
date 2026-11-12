@@ -37,7 +37,7 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
               will mark it as paid when they receive your payment.
             </p>
             <Link href="/profile#renew" className="inline-block text-sky-800 underline">
-              Back to Your details
+              Back to Member
             </Link>
           </div>
         </Card>
@@ -66,7 +66,7 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
         <Card title="Nothing to pay">
           <p className="text-slate-700">You don&apos;t have any memberships waiting for payment.</p>
           <Link href="/profile#renew" className="mt-3 inline-block text-sky-800 underline">
-            Back to Your details
+            Back to Member
           </Link>
         </Card>
       ) : (
