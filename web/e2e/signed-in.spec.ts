@@ -359,12 +359,29 @@ test("an admin finds a member, edits them and views their medical details", asyn
   expect(names).toEqual(["Sam", "Alex", "Robin"]);
   // Separate Type, Payment and Status columns; no Postcode.
   const headers = (await page.getByRole("columnheader").allTextContents()).map((t) => t.replace("▲", "").trim());
-  expect(headers).toEqual(["Name", "Email", "Mobile", "Type", "Payment", "Status"]);
+  expect(headers).toEqual(["Name", "Email", "Mobile", "Type", "Payment", "Status", "Renewal"]);
   const sam = page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) });
   await expect(sam.getByRole("cell").nth(3)).toHaveText("Family");
   await expect(sam.getByRole("cell").nth(4)).toContainText("Paid");
   await expect(sam.getByRole("cell").nth(5)).toHaveText("Active");
+  // Renewal: Outstanding within 60 days of Sam's membership ending (unless next year's is paid), otherwise n/a.
+  const renewal = sql(`
+    select case when exists (
+             select 1 from memberships m2 join membership_types t2 on t2.id = m2.membership_type_id
+               join membership_people mp2 on mp2.membership_id = m2.id
+              where mp2.person_id = p.id and t2.starts_on > current_date and m2.status = 'active') then 'Paid'
+           when t.ends_on - current_date > 60 then 'n/a' else 'Outstanding' end
+      from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
+      join membership_types t on t.id = m.membership_type_id
+     where p.email = '${leadEmail}' and current_date between t.starts_on and t.ends_on and m.status <> 'cancelled' limit 1`);
+  await expect(sam.getByRole("cell").nth(6)).toHaveText(renewal);
+  await page.getByRole("navigation", { name: "Filter by renewal status" }).getByRole("link", { name: new RegExp(`^${renewal} \\(\\d+\\)$`) }).click();
+  await expect(page).toHaveURL(/renewal=/);
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) })).toBeVisible();
   await shot(page, "admin-members");
+  await page.getByRole("link", { name: "Any", exact: true }).click();
+  await expect(page).not.toHaveURL(/renewal=/);
 
   // Filter by membership status. Pat's membership this year has lapsed.
   sql(`
