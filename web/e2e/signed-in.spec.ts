@@ -713,7 +713,9 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   await form.getByLabel("Email", { exact: true }).fill(`cass-${run}@example.test`);
   await shot(page, "admin-add-contact");
   await form.getByRole("button", { name: "Add contact" }).click();
-  await expect(page.getByText("Contact added.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Contact added" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText(`Cass Contact${run} (cass-${run}@example.test) has been added`);
+  await expect(page.getByRole("link", { name: "Add another contact" })).toBeVisible();
   expect(sql(`select is_contact, news_consent, household_id is null from people where email = 'cass-${run}@example.test'`)).toBe("t|t|t");
   await page.goto(`/admin/members?q=Contact${run}`);
   await expect(page.getByRole("row", { name: new RegExp(`Contact${run}, Cass`) })).toContainText("Contact");
