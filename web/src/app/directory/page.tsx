@@ -20,7 +20,7 @@ export default async function DirectoryPage({ searchParams }: PageProps<"/direct
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Member directory</h1>
+      <h1 className="text-2xl font-semibold">Member Directory</h1>
       <p className="text-slate-700">Adult members this year, and anyone who has joined for next year.</p>
       <LiveSearch label="Search the directory" placeholder="Search by name, mobile, email or membership" initial={q} />
       <Card

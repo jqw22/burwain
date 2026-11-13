@@ -27,9 +27,8 @@ const LINKS = [
   { key: "applications", href: "/admin/applications", label: "Applications" },
   { key: "types", href: "/admin/types", label: "Membership types" },
   { key: "import", href: "/admin/import", label: "Import" },
-  { key: "emails", href: "/admin/emails", label: "Email templates" },
   { key: "contacts", href: "/admin/contacts/new", label: "Add contact" },
-  { key: "memberships", href: "/admin/memberships", label: "Income" },
+  { key: "emails", href: "/admin/emails", label: "Templates" },
   { key: "transactions", href: "/admin/transactions", label: "Transactions" },
   { key: "categories", href: "/admin/categories", label: "Categories" },
 ] as const;
@@ -39,7 +38,7 @@ const SECTION_NAME = { membership: "Membership admin", comms: "Communications ad
 const AREAS = [
   { key: "membership", label: "Membership", href: "/admin/members", adminOnly: true },
   { key: "comms", label: "Communications", href: "/admin/emails", adminOnly: true },
-  { key: "finance", label: "Finance", href: "/admin/memberships", adminOnly: false },
+  { key: "finance", label: "Finance", href: "/admin/transactions", adminOnly: false },
 ] as const;
 
 // heading: false on pages that have their own page title, so there's only one main heading.
