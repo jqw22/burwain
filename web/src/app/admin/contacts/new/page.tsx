@@ -43,7 +43,7 @@ export default async function AddContactPage({ searchParams }: PageProps<"/admin
           </div>
           <div className="flex items-center gap-4 sm:col-span-2">
             <SaveButton>Add contact</SaveButton>
-            <Link href="/admin/members" className="text-sm text-slate-600 underline">
+            <Link href="/" className="text-sm text-slate-600 underline">
               Cancel
             </Link>
           </div>
