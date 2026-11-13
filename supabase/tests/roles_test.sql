@@ -582,6 +582,24 @@ end $$;
 reset role;
 reset request.jwt.claim.sub;
 
+-- Lapsed members can be reminded for 90 days after their membership ended, then drop off.
+create or replace function club_today() returns date language sql stable as $$ select '2027-02-15'::date $$;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ begin
+  assert exists (select 1 from renewal_reminder_recipients() where first_name = 'Max'), 'Max lapsed 46 days ago: still reminded';
+  assert not exists (select 1 from renewal_reminder_recipients() where email = 'e@example.com'), 'Eve renewed, so not reminded';
+end $$;
+reset role;
+create or replace function club_today() returns date language sql stable as $$ select '2027-04-15'::date $$;
+set role authenticated;
+do $$ begin
+  assert not exists (select 1 from renewal_reminder_recipients() where first_name = 'Max'), 'lapsed over 90 days: not reminded';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+create or replace function club_today() returns date language sql stable as $$ select '2026-12-05'::date $$;
+
 -- Each type has its own start and end date: pro rata within those dates, and not offered once ended.
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
