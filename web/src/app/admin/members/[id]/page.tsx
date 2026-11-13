@@ -99,7 +99,11 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
   const { supabase, allowed } = await meWithRole("admin");
   if (!allowed) return <NotAllowed />;
 
-  const { data: m } = await supabase.from("people").select(PERSON_FIELDS).eq("id", id).maybeSingle<Person>();
+  const { data: m } = await supabase
+    .from("people")
+    .select(`${PERSON_FIELDS}, emails_unsubscribed_at`)
+    .eq("id", id)
+    .maybeSingle<Person & { emails_unsubscribed_at: string | null }>();
   if (!m) notFound();
 
   const [{ data: household }, { data: family }, { data: history }, { data: quals }, { data: roles }] = await Promise.all([
@@ -510,12 +514,14 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
             <input type="hidden" name="id" value={m.id} />
             <p className="text-sm text-slate-600">Only change these when the member has asked you to.</p>
             <Checkbox label="Club news and newsletters by email" name="news_consent" defaultChecked={m.news_consent} />
+            <Checkbox label="Group emails from Communications admin" name="group_emails" defaultChecked={!m.emails_unsubscribed_at} />
             <Checkbox label="Listed in the member directory (name, phone and email)" name="directory_listed" defaultChecked={!m.directory_opt_out} />
             <FormButtons base={base} section="preferences">Save preferences</FormButtons>
           </form>
         ) : (
           <ul className="space-y-1 text-slate-800">
             <li>Club news by email: {m.news_consent ? "yes" : "no"}</li>
+            <li>Group emails: {m.emails_unsubscribed_at ? `no, unsubscribed ${ukDate(m.emails_unsubscribed_at)}` : "yes"}</li>
             <li>Listed in the member directory: {m.directory_opt_out ? "no" : "yes"}</li>
           </ul>
         )}

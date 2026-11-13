@@ -71,6 +71,11 @@ export default async function AdminHomePage() {
           <h2 className="font-semibold">Communications admin</h2>
           <ul className="mt-2 space-y-1">
             <li>
+              <Link href="/admin/emails/send" className="text-sky-800 underline">
+                Send email
+              </Link>
+            </li>
+            <li>
               <Link href="/admin/contacts/new" className="text-sky-800 underline">
                 Add contact
               </Link>

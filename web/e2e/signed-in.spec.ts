@@ -349,7 +349,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
-  expect(await links("Communications admin")).toEqual(["Add contact", "Templates"]);
+  expect(await links("Communications admin")).toEqual(["Send email", "Add contact", "Templates"]);
   expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
@@ -945,7 +945,7 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   await page.getByRole("link", { name: "Add contact", exact: true }).click();
   // It sits under Communications, with the Communications tabs.
   await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link")).toHaveText(["Add contact", "Templates"]);
+  await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link")).toHaveText(["Send email", "Add contact", "Templates"]);
   // Cancel goes back to the Admin page.
   await expect(page.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/");
   const form = page.getByRole("form", { name: "Add a contact" });
@@ -1224,6 +1224,94 @@ test("an admin ticks members on the Members list, picks a reminder, previews, te
   const limit = page.getByRole("alert").filter({ hasText: "Sent 0 of 2." });
   await expect(limit).toBeVisible();
   await expect(limit).toContainText("sending limit was reached");
+});
+
+test("an admin sends a group email with a logo and a picture, and a contact unsubscribes", async ({ browser }) => {
+  // Gail is a contact, Hugo has unsubscribed, Ivo is a junior contact (never listed); Sam (the family lead) is a current member.
+  sql(`
+    insert into people (first_name, last_name, date_of_birth, email, is_contact, emails_unsubscribed_at) values
+      ('Gail', 'Group${run}', null, 'gail-${run}@example.test', true, null),
+      ('Hugo', 'Group${run}', null, 'hugo-${run}@example.test', true, now()),
+      ('Ivo', 'Group${run}', (current_date - interval '10 years')::date, 'ivo-${run}@example.test', true, null);
+    insert into email_templates (name, purpose, subject, body)
+      values ('Club news ${run}', 'general', 'Club news', E'Hello {first_name},\n\nThe clubhouse opens on Saturday.');
+  `);
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+  const page = await adminPage(browser);
+
+  // The club logo is uploaded on the Templates page.
+  await page.goto("/admin/emails");
+  await page.getByLabel("Upload logo").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByRole("img", { name: "Club logo" })).toBeVisible();
+
+  await page.getByRole("navigation", { name: "Communications admin" }).getByRole("link", { name: "Send email" }).click();
+  await expect(page.getByRole("heading", { name: "Send a group email" })).toBeVisible();
+  // Renewal reminders aren't offered; a general template fills in the email, which can then be changed.
+  const write = page.getByRole("region", { name: "1. Write the email" });
+  await expect(write.getByRole("combobox", { name: "Start from" }).locator("option", { hasText: "Renewal reminder" })).toHaveCount(0);
+  await write.getByRole("combobox", { name: "Start from" }).selectOption({ label: `Template: Club news ${run}` });
+  await expect(write.getByRole("textbox", { name: "Subject", exact: true })).toHaveValue("Club news");
+  await write.getByRole("textbox", { name: "Subject", exact: true }).fill(`Club news ${run}`);
+  await write.getByLabel("Add image").setInputFiles({ name: "photo.png", mimeType: "image/png", buffer: png });
+  await expect(write.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(/\[image: http[^\]]+\/email-images\/[0-9a-f-]+\]/);
+
+  const who = page.getByRole("region", { name: /^2\. Choose who gets it/ });
+  await who.getByPlaceholder("Search by name or email").fill(`Group${run}`);
+  await expect(who.getByRole("row", { name: `Gail Group${run}` })).toContainText("Contact");
+  await expect(who.getByRole("row", { name: `Hugo Group${run}` })).toContainText("Unsubscribed");
+  await expect(who.getByRole("checkbox", { name: `Send to Hugo Group${run}` })).toBeDisabled();
+  await expect(who.getByRole("row", { name: `Ivo Group${run}` })).toHaveCount(0);
+  await who.getByRole("checkbox", { name: `Send to Gail Group${run}` }).check();
+  await who.getByPlaceholder("Search by name or email").fill(`Tester${run}`);
+  await expect(who.getByRole("row", { name: `Sam Tester${run}` })).toContainText("Current");
+  await expect(who.getByRole("row", { name: `Robin Tester${run}` })).toHaveCount(0); // junior, no email
+  await who.getByRole("checkbox", { name: `Send to Sam Tester${run}` }).check();
+
+  const preview = page.getByRole("region", { name: `3. Preview: Gail Group${run}` });
+  await expect(preview).toContainText("Hello Gail,");
+  await expect(preview).toContainText("Unsubscribe from these emails");
+  await expect(preview.locator("img")).toHaveCount(2); // logo and picture
+  await shot(page, "group-email");
+  await preview.getByRole("button", { name: "Send this as a test to me" }).click();
+  await expect(preview.getByText(`Test email sent to ${adminEmail}.`)).toBeVisible();
+  expect(mailbox.find((e) => e.to[0] === adminEmail && e.subject === `[Test] Club news ${run}`)?.text).toContain("Hello Gail,");
+
+  const send = page.getByRole("region", { name: "4. Send" });
+  await send.getByRole("button", { name: "Send to 2 people" }).click();
+  await send.getByRole("button", { name: "Yes, send now" }).click();
+  await expect(send.getByText("Sent your email to 2 people.")).toBeVisible();
+  const toGail = mailbox.find((e) => e.to[0] === `gail-${run}@example.test`) as SentEmail & { headers?: Record<string, string> };
+  expect(toGail.subject).toBe(`Club news ${run}`);
+  expect(toGail.html).toContain('alt="Burwain"');
+  expect(toGail.html).toMatch(/<img src="http[^"]+\/email-images\//);
+  expect(toGail.text).not.toContain("[image:");
+  expect(toGail.headers?.["List-Unsubscribe"]).toMatch(/\/unsubscribe\?t=/);
+  expect(mailbox.some((e) => e.to[0] === leadEmail && e.text.startsWith("Hello Sam,"))).toBe(true);
+
+  // Images can be opened without logging in, as email apps do.
+  const imageUrl = toGail.html.match(/<img src="(http[^"]+\/email-images\/[^"]+)"/)![1].replace(/^https?:\/\/[^/]+/, "http://localhost:3100");
+  const image = await fetch(imageUrl);
+  expect(image.status).toBe(200);
+  expect(image.headers.get("content-type")).toBe("image/png");
+
+  // Gail unsubscribes from the link in the email, without logging in.
+  const link = toGail.text.match(/unsubscribe here: (\S+)/)![1].replace(/^https?:\/\/[^/]+/, "");
+  const visitor = await browser.newContext({ baseURL: "http://localhost:3100" });
+  const v = await visitor.newPage();
+  await v.goto(link);
+  await v.getByRole("button", { name: "Unsubscribe" }).click();
+  await expect(v.getByRole("heading", { name: "You've been unsubscribed" })).toBeVisible();
+  await visitor.close();
+  expect(sql(`select emails_unsubscribed_at is not null from people where email = 'gail-${run}@example.test'`)).toBe("t");
+  await page.reload();
+  await page.getByRole("region", { name: /^2\. Choose who gets it/ }).getByPlaceholder("Search by name or email").fill(`Gail Group${run}`);
+  await expect(page.getByRole("row", { name: `Gail Group${run}` })).toContainText("Unsubscribed");
+});
+
+test("a member can't open the group email page", async ({ browser }) => {
+  const page = await leadPage(browser);
+  await page.goto("/admin/emails/send");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 
 test("a member can't open the send reminders page", async ({ browser }) => {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice, SaveButton } from "@/components/fields";
-import { fillPlaceholders } from "@/lib/email";
+import { fillPlaceholders, textToHtml } from "@/lib/email";
 import { emailSendingEnabled } from "@/lib/mailer";
 import { meWithRole, pounds, ukDate } from "@/lib/me";
 import { sendReminders, sendTest } from "./actions";
@@ -201,7 +201,8 @@ export default async function RemindPage({ searchParams }: PageProps<"/admin/mem
                   <span className="text-slate-500">Subject: </span>
                   <strong>{fillPlaceholders(template.subject, values)}</strong>
                 </p>
-                <div className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed">{fillPlaceholders(template.body, values)}</div>
+                {/* Built from escaped text by textToHtml, so it's safe to show as HTML. */}
+                <div className="mt-3 break-words" dangerouslySetInnerHTML={{ __html: textToHtml(fillPlaceholders(template.body, values)) }} />
               </div>
               {enabled && (
                 <form action={sendTest} className="mt-4">

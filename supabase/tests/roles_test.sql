@@ -804,4 +804,61 @@ end $$;
 reset role;
 reset request.jwt.claim.sub;
 
+-- Group emails: members and contacts with an email address, never juniors; unsubscribe by link.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select * from group_email_recipients()$q$, 'Admins only');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ begin
+  assert exists (select 1 from group_email_recipients() where email = 'cy@example.com' and status = 'contact'), 'contacts included';
+  assert not exists (select 1 from group_email_recipients() r join people p on p.id = r.person_id
+                      where p.date_of_birth > club_today() - interval '18 years'), 'no juniors';
+  assert not exists (select 1 from group_email_recipients() where email is null), 'everyone has an email';
+  assert exists (select 1 from group_email_recipients() where first_name = 'Max'), 'lapsed members included';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+select unsubscribe_token as cy_token from people where email = 'cy@example.com' \gset
+set role anon;
+select unsubscribe_by_token(:'cy_token') as cy_name \gset
+select unsubscribe_by_token(gen_random_uuid()) is null as unknown_ok \gset
+reset role;
+\if :unknown_ok
+\else
+  \echo 'unknown unsubscribe token should do nothing'
+  select 1/0;
+\endif
+do $$ begin
+  assert (select emails_unsubscribed_at is not null and not news_consent from people where email = 'cy@example.com'), 'unsubscribed';
+end $$;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ declare cy uuid := (select id from people where email = 'cy@example.com'); begin
+  assert (select unsubscribed_at is not null from group_email_recipients() where person_id = cy), 'shown as unsubscribed';
+  update people set emails_unsubscribed_at = null where id = cy;
+  assert (select unsubscribed_at is null from group_email_recipients() where person_id = cy), 'admin subscribes them again';
+  insert into email_images (content_type, data, is_logo) values ('image/png', '\x89504e47', true);
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+select id as img_id from email_images limit 1 \gset
+set role anon;
+select data_base64 = 'iVBORw==' as img_ok from email_image(:'img_id') \gset
+reset role;
+\if :img_ok
+\else
+  \echo 'email image not served'
+  select 1/0;
+\endif
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select count(*) = 0 as img_hidden from email_images \gset
+reset role;
+reset request.jwt.claim.sub;
+\if :img_hidden
+\else
+  \echo 'members should not list email images'
+  select 1/0;
+\endif
+
 \echo 'All database tests passed'

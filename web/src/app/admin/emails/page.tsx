@@ -5,6 +5,8 @@ import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice } from "@/components/fields";
 import { PURPOSES, exampleValues, type Purpose } from "@/lib/email";
 import { meWithRole, ukDate } from "@/lib/me";
+import { logoUrl } from "@/lib/email-images";
+import { LogoControls } from "./logo-card";
 import { TemplateForm } from "./template-form";
 
 type Template = { id: string; name: string; purpose: Purpose; subject: string; body: string; updated_at: string };
@@ -28,9 +30,10 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
   const { supabase, allowed } = await meWithRole("admin");
   if (!allowed) return <NotAllowed />;
 
-  const [{ data }, year] = await Promise.all([
+  const [{ data }, year, logo] = await Promise.all([
     supabase.from("email_templates").select("id, name, purpose, subject, body, updated_at").order("name"),
     renewalYear(supabase),
+    logoUrl(supabase),
   ]);
   const templates = (data ?? []) as Template[];
   const h = await headers();
@@ -72,7 +75,7 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
         }
       >
         <p className="mb-2 text-sm text-slate-600">
-          Write the emails the club sends. Sending isn&apos;t switched on yet: it comes once the club&apos;s own email address is connected.
+          Write the emails the club sends. General templates are used for group emails (Send email); renewal reminders are sent from the Members list.
         </p>
         {templates.length === 0 ? (
           <p className="text-slate-700">No templates yet.</p>
@@ -106,6 +109,11 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
             </table>
           </div>
         )}
+      </Card>
+
+      <Card title="Club logo for emails">
+        <p className="mb-3 text-sm text-slate-600">Shown at the top of every group email and renewal reminder.</p>
+        <LogoControls logoUrl={logo} />
       </Card>
     </div>
   );

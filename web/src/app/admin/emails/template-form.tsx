@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { ImageButton, insertAtCursor } from "@/components/image-button";
 import { SaveButton } from "@/components/save-button";
-import { PLACEHOLDERS, PURPOSES, fillPlaceholders, unknownPlaceholders } from "@/lib/email";
+import { PLACEHOLDERS, PURPOSES, fillPlaceholders, imageMarker, textToHtml, unknownPlaceholders } from "@/lib/email";
 import { saveTemplate } from "./actions";
 
 type Template = { id: string; name: string; purpose: string; subject: string; body: string };
@@ -15,6 +16,7 @@ export function TemplateForm({ template, examples }: { template: Template | null
   const [subject, setSubject] = useState(template?.subject ?? "");
   const [body, setBody] = useState(template?.body ?? "");
   const unknown = unknownPlaceholders(`${subject} ${body}`);
+  const textarea = useRef<HTMLTextAreaElement>(null);
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -41,6 +43,7 @@ export function TemplateForm({ template, examples }: { template: Template | null
         <label className="block">
           <span className="text-sm font-medium">Message</span>
           <textarea
+            ref={textarea}
             name="body"
             required
             rows={14}
@@ -50,6 +53,7 @@ export function TemplateForm({ template, examples }: { template: Template | null
           />
           <span className="mt-1 block text-xs text-slate-500">Plain text. Leave a blank line between paragraphs. Links work as they are.</span>
         </label>
+        <ImageButton onUploaded={(url) => setBody((b) => insertAtCursor(textarea.current, b, imageMarker(url)))} />
         {unknown.length > 0 && (
           <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
             Not recognised: {unknown.map((k) => `{${k}}`).join(", ")}. Please use one of the placeholders listed below.
@@ -80,7 +84,8 @@ export function TemplateForm({ template, examples }: { template: Template | null
             <span className="text-slate-500">Subject: </span>
             <strong>{fillPlaceholders(subject, examples)}</strong>
           </p>
-          <div className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed">{fillPlaceholders(body, examples)}</div>
+          {/* Built from escaped text by textToHtml, so it's safe to show as HTML. */}
+          <div className="mt-3 break-words" dangerouslySetInnerHTML={{ __html: textToHtml(fillPlaceholders(body, examples)) }} />
         </div>
       </section>
     </div>
