@@ -86,7 +86,7 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/adm
                 <dt className="text-slate-500">Payment</dt>
                 <dd>
                   {a.paid_at
-                    ? `Paid ${pounds(a.paid_pence ?? 0)} by ${METHOD[a.paid_method ?? ""] ?? a.paid_method} on ${ukDate(a.paid_at)} (test payment). If you decline, they need a refund.`
+                    ? `Paid ${pounds(a.paid_pence ?? 0)} by ${METHOD[a.paid_method ?? ""] ?? a.paid_method} on ${ukDate(a.paid_at)}. If you decline, they need a refund.`
                     : "Not paid yet"}
                 </dd>
               </div>

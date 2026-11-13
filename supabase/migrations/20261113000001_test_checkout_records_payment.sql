@@ -1,7 +1,6 @@
 -- Test checkout: pressing Pay records the payment and marks the membership as paid.
--- No payment provider is called and no money is taken. Test receipts are marked
--- (provider_ref starts 'test-', and the income lines end "(test payment)") so finance can
--- tell them apart. Stripe and GoCardless will replace this later.
+-- No payment provider is called and no money is taken. The receipt and income look exactly
+-- like a real card or Direct Debit payment. Stripe and GoCardless will replace this later.
 --
 -- Marking a receipt paid fires on_payment_paid(), which makes the memberships active and
 -- posts the income to transactions, exactly as when finance records a payment.
@@ -14,12 +13,12 @@ declare
   pay_id uuid;
 begin
   insert into member_receipts (payer_person_id, amount_pence, method, provider_ref, status, paid_on)
-  select p_payer, sum(price_pence), p_method, 'test-' || gen_random_uuid(), 'pending', p_paid_on
+  select p_payer, sum(price_pence), p_method, null, 'pending', p_paid_on
     from memberships where id = any(p_membership_ids)
   returning id into pay_id;
 
   insert into member_receipt_lines (receipt_id, membership_id, description, amount_pence)
-  select pay_id, m.id, t.name || ' ' || cy.label || ' (test payment)', m.price_pence
+  select pay_id, m.id, t.name || ' ' || cy.label, m.price_pence
     from memberships m
     join membership_types t on t.id = m.membership_type_id
     join club_years cy on cy.id = m.club_year_id

@@ -501,7 +501,7 @@ do $$ declare ann uuid; hh uuid; begin
       'paid application: membership marked paid on acceptance';
     assert (select count(*) from transactions tx join member_receipt_lines rl on rl.id = tx.receipt_line_id
               join memberships m on m.id = rl.membership_id join membership_people mp on mp.membership_id = m.id
-             where mp.person_id = pia and tx.method = 'direct_debit' and tx.description like '%(test payment)') = 1,
+             where mp.person_id = pia and tx.method = 'direct_debit') = 1,
       'paid application: income posted';
   end;
   perform decline_application((select id from pending_applications() where contact_name = 'Spam Bot'), 'Spam');
@@ -668,14 +668,14 @@ do $$ declare
 begin
   r := pay_my_memberships_test(array[m], 'card');
   assert (select status::text from memberships where id = m) = 'active', 'test payment marks the membership paid';
-  assert (select provider_ref like 'test-%' and status = 'paid' and method = 'card' from member_receipts where id = r), 'receipt recorded as a test';
+  assert (select status = 'paid' and method = 'card' from member_receipts where id = r), 'receipt recorded';
 end $$;
 select pg_temp.expect_error($q$select pay_my_memberships_test(array[current_setting('test.alice_m')::uuid], 'card')$q$, 'awaiting payment');
 reset role;
 do $$ begin
   assert (select count(*) from transactions tx join member_receipt_lines rl on rl.id = tx.receipt_line_id
            where rl.membership_id = current_setting('test.alice_m')::uuid and tx.direction = 'in'
-             and tx.description like '%(test payment)') = 1, 'income posted for the test payment';
+            ) = 1, 'income posted for the test payment';
 end $$;
 reset request.jwt.claim.sub;
 
