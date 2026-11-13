@@ -30,7 +30,7 @@ export async function saveTemplate(form: FormData) {
     : await supabase.from("email_templates").insert(row);
   if (error) {
     const clash = error.code === "23505";
-    back("error", clash ? (error.message.includes("renewal") ? "renewal" : "duplicate") : "save", edit);
+    back("error", clash ? "duplicate" : "save", edit);
   }
   back("saved", id ? "updated" : "added");
 }

@@ -32,7 +32,7 @@ export function TemplateForm({ template, examples }: { template: Template | null
               <option key={v} value={v}>{l}</option>
             ))}
           </select>
-          <span className="mt-1 block text-xs text-slate-500">Only one template can be the renewal reminder.</span>
+          <span className="mt-1 block text-xs text-slate-500">Renewal reminders are sent from the Members list. You can have several, e.g. a first and a final reminder.</span>
         </label>
         <label className="block">
           <span className="text-sm font-medium">Subject</span>

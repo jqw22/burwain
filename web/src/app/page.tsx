@@ -52,11 +52,6 @@ export default async function AdminHomePage() {
               </Link>
             </li>
             <li>
-              <Link href="/admin/reminders" className="text-sky-800 underline">
-                Renewal reminders
-              </Link>
-            </li>
-            <li>
               <Link href="/admin/import" className="text-sky-800 underline">
                 Import
               </Link>

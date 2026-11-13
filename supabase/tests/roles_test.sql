@@ -569,6 +569,16 @@ do $$ begin
   assert not exists (select 1 from renewal_reminder_recipients() where first_name = 'Bob'), 'juniors aren''t emailed';
   assert (select count(*) from renewal_reminder_recipients() r group by r.person_id order by 1 desc limit 1) = 1, 'one row per person';
 end $$;
+-- Several renewal reminder templates; each person shows when they were last sent a given one.
+do $$ declare first_t uuid; final_t uuid; c uuid; max_id uuid := (select person_id from renewal_reminder_recipients() where first_name = 'Max'); begin
+  first_t := (select id from email_templates where name = 'Renewal reminder');
+  insert into email_templates (name, purpose, subject, body) values ('Final reminder', 'renewal_reminder', 'Last chance', 'Hello {first_name}') returning id into final_t;
+  insert into email_campaigns (subject, body, purpose, template_id, is_news) values ('S', 'B', 'renewal_reminder', first_t, false) returning id into c;
+  insert into email_recipients (campaign_id, person_id, email, status, sent_at) values (c, max_id, 'max@example.com', 'sent', now());
+  assert (select last_reminded_at from renewal_reminder_recipients(first_t) where person_id = max_id) is not null, 'sent the first reminder';
+  assert (select last_reminded_at from renewal_reminder_recipients(final_t) where person_id = max_id) is null, 'not sent the final one';
+  assert (select last_reminded_at from renewal_reminder_recipients() where person_id = max_id) is not null, 'reminded with any template';
+end $$;
 reset role;
 reset request.jwt.claim.sub;
 
