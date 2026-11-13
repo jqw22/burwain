@@ -131,3 +131,32 @@ export async function adminRenewMembership(form: FormData) {
   }
   back(id, "saved", "renewed", "membership");
 }
+
+// Boat storage: add a boat at the members or non-members rate, optionally with a cash, cheque or
+// bank transfer payment (which posts the income), or remove one that hasn't been paid for.
+export async function adminAddBoat(form: FormData) {
+  const { supabase, allowed } = await meWithRole("admin");
+  const id = String(form.get("id"));
+  if (!allowed) back(id, "error", "boats", "boats", true);
+  const method = text(form, "payment_method");
+  const { error } = await supabase.rpc("admin_add_boat_storage", {
+    p_person: id,
+    p_members: form.get("rate") !== "non_members",
+    p_class: text(form, "boat_class") ?? "",
+    p_sail: text(form, "sail_number") ?? "",
+    p_starts: text(form, "starts_on"),
+    p_ends: text(form, "ends_on"),
+    p_method: method,
+    p_paid_on: method ? text(form, "paid_on") : null,
+  });
+  back(id, error ? "error" : "saved", "boats", "boats", true);
+}
+
+export async function adminRemoveBoat(form: FormData) {
+  const { supabase, allowed } = await meWithRole("admin");
+  const id = String(form.get("person_id"));
+  if (!allowed) back(id, "error", "boatremove", "boats", true);
+  const { error } = await supabase.rpc("admin_remove_boat_storage", { p_id: String(form.get("id")) });
+  if (error) back(id, "error", "boatremove", "boats", true);
+  back(id, "saved", "boats", "boats", true);
+}

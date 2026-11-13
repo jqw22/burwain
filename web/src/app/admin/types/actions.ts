@@ -105,3 +105,18 @@ export async function copyPeriod(form: FormData) {
   }
   redirect(`/admin/types?saved=copiedall&count=${count}`);
 }
+
+// Boat storage prices (members and non-members rate). Boats already added keep their price.
+export async function saveStoragePrices(form: FormData) {
+  const { supabase, allowed } = await meWithRole("admin");
+  if (!allowed) back("error", "admin");
+  const members = pence(text(form, "members_price"));
+  const nonMembers = pence(text(form, "non_members_price"));
+  if (members === null || nonMembers === null) back("error", "storage");
+  const [a, b] = await Promise.all([
+    supabase.from("boat_storage_options").update({ price_pence: members }).eq("members_rate", true).select("id"),
+    supabase.from("boat_storage_options").update({ price_pence: nonMembers }).eq("members_rate", false).select("id"),
+  ]);
+  if (a.error || b.error || !a.data?.length || !b.data?.length) back("error", "save");
+  back("saved", "storage");
+}

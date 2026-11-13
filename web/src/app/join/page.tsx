@@ -7,7 +7,10 @@ export const metadata: Metadata = { title: "Join Burwain" };
 // The public Join page: no login needed.
 export default async function JoinPage() {
   const supabase = await createClient();
-  const { data } = await supabase.rpc("join_options");
+  const [{ data }, { data: boatPrice }] = await Promise.all([
+    supabase.rpc("join_options"),
+    supabase.rpc("boat_storage_price", { p_members: true }),
+  ]);
   const options = (data ?? []) as JoinOption[];
 
   return (
@@ -24,7 +27,7 @@ export default async function JoinPage() {
           Joining isn&apos;t open at the moment. Please contact the membership secretary.
         </p>
       ) : (
-        <JoinForm options={options} />
+        <JoinForm options={options} boatPrice={Number(boatPrice) || 0} />
       )}
     </div>
   );

@@ -710,4 +710,98 @@ do $$ begin
 end $$;
 reset request.jwt.claim.sub;
 
+\echo 'Boat storage: added at checkout, up to 3 per membership, admins add and remove'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
+do $$ declare
+  m uuid := (select m.id from memberships m join membership_types t on t.id = m.membership_type_id
+              where m.household_id = '10000000-0000-0000-0000-000000000002' and m.status = 'awaiting_payment'
+              order by t.starts_on desc, m.created_at limit 1);
+  r uuid;
+  hh uuid := '10000000-0000-0000-0000-000000000002';
+begin
+  assert m is not null, 'Eve has a membership awaiting payment';
+  begin
+    perform pay_my_memberships_test(array[m], 'card', '[{"boat_class": "Laser", "sail_number": ""}]');
+    raise exception 'missing sail number accepted';
+  exception when others then
+    assert sqlerrm like '%class and sail number%', sqlerrm;
+  end;
+  begin
+    perform pay_my_memberships_test(array[m], 'card', '[{"boat_class":"A","sail_number":"1"},{"boat_class":"B","sail_number":"2"},{"boat_class":"C","sail_number":"3"},{"boat_class":"D","sail_number":"4"}]');
+    raise exception 'four boats accepted';
+  exception when others then
+    assert sqlerrm like '%Up to 3 boats%', sqlerrm;
+  end;
+  r := pay_my_memberships_test(array[m], 'card', '[{"boat_class": "Laser", "sail_number": "123456"}, {"boat_class": "Topper", "sail_number": "4321"}]');
+  assert (select count(*) from boat_storages where household_id = hh and status = 'active' and membership_id = m) = 2, 'two boats stored and paid';
+  assert (select bs.starts_on = t.starts_on and bs.ends_on = t.ends_on from boat_storages bs, memberships mm join membership_types t on t.id = mm.membership_type_id
+           where mm.id = m and bs.membership_id = m limit 1), 'stored for the membership''s dates';
+  assert (select amount_pence from member_receipts where id = r) = (select price_pence from memberships where id = m) + 7000, 'receipt includes £35 a boat';
+  perform set_config('test.eve_m', m::text, false);
+end $$;
+reset role;
+do $$ begin
+  assert (select count(*) from transactions tx join transaction_categories c on c.id = tx.category_id
+            join member_receipt_lines rl on rl.id = tx.receipt_line_id join boat_storages bs on bs.id = rl.boat_storage_id
+           where c.name = 'Boat storage' and bs.membership_id = current_setting('test.eve_m')::uuid and tx.description like 'Boat storage %: Laser 123456') = 1,
+    'boat storage income posted under Boat storage';
+end $$;
+-- Admin: a non-members rate charge for someone who left their boat, paid in cash; and an unpaid one removed.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ declare s uuid; s2 uuid; begin
+  s := admin_add_boat_storage('20000000-0000-0000-0000-00000000000a', false, 'Mirror', '70001', '2026-01-01', '2026-12-31', 'cash', current_date);
+  assert (select price_pence = 8000 and status = 'active' from boat_storages where id = s), 'non-members rate, paid';
+  s2 := admin_add_boat_storage('20000000-0000-0000-0000-00000000000a', true, 'Optimist', '1', '2026-01-01', '2026-12-31');
+  assert (select status::text from boat_storages where id = s2) = 'awaiting_payment', 'unpaid boat';
+  perform admin_remove_boat_storage(s2);
+  assert not exists (select 1 from boat_storages where id = s2), 'unpaid boat removed';
+  begin
+    perform admin_remove_boat_storage(s);
+    raise exception 'paid boat removed';
+  exception when others then
+    assert sqlerrm like '%hasn''t been paid%', sqlerrm;
+  end;
+  update boat_storage_options set price_pence = 4000 where members_rate;
+  assert boat_storage_price(true) = 4000, 'admins change the price';
+  update boat_storage_options set price_pence = 3500 where members_rate;
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
+select pg_temp.expect_error($q$select admin_add_boat_storage('20000000-0000-0000-0000-00000000000e', true, 'Laser', '9', '2026-01-01', '2026-12-31')$q$, 'Only an admin');
+update boat_storage_options set price_pence = 1 where members_rate;
+do $$ begin assert boat_storage_price(true) = 3500, 'members can''t change the price'; end $$;
+reset role;
+reset request.jwt.claim.sub;
+
+-- Join form with boats: paid when applying, one Boat storage transaction per boat, stored on acceptance.
+set role anon;
+select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
+  'address_line1', '6 Dam Rd', 'postcode', 'bb3 3cc',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Bo', 'last_name', 'Ater', 'date_of_birth', '1980-01-01', 'email', 'bo@example.com')),
+  'boats', '[{"boat_class": "Laser", "sail_number": "200001"}, {"boat_class": "RS Aero", "sail_number": "3"}]'::jsonb)) \gset bo_
+select pay_application_test(:'bo_submit_application', 'card') as bo_paid \gset
+reset role;
+do $$ begin
+  assert (select count(*) from transactions tx join transaction_categories c on c.id = tx.category_id
+           where tx.party = 'Bo Ater' and c.name = 'Boat storage' and tx.amount_pence = 3500) = 2, 'a transaction per boat on paying';
+end $$;
+select :bo_paid = (select price_pence + 7000 from membership_applications where contact_name = 'Bo Ater') as ok \gset
+\if :ok
+\else
+  \echo 'join total wrong'
+  select 1/0;
+\endif
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
+do $$ declare bo uuid; begin
+  assert (select boats from pending_applications() where contact_name = 'Bo Ater') = 'Laser 200001, RS Aero 3', 'admins see the boats';
+  bo := accept_application((select id from pending_applications() where contact_name = 'Bo Ater'));
+  assert (select count(*) from boat_storages where person_id = bo and status = 'active') = 2, 'boats stored and paid on acceptance';
+  assert (select count(*) from transactions where party = 'Bo Ater') = 3, 'no extra transactions on acceptance';
+  assert (select count(*) from transactions where party = 'Bo Ater' and receipt_line_id is not null) = 3, 'all linked to the receipt';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'

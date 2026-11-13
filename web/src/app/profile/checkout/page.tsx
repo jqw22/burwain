@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { Card, Notice, SaveButton } from "@/components/fields";
+import { Card, Notice } from "@/components/fields";
+import { MAX_BOATS, type Boat } from "@/lib/boats";
+import { CheckoutForm } from "./checkout-form";
 import { pounds, requireMe } from "@/lib/me";
 import { quote, typeDates, ukToday } from "@/lib/quote";
 import { payTest } from "./actions";
@@ -10,6 +12,16 @@ type Membership = {
   prorata_months: number;
   membership_types: { name: string; starts_on: string; ends_on: string; annual_price_pence: number } | null;
   membership_people: { people: { first_name: string } | null }[];
+};
+
+type Storage = {
+  id: string;
+  boat_class: string | null;
+  sail_number: string | null;
+  price_pence: number;
+  status: string;
+  starts_on: string;
+  ends_on: string;
 };
 
 const METHOD: Record<string, string> = { card: "card", direct_debit: "Direct Debit" };
@@ -60,7 +72,38 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
     .order("created_at");
   const { data } = await (me?.household_id ? query.eq("household_id", me.household_id) : query.eq("payer_person_id", personId));
   const owed = (data ?? []) as unknown as Membership[];
-  const total = owed.reduce((sum, m) => sum + m.price_pence, 0);
+
+  // Boats: any awaiting payment (e.g. added by an admin), and how many more can be added for the
+  // dates of the membership being paid for (the latest one). Last time's boats are suggested.
+  const today = ukToday();
+  const [{ data: storageData }, { data: boatPrice }] = await Promise.all([
+    supabase
+      .from("boat_storages")
+      .select("id, boat_class, sail_number, price_pence, status, starts_on, ends_on")
+      .neq("status", "cancelled")
+      .order("created_at"),
+    supabase.rpc("boat_storage_price", { p_members: true }),
+  ]);
+  const storages = (storageData ?? []) as Storage[];
+  const unpaidBoats = storages.filter((b) => b.status === "awaiting_payment" && b.ends_on >= today);
+  const period = owed
+    .map((m) => m.membership_types)
+    .filter((t) => t !== null)
+    .sort((a, b) => b.starts_on.localeCompare(a.starts_on))[0];
+  let maxNew = 0;
+  let suggested: Boat[] = [];
+  if (period) {
+    const inPeriod = storages.filter((b) => b.starts_on <= period.ends_on && b.ends_on >= period.starts_on);
+    maxNew = Math.max(0, MAX_BOATS - inPeriod.length);
+    const earlier = storages.filter((b) => b.ends_on < period.starts_on).sort((a, b) => b.ends_on.localeCompare(a.ends_on));
+    const lastEnd = earlier[0]?.ends_on;
+    const taken = new Set(inPeriod.map((b) => b.sail_number));
+    suggested = earlier
+      .filter((b) => b.ends_on === lastEnd && !taken.has(b.sail_number))
+      .map((b) => ({ boat_class: b.boat_class ?? "", sail_number: b.sail_number ?? "" }))
+      .slice(0, maxNew);
+  }
+  const owedTotal = owed.reduce((sum, m) => sum + m.price_pence, 0) + unpaidBoats.reduce((sum, b) => sum + b.price_pence, 0);
 
   return (
     <div className="space-y-6">
@@ -68,10 +111,12 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
       {params.renewed && <Notice message="Renewed. Here's what to pay." />}
       {params.error && (
         <p className="rounded border border-red-300 bg-red-50 p-3 text-red-800" role="alert">
-          Sorry, the payment didn&apos;t go through. Please try again, or contact the membership secretary.
+          {params.error === "boats"
+            ? "Please give a class and sail number for each boat (up to 3 per membership)."
+            : "Sorry, the payment didn't go through. Please try again, or contact the membership secretary."}
         </p>
       )}
-      {owed.length === 0 ? (
+      {owed.length === 0 && unpaidBoats.length === 0 ? (
         <Card title="Nothing to pay">
           <p className="text-slate-700">You don&apos;t have any memberships waiting for payment.</p>
           <Link href="/profile#renew" className="mt-3 inline-block text-sky-800 underline">
@@ -79,60 +124,35 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
           </Link>
         </Card>
       ) : (
-        <>
-          <Card title="Your order">
-            <table className="w-full text-left text-sm">
-              <tbody className="divide-y divide-slate-100">
-                {owed.map((m) => (
-                  <tr key={m.id}>
-                    <td className="py-2 pr-4">
-                      <strong>{m.membership_types?.name}</strong>
-                      <span className="block text-slate-600">{m.membership_types && typeDates(m.membership_types)}</span>
-                      <span className="block text-slate-600">
-                        {m.membership_people.map((p) => p.people?.first_name).filter(Boolean).join(", ")}
-                        {m.membership_types && m.prorata_months < quote(m.membership_types, m.membership_types.starts_on).total &&
-                          ` (${m.prorata_months} months)`}
-                      </span>
-                    </td>
-                    <td className="py-2 text-right">{pounds(m.price_pence)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-slate-300 font-semibold">
-                  <td className="py-2">Total to pay</td>
-                  <td className="py-2 text-right">{pounds(total)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </Card>
-          <Card title="Payment">
-            <form action={payTest} aria-label="Payment" className="space-y-4">
-              <TestNotice />
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">How would you like to pay?</legend>
-                <label className="flex items-start gap-2 rounded border border-slate-200 p-3">
-                  <input type="radio" name="method" value="card" defaultChecked className="mt-1" />
-                  <span>
-                    <span className="font-medium">Debit or credit card</span>
-                    <span className="block text-sm text-slate-600">Pay the full amount now.</span>
-                  </span>
-                </label>
-                <label className="flex items-start gap-2 rounded border border-slate-200 p-3">
-                  <input type="radio" name="method" value="direct_debit" className="mt-1" />
-                  <span>
-                    <span className="font-medium">Direct Debit</span>
-                    <span className="block text-sm text-slate-600">Collected from your bank account.</span>
-                  </span>
-                </label>
-              </fieldset>
-              {owed.map((m) => (
-                <input key={m.id} type="hidden" name="membership_id" value={m.id} />
-              ))}
-              <SaveButton pendingText="Processing…">Pay {pounds(total)}</SaveButton>
-            </form>
-          </Card>
-        </>
+        <CheckoutForm
+          action={payTest}
+          lines={[
+            ...owed.map((m) => ({
+              id: m.id,
+              kind: "membership" as const,
+              title: m.membership_types?.name ?? "",
+              detail: [
+                m.membership_types ? typeDates(m.membership_types) : "",
+                m.membership_people.map((p) => p.people?.first_name).filter(Boolean).join(", ") +
+                  (m.membership_types && m.prorata_months < quote(m.membership_types, m.membership_types.starts_on).total
+                    ? ` (${m.prorata_months} months)`
+                    : ""),
+              ],
+              pence: m.price_pence,
+            })),
+            ...unpaidBoats.map((b) => ({
+              id: b.id,
+              kind: "storage" as const,
+              title: "Boat storage",
+              detail: [`${b.boat_class ?? ""} ${b.sail_number ?? ""}`.trim(), typeDates(b)],
+              pence: b.price_pence,
+            })),
+          ]}
+          baseTotal={owedTotal}
+          boatPrice={Number(boatPrice) || 0}
+          maxNewBoats={maxNew}
+          suggestedBoats={suggested}
+        />
       )}
     </div>
   );
