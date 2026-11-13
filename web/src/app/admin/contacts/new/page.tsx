@@ -21,7 +21,6 @@ export default async function AddContactPage({ searchParams }: PageProps<"/admin
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Communications</h1>
       <AdminNav current="contacts" />
       <p className="text-slate-700">
         For people who aren&apos;t members but should get club emails. They don&apos;t get a membership and aren&apos;t shown in the

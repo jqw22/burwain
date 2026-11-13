@@ -79,7 +79,6 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/adm
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Finance</h1>
       <AdminNav current="transactions" />
       <Notice message={params.saved === "added" ? "Transaction added." : undefined} />
       {isFinance && (

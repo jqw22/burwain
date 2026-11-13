@@ -222,7 +222,6 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Membership</h1>
       <AdminNav current="members" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-600">Everyone on the member list, with their membership and renewal status.</p>

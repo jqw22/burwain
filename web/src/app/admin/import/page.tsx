@@ -20,7 +20,6 @@ export default async function ImportPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Membership</h1>
       <AdminNav current="import" />
       <p className="text-slate-700">
         Upload the member list. You&apos;ll see who will be added, grouped into families, before anything is saved.
