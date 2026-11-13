@@ -146,9 +146,9 @@ export async function RenewalCard({
   );
 
   return (
-    <section id="renew" aria-label="Your membership" className="scroll-mt-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <section id="renew" aria-label="Your current membership" className="scroll-mt-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-lg font-semibold">Your membership</h2>
+        <h2 className="text-lg font-semibold">Your current membership</h2>
       </div>
       <div className="mt-4 space-y-4">
         {messages}
@@ -160,7 +160,7 @@ export async function RenewalCard({
 
         {(renewing || later.length > 0) && (
           <div className="rounded border border-sky-200 bg-sky-50 p-4">
-            <h3 className="font-medium text-sky-950">{renewing ? "Renew your membership" : "Starting later"}</h3>
+            <h3 className="font-medium text-sky-950">{renewing && pool.length > 0 ? "Renew your membership" : "Your next membership"}</h3>
             {renewing && endsOn && (
               <p className="mt-1 text-sm text-sky-950">
                 {pool.length > 0 ? `Your membership ends on ${ukDate(endsOn)}.` : "Everyone due for renewal has been renewed."}

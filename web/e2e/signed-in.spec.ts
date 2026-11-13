@@ -154,7 +154,7 @@ test("a member signs in with an email link and sees their membership", async ({ 
   await page.goto("/");
   await expect(page).toHaveURL(/\/profile$/);
   await expect(page.getByRole("heading", { name: "Welcome Sam", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Family for Sam, Alex, Robin: £255\s*Paid/);
+  await expect(page.getByRole("region", { name: "Your current membership" })).toContainText(/Family for Sam, Alex, Robin: £255\s*Paid/);
   // Sign out is in the top bar, and the page you're on is marked there. Members don't see Admin.
   await expect(page.getByRole("banner").getByRole("button", { name: "Sign out" })).toBeVisible();
   await expect(page.getByRole("banner").getByRole("link", { name: "Member" })).toHaveAttribute("aria-current", "page");
@@ -169,7 +169,7 @@ test("a member updates their own details, medical info and qualifications", asyn
   const page = await leadPage(browser);
   await page.goto("/profile");
   // Membership type, cost and payment status at the top.
-  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Family for Sam, Alex, Robin: £255\s*Paid/);
+  await expect(page.getByRole("region", { name: "Your current membership" })).toContainText(/Family for Sam, Alex, Robin: £255\s*Paid/);
   const contact = page.getByRole("region", { name: "Contact details" });
   // Boxes show details read-only until you click Edit.
   await expect(contact.getByText("Not given").first()).toBeVisible();
@@ -258,7 +258,7 @@ test("the family's main contact renews for next year from Your details", async (
   test.skip(!next, "renewals aren't open today");
   const page = await leadPage(browser);
   await page.goto("/profile");
-  const box = page.getByRole("region", { name: "Your membership" });
+  const box = page.getByRole("region", { name: "Your current membership" });
   await expect(box.getByText(/Family for Sam, Alex, Robin: £255\s*Paid/)).toBeVisible();
   await expect(box.getByRole("heading", { name: "Renew your membership" })).toBeVisible();
   await expect(box.getByText(`Your membership ends on 31 Dec ${Number(next) - 1}.`)).toBeVisible();
@@ -318,9 +318,11 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(page.getByText("Your membership is now paid.")).toBeVisible();
   await page.getByRole("link", { name: "Back to Member" }).click();
   // The test payment is recorded: the membership is paid and the income is posted.
-  await expect(page.getByRole("region", { name: "Your membership" }).getByText(new RegExp(`Family for Sam, Alex, Robin: £255\\s*Paid\\s*1 Jan ${next}`))).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your current membership" }).getByText(new RegExp(`Family for Sam, Alex, Robin: £255\\s*Paid\\s*1 Jan ${next}`))).toBeVisible();
   await expect(page.getByRole("link", { name: "Pay now" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Laser 123456: £35\s*Paid/);
+  // Once renewed, the box doesn't ask them to renew again.
+  await expect(page.getByRole("region", { name: "Your current membership" }).getByRole("heading", { name: "Renew your membership" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Your current membership" })).toContainText(/Laser 123456: £35\s*Paid/);
   await expect(page.getByRole("button", { name: "Renew", exact: true })).toHaveCount(0);
   expect(
     sql(`select count(*) from memberships m join club_years cy on cy.id = m.club_year_id join people p on p.id = m.payer_person_id
@@ -347,7 +349,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
-  expect(await links("Communications admin")).toEqual(["Email templates", "Add contact"]);
+  expect(await links("Communications admin")).toEqual(["Add contact", "Templates"]);
   expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
@@ -547,7 +549,7 @@ test("finance sees this month's transactions with who paid, a running balance, s
   const page = await adminPage(browser);
   await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Income", "Transactions", "Categories"]);
+  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Transactions", "Categories"]);
 
   // This month by default: last month's grant isn't shown.
   const month = sql(`select to_char(date_trunc('month', current_date), 'YYYY-MM-DD') || '|' || to_char(date_trunc('month', current_date) + interval '1 month' - interval '1 day', 'YYYY-MM-DD')`).split("|");
@@ -894,7 +896,7 @@ test("members see a directory of adult members, without payment status", async (
   const page = await leadPage(browser);
   await page.goto("/");
   await page.getByRole("link", { name: "Directory" }).click();
-  await expect(page.getByRole("heading", { name: "Member directory" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Member Directory" })).toBeVisible();
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Alex`) })).toContainText("Family");
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) })).toHaveCount(0);
   await expect(page.getByRole("link", { name: new RegExp(`Tester${run}, Sam`) })).toHaveCount(0);
@@ -943,7 +945,7 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   await page.getByRole("link", { name: "Add contact", exact: true }).click();
   // It sits under Communications, with the Communications tabs.
   await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link")).toHaveText(["Email templates", "Add contact"]);
+  await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link")).toHaveText(["Add contact", "Templates"]);
   // Cancel goes back to the Admin page.
   await expect(page.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/");
   const form = page.getByRole("form", { name: "Add a contact" });
@@ -1110,7 +1112,7 @@ test("an admin edits the renewal reminder email with a live preview, and adds an
   const page = await adminPage(browser);
   // Found in the Communications admin box on Home.
   await page.goto("/");
-  await page.getByRole("link", { name: "Email templates", exact: true }).click();
+  await page.getByRole("link", { name: "Templates", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
   await expect(page.getByRole("row", { name: "Renewal reminder" })).toContainText("Renewal reminder");
 
