@@ -362,14 +362,15 @@ test("an admin finds a member, edits them and views their medical details", asyn
   // The family stays together: Sam (main contact) first, then Alex and Robin indented under them.
   const names = (await page.getByRole("row").allTextContents()).slice(1).map((t) => t.match(/Tester\w*, (Sam|Alex|Robin)/)?.[1]);
   expect(names).toEqual(["Sam", "Alex", "Robin"]);
-  // Type, Status and Renewal columns; no Payment, Postcode, Email or Mobile.
+  // Type, Status, Renewal and Expected columns; no Payment, Postcode, Email or Mobile.
   const headers = (await page.getByRole("columnheader").allTextContents()).map((t) => t.replace("▲", "").trim());
-  expect(headers).toEqual(["Name", "Type", "Status", "Renewal"]);
+  expect(headers).toEqual(["Name", "Type", "Status", "Renewal", "Expected"]);
   const sam = page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) });
   await expect(sam.getByRole("cell").nth(1)).toHaveText("Family");
   await expect(sam.getByRole("cell").nth(2)).toHaveText("Active");
   // The rules are explained at the top, and only Active and Lapsed have filter buttons.
   await expect(page.getByText("How status and renewal are worked out")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Filter by membership status" })).toContainText(/^Membership:/);
   const statusFilters = page.getByRole("navigation", { name: "Filter by membership status" }).getByRole("link");
   await expect(statusFilters).toHaveText([/^All \(\d+\)$/, /^Active \(\d+\)$/, /^Lapsed \(\d+\)$/]);
   // Renewal: Outstanding within 60 days of Sam's membership ending (unless next year's is paid), otherwise n/a.
@@ -383,6 +384,17 @@ test("an admin finds a member, edits them and views their medical details", asyn
       join membership_types t on t.id = m.membership_type_id
      where p.email = '${leadEmail}' and current_date between t.starts_on and t.ends_on and m.status <> 'cancelled' limit 1`);
   await expect(sam.getByRole("cell").nth(3)).toHaveText(renewal);
+  // Expected: the renewal fee (next period's same type, else the current type's price), only when Outstanding,
+  // and once per membership, so it's on Sam's row but not Robin's.
+  const fee = sql(`
+    select coalesce((select n.annual_price_pence from membership_types n where n.code = t.code and n.starts_on > t.ends_on and n.is_open
+                      order by n.starts_on limit 1), t.annual_price_pence)
+      from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
+      join membership_types t on t.id = m.membership_type_id
+     where p.email = '${leadEmail}' and current_date between t.starts_on and t.ends_on and m.status <> 'cancelled' limit 1`);
+  const feeText = `£${(Number(fee) / 100).toFixed(Number(fee) % 100 === 0 ? 0 : 2)}`;
+  await expect(sam.getByRole("cell").nth(4)).toHaveText(renewal === "Outstanding" ? feeText : "");
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) }).getByRole("cell").nth(4)).toHaveText("");
   await page.getByRole("navigation", { name: "Filter by renewal status" }).getByRole("link", { name: new RegExp(`^${renewal} \\(\\d+\\)$`) }).click();
   await expect(page).toHaveURL(/renewal=/);
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toBeVisible();
@@ -869,6 +881,8 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   // It sits under Communications, with the Communications tabs.
   await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link")).toHaveText(["Email templates", "Add contact"]);
+  // Cancel goes back to the Admin page.
+  await expect(page.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/");
   const form = page.getByRole("form", { name: "Add a contact" });
   await form.getByLabel("First name").fill("Cass");
   await form.getByLabel("Last name").fill(`Contact${run}`);

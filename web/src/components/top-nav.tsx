@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 // The top bar links. The page you're on is shown bold and underlined.
-// Member is the landing page. Admin sits on the right, for admin and finance logins only,
+// Member is the landing page. Admin comes after Directory, for admin and finance logins only,
 // and admin pages count as Admin because they're reached from it.
 const LINKS = [
   { href: "/profile", label: "Member", match: (p: string) => p.startsWith("/profile") || p.startsWith("/family") || p.startsWith("/membership") },
@@ -33,8 +33,8 @@ export function TopNav({ showAdmin }: { showAdmin: boolean }) {
   return (
     <>
       {LINKS.map((l) => link(l))}
-      {showAdmin && link(ADMIN, " ml-auto")}
-      <form action="/auth/signout" method="post" className={showAdmin ? undefined : "ml-auto"}>
+      {showAdmin && link(ADMIN)}
+      <form action="/auth/signout" method="post" className="ml-auto">
         <button type="submit" className="text-sm text-slate-600 underline hover:text-sky-900">
           Sign out
         </button>

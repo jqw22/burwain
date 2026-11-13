@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LiveSearch } from "@/components/live-search";
 import { AdminNav, NotAllowed } from "@/components/admin";
-import { ageOn, meWithRole } from "@/lib/me";
+import { ageOn, meWithRole, pounds } from "@/lib/me";
 import { ukToday } from "@/lib/quote";
 
 type Row = {
@@ -17,8 +17,9 @@ type Row = {
 type Held = {
   person_id: string;
   memberships: {
+    id: string;
     status: string;
-    membership_types: { name: string; starts_on: string; ends_on: string } | null;
+    membership_types: { name: string; code: string; annual_price_pence: number; starts_on: string; ends_on: string } | null;
   };
 };
 type Membership = Held["memberships"];
@@ -123,14 +124,24 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
   if (q) query = query.or(`first_name.ilike.*${q}*,last_name.ilike.*${q}*,email.ilike.*${q}*`);
 
   const today = ukToday();
-  const [{ data: people }, { data: held }, { data: notice }] = await Promise.all([
+  const [{ data: people }, { data: held }, { data: notice }, { data: types }] = await Promise.all([
     query,
     supabase
       .from("membership_people")
-      .select("person_id, memberships!inner(status, membership_types(name, starts_on, ends_on))")
+      .select("person_id, memberships!inner(id, status, membership_types(name, code, annual_price_pence, starts_on, ends_on))")
       .neq("memberships.status", "cancelled"),
     supabase.rpc("renewal_notice_days"),
+    supabase.from("membership_types").select("code, annual_price_pence, starts_on").eq("is_open", true),
   ]);
+  const openTypes = (types ?? []) as { code: string; annual_price_pence: number; starts_on: string }[];
+  // Expected renewal fee: the full price of the next period's type with the same code (e.g. next year's
+  // Family), or, if that hasn't been set up yet, the price of the type they have now.
+  const expectedFee = (m: Membership | null) => {
+    const t = m?.membership_types;
+    if (!t) return null;
+    const next = openTypes.filter((x) => x.code === t.code && x.starts_on > t.ends_on).sort((a, b) => a.starts_on.localeCompare(b.starts_on))[0];
+    return next?.annual_price_pence ?? t.annual_price_pence;
+  };
   const noticeDays = typeof notice === "number" ? notice : 60;
   const byPerson = new Map<string, Membership[]>();
   for (const h of (held ?? []) as unknown as Held[]) {
@@ -171,6 +182,13 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     ordered.sort((a, b) => a[0].last_name.localeCompare(b[0].last_name) || a[0].first_name.localeCompare(b[0].first_name));
     rows.splice(0, rows.length, ...ordered.flat());
   }
+  const feeShown = new Set<string>();
+  const expectedFor = (p: (typeof rows)[number]) => {
+    if (p.renewal !== "outstanding" || !p.shown) return null;
+    if (feeShown.has(p.shown.id)) return null;
+    feeShown.add(p.shown.id);
+    return expectedFee(p.shown);
+  };
   if (sort === "type") {
     // By membership type, then name. People without a membership go last.
     rows.sort((a, b) => {
@@ -241,7 +259,8 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
         </div>
       </details>
       <LiveSearch label="Search members" placeholder="Search by name or email" initial={q} />
-      <nav aria-label="Filter by membership status" className="flex flex-wrap gap-2 text-sm">
+      <nav aria-label="Filter by membership status" className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-slate-600">Membership:</span>
         {(["all", ...FILTERS] as (Filter | "all")[]).map((s) => (
           <Link
             key={s}
@@ -287,12 +306,16 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
               {sortHeader("type", "Type")}
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Renewal</th>
+              <th className="px-3 py-2 font-medium" title="The fee if an outstanding membership is renewed as it is. Shown once per membership.">
+                Expected
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((p) => {
               const age = ageOn(p.date_of_birth);
               const m = p.shown;
+              const expected = expectedFor(p);
               return (
                 <tr key={p.id} className={grouped.has(p.id) ? "border-t-0 bg-slate-50/60" : undefined}>
                   <td className={grouped.has(p.id) ? "py-2 pl-8 pr-3" : "px-3 py-2"}>
@@ -331,6 +354,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                       <span className="text-slate-400">–</span>
                     )}
                   </td>
+                  <td className="px-3 py-2 whitespace-nowrap">{expected !== null ? pounds(expected) : ""}</td>
                 </tr>
               );
             })}
