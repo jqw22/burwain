@@ -42,8 +42,8 @@ export default async function NewTransactionPage({ searchParams }: PageProps<"/a
 
   return (
     <div className="space-y-6">
+      <AdminNav current="transactions" heading={false} />
       <h1 className="text-2xl font-semibold">Add transaction</h1>
-      <AdminNav current="transactions" />
       {error && <p className="rounded bg-red-50 p-3 text-red-800">{error}</p>}
 
       <Card title="Transaction details">

@@ -76,8 +76,8 @@ export default async function RemindPage({ searchParams }: PageProps<"/admin/mem
 
   return (
     <div className="space-y-6">
+      <AdminNav current="members" heading={false} />
       <h1 className="text-2xl font-semibold">Send renewal reminders</h1>
-      <AdminNav current="members" />
       <p>
         <Link href="/admin/members?renewal=outstanding" className="text-sm text-sky-800 underline">
           ← Back to Members

@@ -47,7 +47,6 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Communications</h1>
       <AdminNav current="emails" />
       <Notice message={saved} />
       {error && (

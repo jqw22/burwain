@@ -266,7 +266,6 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Membership</h1>
       <AdminNav current="types" />
       <Notice message={saved} />
       {error && (
