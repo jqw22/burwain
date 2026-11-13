@@ -484,6 +484,8 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
 do $$ declare ann uuid; hh uuid; begin
   assert (select count(*) from pending_applications()) = 3, 'three waiting';
   assert (select paid_method::text from pending_applications() where contact_name = 'Pia Paid') = 'direct_debit', 'paid shown to admins';
+  assert (select count(*) from transactions where party = 'Pia Paid' and direction = 'in' and receipt_line_id is null) = 1,
+    'paying on the join form records the transaction straight away';
   assert (select paid_at is null from pending_applications() where contact_name = 'Ann Apply'), 'Ann hasn''t paid';
   assert (select has_medical from pending_applications() where contact_name = 'Ann Apply'), 'medical flagged, not shown';
   ann := accept_application((select id from pending_applications() where contact_name = 'Ann Apply'));
@@ -503,6 +505,7 @@ do $$ declare ann uuid; hh uuid; begin
               join memberships m on m.id = rl.membership_id join membership_people mp on mp.membership_id = m.id
              where mp.person_id = pia and tx.method = 'direct_debit') = 1,
       'paid application: income posted';
+    assert (select count(*) from transactions where party = 'Pia Paid') = 1, 'accepting links the same transaction, no second one';
   end;
   perform decline_application((select id from pending_applications() where contact_name = 'Spam Bot'), 'Spam');
   assert (select data is null and status = 'declined' from membership_applications where contact_name = 'Spam Bot'), 'declined details deleted';

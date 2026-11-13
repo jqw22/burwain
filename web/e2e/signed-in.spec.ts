@@ -799,6 +799,8 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   await expect(page.getByRole("status")).toContainText("We've received your application for Dual");
   await expect(page.getByText(/Your payment of £[\d.]+ by card is confirmed\./)).toBeVisible();
   await shot(page, "join-thanks");
+  // The payment shows in the finance transactions straight away.
+  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}' and direction = 'in' and receipt_line_id is null`)).toBe("1");
 
   // A second application, which the admin will decline.
   await page.goto("/join");
@@ -841,6 +843,7 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
            join member_receipt_lines rl on rl.receipt_id = r.id left join transactions tx on tx.receipt_line_id = rl.id
           where p.email = 'iris-${run}@example.test' and r.status = 'paid' group by r.id`),
   ).toBe("card|1");
+  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}'`)).toBe("1"); // the same transaction, now linked
 
   await admin.goto("/admin/applications");
   await admin.getByRole("region", { name: `Kay Spammy${run}: Club Membership` }).getByLabel("Reason (optional)").fill("Not a real person");
