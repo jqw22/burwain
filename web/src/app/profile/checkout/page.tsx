@@ -129,12 +129,7 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
               {owed.map((m) => (
                 <input key={m.id} type="hidden" name="membership_id" value={m.id} />
               ))}
-              <div className="flex flex-wrap items-center gap-4">
-                <SaveButton pendingText="Processing…">Pay {pounds(total)}</SaveButton>
-                <Link href="/profile#renew" className="text-sm text-slate-600 underline">
-                  Pay later
-                </Link>
-              </div>
+              <SaveButton pendingText="Processing…">Pay {pounds(total)}</SaveButton>
             </form>
           </Card>
         </>

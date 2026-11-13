@@ -298,6 +298,7 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(page.getByRole("region", { name: "Your order" })).toContainText(/Total to pay\s*£255/);
   await expect(page.getByText("Test checkout.")).toBeVisible();
   await shot(page, "checkout");
+  await expect(page.getByRole("link", { name: "Pay later" })).toHaveCount(0);
   await page.getByLabel("Direct Debit").check();
   await page.getByRole("button", { name: "Pay £255" }).click();
   await expect(page.getByText("Your payment of £255 by Direct Debit is confirmed.")).toBeVisible();
