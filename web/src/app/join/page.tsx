@@ -15,8 +15,8 @@ export default async function JoinPage() {
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold">Join Burwain</h1>
         <p className="text-slate-700">
-          Fill in this form to apply for membership. The membership secretary will check it and email you about
-          paying. Once you&apos;re accepted you can log in with your email to see and update your details.
+          Fill in this form to apply for membership. You can pay straight away, or the membership secretary will
+          email you about paying. Once you&apos;re accepted you can log in with your email to see and update your details.
         </p>
       </div>
       {options.length === 0 ? (

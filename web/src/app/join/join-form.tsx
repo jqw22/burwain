@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { Card, SaveButton } from "@/components/fields";
 import { PersonFields, addButton } from "@/components/person-fields";
 import { typeDates } from "@/lib/quote";
-import { submitApplication, type JoinState } from "./actions";
+import { payApplication, submitApplication, type JoinState, type PayState } from "./actions";
 
 export type JoinOption = {
   type_id: string;
@@ -44,18 +44,21 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
 
   if (state.done) {
     return (
-      <Card title="Thank you">
-        <div className="space-y-3 text-slate-800" role="status">
-          <p>
-            Thanks{state.done.name ? `, ${state.done.name}` : ""}. We&apos;ve received your application for{" "}
-            <strong>{state.done.type}</strong> ({state.done.year}), {state.done.price}.
-          </p>
-          <p>
-            The membership secretary will check it and email {state.done.email || "you"} about paying. Once
-            you&apos;re accepted you can log in with that email.
-          </p>
-        </div>
-      </Card>
+      <>
+        <Card title="Thank you">
+          <div className="space-y-3 text-slate-800" role="status">
+            <p>
+              Thanks{state.done.name ? `, ${state.done.name}` : ""}. We&apos;ve received your application for{" "}
+              <strong>{state.done.type}</strong> ({state.done.year}), {state.done.price}.
+            </p>
+            <p>
+              The membership secretary will check it and email {state.done.email || "you"}. Once you&apos;re accepted you
+              can log in with that email.
+            </p>
+          </div>
+        </Card>
+        {state.done.applicationId && <PayForApplication applicationId={state.done.applicationId} price={state.done.price} />}
+      </>
     );
   }
 
@@ -139,5 +142,70 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
         </div>
       )}
     </form>
+  );
+}
+
+const METHOD = { card: "card", direct_debit: "Direct Debit" } as const;
+
+// Test checkout straight after applying. Paying is optional: they can pay later when the club gets in touch.
+function PayForApplication({ applicationId, price }: { applicationId: string; price: string }) {
+  const [state, action] = useActionState<PayState, FormData>(payApplication, {});
+  const notice = (
+    <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+      <strong>Test checkout.</strong> No money is taken and no card or bank details are asked for, but the payment is
+      recorded. Online payment by card and Direct Debit will be switched on later.
+    </p>
+  );
+  if (state.paid) {
+    return (
+      <Card title="Payment confirmed">
+        <div className="space-y-3">
+          <p className="flex items-center gap-2 rounded border border-emerald-300 bg-emerald-50 p-3 font-medium text-emerald-900" role="status">
+            <span aria-hidden="true">✓</span>
+            Thank you. Your payment of {pounds(state.paid.pence)} by {METHOD[state.paid.method]} is confirmed.
+          </p>
+          {notice}
+          <p className="text-sm text-slate-700">
+            Your membership will show as paid once the membership secretary accepts your application. If it isn&apos;t
+            accepted, your payment will be refunded.
+          </p>
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card title="Pay now">
+      <form action={action} aria-label="Payment" className="space-y-4">
+        {state.error && (
+          <p className="rounded border border-red-300 bg-red-50 p-3 text-red-800" role="alert">
+            {state.error}
+          </p>
+        )}
+        {notice}
+        <p className="text-sm text-slate-700">
+          You can pay now, or wait and the membership secretary will email you about paying. If your application
+          isn&apos;t accepted, your payment will be refunded.
+        </p>
+        <input type="hidden" name="application_id" value={applicationId} />
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">How would you like to pay?</legend>
+          <label className="flex items-start gap-2 rounded border border-slate-200 p-3">
+            <input type="radio" name="method" value="card" defaultChecked className="mt-1" />
+            <span>
+              <span className="font-medium">Debit or credit card</span>
+              <span className="block text-sm text-slate-600">Pay the full amount now.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 rounded border border-slate-200 p-3">
+            <input type="radio" name="method" value="direct_debit" className="mt-1" />
+            <span>
+              <span className="font-medium">Direct Debit</span>
+              <span className="block text-sm text-slate-600">Collected from your bank account.</span>
+            </span>
+          </label>
+        </fieldset>
+        <SaveButton pendingText="Processing…">Pay {price}</SaveButton>
+      </form>
+    </Card>
   );
 }

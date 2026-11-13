@@ -128,6 +128,13 @@ export async function RenewalCard({
     );
   };
 
+  // A new member accepted from the public join form, or anyone renewed by an admin, pays here too.
+  const payNow = (
+    <Link href="/profile/checkout" className="mt-3 inline-block rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
+      Pay now
+    </Link>
+  );
+
   return (
     <section id="renew" aria-label="Your membership" className="scroll-mt-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex items-baseline justify-between gap-4">
@@ -139,6 +146,7 @@ export async function RenewalCard({
           <p className="text-slate-700">No current membership. To join or rejoin, please contact the membership secretary.</p>
         )}
         {running.length > 0 && <ul className="space-y-2">{running.map(line)}</ul>}
+        {canRenew && running.some((m) => m.status === "awaiting_payment") && !later.some((m) => m.status === "awaiting_payment") && payNow}
 
         {(renewing || later.length > 0) && (
           <div className="rounded border border-sky-200 bg-sky-50 p-4">
@@ -149,14 +157,7 @@ export async function RenewalCard({
               </p>
             )}
             {later.length > 0 && <ul className="mt-2 space-y-2">{later.map(line)}</ul>}
-            {canRenew && later.some((m) => m.status === "awaiting_payment") && (
-              <Link
-                href="/profile/checkout"
-                className="mt-3 inline-block rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900"
-              >
-                Pay now
-              </Link>
-            )}
+            {canRenew && later.some((m) => m.status === "awaiting_payment") && payNow}
             {renewing &&
               pool.length > 0 &&
               (!canRenew ? (

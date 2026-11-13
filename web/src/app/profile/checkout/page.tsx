@@ -12,16 +12,20 @@ type Membership = {
   membership_people: { people: { first_name: string } | null }[];
 };
 
-const METHOD = { card: "card", direct_debit: "Direct Debit" } as const;
+const METHOD: Record<string, string> = { card: "card", direct_debit: "Direct Debit" };
 
 // Checkout after renewing: what's owed for next year and a Pay button.
-// This is a TEST checkout. It doesn't take money or mark anything as paid.
+// This is a TEST checkout. It doesn't take money, but it records the payment and marks the memberships as paid.
 export default async function CheckoutPage({ searchParams }: PageProps<"/profile/checkout">) {
   const params = await searchParams;
   const { supabase, personId } = await requireMe();
 
-  if (typeof params.paid === "string") {
-    const method = params.method === "direct_debit" ? "direct_debit" : "card";
+  if (typeof params.receipt === "string") {
+    const { data: receipt } = await supabase
+      .from("member_receipts")
+      .select("amount_pence, method")
+      .eq("id", params.receipt)
+      .maybeSingle<{ amount_pence: number; method: string }>();
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold">Checkout</h1>
@@ -29,13 +33,13 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
           <div className="space-y-3">
             <p className="flex items-center gap-2 rounded border border-emerald-300 bg-emerald-50 p-3 font-medium text-emerald-900" role="status">
               <span aria-hidden="true">✓</span>
-              Thank you. Your payment of {pounds(Number(params.paid) || 0)} by {METHOD[method]} is confirmed.
+              Thank you.{" "}
+              {receipt
+                ? `Your payment of ${pounds(receipt.amount_pence)} by ${METHOD[receipt.method] ?? receipt.method} is confirmed.`
+                : "Your payment is confirmed."}
             </p>
             <TestNotice />
-            <p className="text-sm text-slate-700">
-              Because this was a test, your membership still shows as <strong>Awaiting payment</strong>. The club&apos;s finance team
-              will mark it as paid when they receive your payment.
-            </p>
+            <p className="text-sm text-slate-700">Your membership is now paid.</p>
             <Link href="/profile#renew" className="inline-block text-sky-800 underline">
               Back to Member
             </Link>
@@ -62,6 +66,11 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Checkout</h1>
       {params.renewed && <Notice message="Renewed. Here's what to pay." />}
+      {params.error && (
+        <p className="rounded border border-red-300 bg-red-50 p-3 text-red-800" role="alert">
+          Sorry, the payment didn&apos;t go through. Please try again, or contact the membership secretary.
+        </p>
+      )}
       {owed.length === 0 ? (
         <Card title="Nothing to pay">
           <p className="text-slate-700">You don&apos;t have any memberships waiting for payment.</p>
@@ -117,7 +126,9 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
                   </span>
                 </label>
               </fieldset>
-              <input type="hidden" name="total" value={total} />
+              {owed.map((m) => (
+                <input key={m.id} type="hidden" name="membership_id" value={m.id} />
+              ))}
               <div className="flex flex-wrap items-center gap-4">
                 <SaveButton pendingText="Processing…">Pay {pounds(total)}</SaveButton>
                 <Link href="/profile#renew" className="text-sm text-slate-600 underline">
@@ -135,8 +146,8 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
 function TestNotice() {
   return (
     <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-      <strong>Test checkout.</strong> No money is taken and no card or bank details are asked for. Online payment by card and
-      Direct Debit will be switched on later.
+      <strong>Test checkout.</strong> No money is taken and no card or bank details are asked for, but the payment is recorded
+      and your membership is marked as paid. Online payment by card and Direct Debit will be switched on later.
     </p>
   );
 }

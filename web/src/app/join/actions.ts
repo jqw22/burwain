@@ -7,8 +7,10 @@ import { peopleFromForm } from "@/lib/member-form";
 export type JoinState = {
   error?: string;
   values?: Record<string, string>;
-  done?: { name: string; email: string; type: string; year: string; price: string };
+  done?: { name: string; email: string; type: string; year: string; price: string; applicationId?: string };
 };
+
+export type PayState = { error?: string; paid?: { pence: number; method: "card" | "direct_debit" } };
 
 const KNOWN: [string, string][] = [
   ["First and last name", "Please give a first and last name for everyone."],
@@ -52,10 +54,20 @@ export async function submitApplication(_prev: JoinState, form: FormData): Promi
     people,
   };
   const supabase = await createClient();
-  const { error } = await supabase.rpc("submit_application", { p });
+  const { data: applicationId, error } = await supabase.rpc("submit_application", { p });
   if (error) {
     const message = KNOWN.find(([needle]) => error.message.includes(needle))?.[1];
     return { error: message ?? "Something went wrong. Please check your details and try again.", values };
   }
-  return { done };
+  return { done: { ...done, applicationId: String(applicationId) } };
+}
+
+// Test checkout straight after applying: no money is taken, but the payment is held on the
+// application. When an admin accepts it, the membership is created already paid and the income recorded.
+export async function payApplication(_prev: PayState, form: FormData): Promise<PayState> {
+  const method = form.get("method") === "direct_debit" ? "direct_debit" : "card";
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("pay_application_test", { p_id: text(form, "application_id"), p_method: method });
+  if (error) return { error: "Sorry, the payment didn't go through. The membership secretary will email you about paying." };
+  return { paid: { pence: Number(data) || 0, method } };
 }

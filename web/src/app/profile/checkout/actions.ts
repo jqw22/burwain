@@ -1,13 +1,18 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireMe } from "@/lib/me";
 
-// Test checkout only: no payment provider is called, no money is taken and nothing in the
-// database changes. Card (Stripe) and Direct Debit (GoCardless) will replace this later.
+// Test checkout: no payment provider is called and no money is taken, but the payment is
+// recorded (as a test) and the memberships are marked as paid. Card (Stripe) and
+// Direct Debit (GoCardless) will replace this later.
 export async function payTest(form: FormData) {
-  await requireMe();
+  const { supabase } = await requireMe();
   const method = form.get("method") === "direct_debit" ? "direct_debit" : "card";
-  const total = Number(form.get("total") ?? 0);
-  redirect(`/profile/checkout?paid=${Number.isFinite(total) ? Math.max(0, Math.round(total)) : 0}&method=${method}`);
+  const ids = form.getAll("membership_id").map(String).filter(Boolean);
+  const { data: receiptId, error } = await supabase.rpc("pay_my_memberships_test", { p_membership_ids: ids, p_method: method });
+  if (error) redirect(`/profile/checkout?error=1`);
+  revalidatePath("/profile");
+  redirect(`/profile/checkout?receipt=${receiptId}`);
 }
