@@ -338,6 +338,19 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   const bar = page.getByRole("navigation", { name: "Membership admin" });
   await expect(page.getByRole("heading", { name: "Membership", exact: true })).toBeVisible();
   await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Renewal reminders", "Import"]);
+  // The heading row links between the three admin areas; the one you're in is the heading.
+  const areas = page.getByRole("navigation", { name: "Admin areas" });
+  await expect(areas.getByRole("link")).toHaveText(["Membership", "Communications", "Finance"]);
+  await expect(areas.getByRole("link", { name: "Membership" })).toHaveAttribute("aria-current", "page");
+  await shot(page, "admin-areas");
+  await areas.getByRole("link", { name: "Communications" }).click();
+  await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Communications admin" })).toBeVisible();
+  await page.getByRole("navigation", { name: "Admin areas" }).getByRole("link", { name: "Finance" }).click();
+  await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Finance admin" })).toBeVisible();
+  await page.getByRole("navigation", { name: "Admin areas" }).getByRole("link", { name: "Membership" }).click();
+  await expect(page.getByRole("navigation", { name: "Membership admin" })).toBeVisible();
   await page.goto("/");
   await shot(page, "admin-home");
 });

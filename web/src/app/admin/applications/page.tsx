@@ -39,7 +39,6 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/adm
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Membership</h1>
       <AdminNav current="applications" />
       <p className="text-slate-700">
         People who applied on the public Join page (<span className="font-mono text-sm">/join</span>). Accepting adds
