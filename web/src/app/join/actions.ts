@@ -7,7 +7,7 @@ import { peopleFromForm } from "@/lib/member-form";
 export type JoinState = {
   error?: string;
   values?: Record<string, string>;
-  done?: { name: string; email: string; type: string; year: string; price: string };
+  done?: { name: string; email: string; type: string; year: string; price: string; method: "card" | "direct_debit" };
 };
 
 const KNOWN: [string, string][] = [
@@ -27,7 +27,7 @@ const KNOWN: [string, string][] = [
   ["Too many", "We're getting a lot of applications right now. Please try again in an hour."],
 ];
 
-// No login needed: anyone can apply. Applications wait for a club admin to accept them.
+// No login needed: anyone can apply, paying as they do. Applications wait for a club admin to accept them.
 export async function submitApplication(_prev: JoinState, form: FormData): Promise<JoinState> {
   const values = Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)]));
   const people = peopleFromForm(form);
@@ -38,6 +38,7 @@ export async function submitApplication(_prev: JoinState, form: FormData): Promi
     type: String(form.get("type_label") ?? ""),
     year: String(form.get("year_label") ?? ""),
     price: String(form.get("price_label") ?? ""),
+    method: (form.get("method") === "direct_debit" ? "direct_debit" : "card") as "card" | "direct_debit",
   };
   // Bots fill in every box, including this hidden one. Pretend it worked and store nothing.
   if (text(form, "website")) return { done };
@@ -52,10 +53,15 @@ export async function submitApplication(_prev: JoinState, form: FormData): Promi
     people,
   };
   const supabase = await createClient();
-  const { error } = await supabase.rpc("submit_application", { p });
+  const { data: applicationId, error } = await supabase.rpc("submit_application", { p });
   if (error) {
     const message = KNOWN.find(([needle]) => error.message.includes(needle))?.[1];
     return { error: message ?? "Something went wrong. Please check your details and try again.", values };
   }
+  // Test checkout: no money is taken. The payment is held on the application; when an admin
+  // accepts it, the membership is created already paid and the income recorded.
+  const { error: payError } = await supabase.rpc("pay_application_test", { p_id: applicationId, p_method: done.method });
+  if (payError) return { error: "Your application was sent, but the payment didn't go through. The membership secretary will be in touch." };
   return { done };
 }
+

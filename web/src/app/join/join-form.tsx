@@ -44,18 +44,33 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
 
   if (state.done) {
     return (
-      <Card title="Thank you">
-        <div className="space-y-3 text-slate-800" role="status">
-          <p>
-            Thanks{state.done.name ? `, ${state.done.name}` : ""}. We&apos;ve received your application for{" "}
-            <strong>{state.done.type}</strong> ({state.done.year}), {state.done.price}.
-          </p>
-          <p>
-            The membership secretary will check it and email {state.done.email || "you"} about paying. Once
-            you&apos;re accepted you can log in with that email.
-          </p>
-        </div>
-      </Card>
+      <>
+        <Card title="Thank you">
+          <div className="space-y-3 text-slate-800" role="status">
+            <p>
+              Thanks{state.done.name ? `, ${state.done.name}` : ""}. We&apos;ve received your application for{" "}
+              <strong>{state.done.type}</strong> ({state.done.year}), {state.done.price}.
+            </p>
+            <p>
+              The membership secretary will check it and email {state.done.email || "you"}. Once you&apos;re accepted you
+              can log in with that email.
+            </p>
+          </div>
+        </Card>
+        <Card title="Payment confirmed">
+          <div className="space-y-3">
+            <p className="flex items-center gap-2 rounded border border-emerald-300 bg-emerald-50 p-3 font-medium text-emerald-900">
+              <span aria-hidden="true">✓</span>
+              Your payment of {state.done.price} by {state.done.method === "direct_debit" ? "Direct Debit" : "card"} is confirmed.
+            </p>
+            <TestNotice />
+            <p className="text-sm text-slate-700">
+              Your membership will show as paid once the membership secretary accepts your application. If it isn&apos;t
+              accepted, your payment will be refunded.
+            </p>
+          </div>
+        </Card>
+      </>
     );
   }
 
@@ -135,9 +150,40 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
             The club holds your details to run your membership, in line with UK data protection law. Medical
             information is only seen by club admins and, for families, your main contact.
           </p>
-          <SaveButton pendingText="Sending…">Send application</SaveButton>
+          <fieldset className="space-y-2">
+            <legend className="font-medium">Payment</legend>
+            <TestNotice />
+            <p className="text-sm text-slate-600">
+              Membership is paid when you apply. If your application isn&apos;t accepted, your payment will be refunded.
+            </p>
+            <label className="flex items-start gap-2 rounded border border-slate-200 bg-white p-3">
+              <input type="radio" name="method" value="card" defaultChecked={v.method !== "direct_debit"} className="mt-1" />
+              <span>
+                <span className="font-medium">Debit or credit card</span>
+                <span className="block text-sm text-slate-600">Pay the full amount now.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 rounded border border-slate-200 bg-white p-3">
+              <input type="radio" name="method" value="direct_debit" defaultChecked={v.method === "direct_debit"} className="mt-1" />
+              <span>
+                <span className="font-medium">Direct Debit</span>
+                <span className="block text-sm text-slate-600">Collected from your bank account.</span>
+              </span>
+            </label>
+          </fieldset>
+          <SaveButton pendingText="Processing…">Pay {pounds(chosen.price_pence)} and send application</SaveButton>
         </div>
       )}
     </form>
   );
 }
+
+function TestNotice() {
+  return (
+    <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+      <strong>Test checkout.</strong> No money is taken and no card or bank details are asked for. Online payment by card
+      and Direct Debit will be switched on later.
+    </p>
+  );
+}
+

@@ -466,6 +466,13 @@ select submit_application(jsonb_build_object('type_id', (select type_id from joi
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
   'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
   'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'date_of_birth', '1990-01-01', 'email', 'spam@example.com'))))$q$, 'already an application');
+-- Test checkout straight after applying: the payment is held on the application.
+select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
+  'address_line1', '5 Dam Rd', 'postcode', 'bb3 3cc',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Pia', 'last_name', 'Paid', 'date_of_birth', '1985-01-01', 'email', 'pia@example.com')))) \gset pia_
+select pg_temp.expect_error(format('select pay_application_test(%L, %L)', :'pia_submit_application', 'cash'), 'card or Direct Debit');
+select pay_application_test(:'pia_submit_application', 'direct_debit') > 0 as paid \gset
+select pg_temp.expect_error(format('select pay_application_test(%L, %L)', :'pia_submit_application', 'card'), 'can''t be paid');
 reset role;
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
@@ -475,7 +482,9 @@ do $$ begin
 end $$;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
 do $$ declare ann uuid; hh uuid; begin
-  assert (select count(*) from pending_applications()) = 2, 'two waiting';
+  assert (select count(*) from pending_applications()) = 3, 'three waiting';
+  assert (select paid_method::text from pending_applications() where contact_name = 'Pia Paid') = 'direct_debit', 'paid shown to admins';
+  assert (select paid_at is null from pending_applications() where contact_name = 'Ann Apply'), 'Ann hasn''t paid';
   assert (select has_medical from pending_applications() where contact_name = 'Ann Apply'), 'medical flagged, not shown';
   ann := accept_application((select id from pending_applications() where contact_name = 'Ann Apply'));
   select household_id into hh from people where id = ann;
@@ -486,6 +495,15 @@ do $$ declare ann uuid; hh uuid; begin
   assert exists (select 1 from member_directory() where id = ann), 'joined for next year, so in the directory now';
   assert not exists (select 1 from member_directory() where first_name = 'Ben' and last_name = 'Apply'), 'child not in directory';
   assert (select data is null and status = 'accepted' from membership_applications where person_id = ann), 'application closed';
+  declare pia uuid; begin
+    pia := accept_application((select id from pending_applications() where contact_name = 'Pia Paid'));
+    assert (select m.status::text from memberships m join membership_people mp on mp.membership_id = m.id where mp.person_id = pia) = 'active',
+      'paid application: membership marked paid on acceptance';
+    assert (select count(*) from transactions tx join member_receipt_lines rl on rl.id = tx.receipt_line_id
+              join memberships m on m.id = rl.membership_id join membership_people mp on mp.membership_id = m.id
+             where mp.person_id = pia and tx.method = 'direct_debit') = 1,
+      'paid application: income posted';
+  end;
   perform decline_application((select id from pending_applications() where contact_name = 'Spam Bot'), 'Spam');
   assert (select data is null and status = 'declined' from membership_applications where contact_name = 'Spam Bot'), 'declined details deleted';
 end $$;
@@ -630,6 +648,35 @@ select pg_temp.expect_error($q$update transaction_categories set is_active = fal
 update transaction_categories set is_active = false where name = 'Venue';
 do $$ begin assert not (select is_active from transaction_categories where name = 'Venue'), 'venue inactive'; end $$;
 reset role;
+reset request.jwt.claim.sub;
+
+\echo 'Test checkout: a member pays for their own memberships and the payment is recorded'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ begin
+  perform set_config('test.alice_m', (select id from memberships where household_id = '10000000-0000-0000-0000-000000000001'
+                                       and status = 'awaiting_payment' order by created_at limit 1)::text, false);
+  assert current_setting('test.alice_m') <> '', 'Alice''s household has a membership awaiting payment';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
+select pg_temp.expect_error($q$select pay_my_memberships_test(array[current_setting('test.alice_m')::uuid], 'card')$q$, 'Only your own');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select pay_my_memberships_test(array[current_setting('test.alice_m')::uuid], 'cash')$q$, 'card or Direct Debit');
+do $$ declare
+  m uuid := current_setting('test.alice_m')::uuid;
+  r uuid;
+begin
+  r := pay_my_memberships_test(array[m], 'card');
+  assert (select status::text from memberships where id = m) = 'active', 'test payment marks the membership paid';
+  assert (select status = 'paid' and method = 'card' from member_receipts where id = r), 'receipt recorded';
+end $$;
+select pg_temp.expect_error($q$select pay_my_memberships_test(array[current_setting('test.alice_m')::uuid], 'card')$q$, 'awaiting payment');
+reset role;
+do $$ begin
+  assert (select count(*) from transactions tx join member_receipt_lines rl on rl.id = tx.receipt_line_id
+           where rl.membership_id = current_setting('test.alice_m')::uuid and tx.direction = 'in'
+            ) = 1, 'income posted for the test payment';
+end $$;
 reset request.jwt.claim.sub;
 
 \echo 'All database tests passed'

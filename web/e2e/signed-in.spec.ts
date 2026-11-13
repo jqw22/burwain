@@ -298,18 +298,27 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(page.getByRole("region", { name: "Your order" })).toContainText(/Total to pay\s*£255/);
   await expect(page.getByText("Test checkout.")).toBeVisible();
   await shot(page, "checkout");
+  await expect(page.getByRole("link", { name: "Pay later" })).toHaveCount(0);
   await page.getByLabel("Direct Debit").check();
   await page.getByRole("button", { name: "Pay £255" }).click();
   await expect(page.getByText("Your payment of £255 by Direct Debit is confirmed.")).toBeVisible();
   await shot(page, "checkout-confirmed");
+  await expect(page.getByText("Your membership is now paid.")).toBeVisible();
   await page.getByRole("link", { name: "Back to Member" }).click();
-  await expect(page.getByRole("region", { name: "Your membership" }).getByText(/Family for Sam, Alex, Robin: £255\s*Awaiting payment/)).toBeVisible();
-  await expect(page.getByRole("link", { name: "Pay now" })).toBeVisible();
+  // The test payment is recorded: the membership is paid and the income is posted.
+  await expect(page.getByRole("region", { name: "Your membership" }).getByText(new RegExp(`Family for Sam, Alex, Robin: £255\\s*Paid\\s*1 Jan ${next}`))).toBeVisible();
+  await expect(page.getByRole("link", { name: "Pay now" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Renew", exact: true })).toHaveCount(0);
   expect(
     sql(`select count(*) from memberships m join club_years cy on cy.id = m.club_year_id join people p on p.id = m.payer_person_id
-         where p.email = '${leadEmail}' and cy.label = '${next}' and m.status = 'awaiting_payment'`),
+         where p.email = '${leadEmail}' and cy.label = '${next}' and m.status = 'active'`),
   ).toBe("1");
+  expect(
+    sql(`select r.method || ' ' || r.amount_pence || ' ' || count(tx.id)
+           from member_receipts r join people p on p.id = r.payer_person_id
+           join member_receipt_lines rl on rl.receipt_id = r.id left join transactions tx on tx.receipt_line_id = rl.id
+          where p.email = '${leadEmail}' and r.status = 'paid' group by r.id`),
+  ).toBe("direct_debit 25500 1");
   await shot(page, "renew-after");
 });
 
@@ -783,8 +792,12 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   await two.getByLabel("Last name").fill(`Joiner${run}`);
   await two.getByLabel("Date of birth").fill("1978-08-08");
   await shot(page, "join");
-  await form.getByRole("button", { name: "Send application" }).click();
+  // Paying is part of applying (a test checkout: no money is taken). The payment is held until an admin accepts.
+  await expect(form.getByText("Test checkout.")).toBeVisible();
+  await expect(form.getByRole("button", { name: "Pay later" })).toHaveCount(0);
+  await form.getByRole("button", { name: /^Pay £[\d.]+ and send application$/ }).click();
   await expect(page.getByRole("status")).toContainText("We've received your application for Dual");
+  await expect(page.getByText(/Your payment of £[\d.]+ by card is confirmed\./)).toBeVisible();
   await shot(page, "join-thanks");
 
   // A second application, which the admin will decline.
@@ -799,7 +812,8 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   await you.getByLabel("Address line 1").fill("1 Nowhere");
   await you.getByLabel("Postcode").fill("XX1 1XX");
   await you.getByLabel(/^Email/).fill(`kay-${run}@example.test`);
-  await form.getByRole("button", { name: "Send application" }).click();
+  await form.getByLabel("Direct Debit").check();
+  await form.getByRole("button", { name: /^Pay £[\d.]+ and send application$/ }).click();
   await expect(page.getByRole("status")).toBeVisible();
   await visitor.close();
 
@@ -810,6 +824,8 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   await expect(iris).toContainText(`Jon Joiner${run}`);
   await expect(iris).toContainText("Given (visible on their member page once accepted)");
   await expect(iris).not.toContainText("Hay fever");
+  await expect(iris).toContainText(/Paid £[\d.]+ by card on [^.]*\. If you decline, they need a refund\./);
+  await expect(admin.getByRole("region", { name: `Kay Spammy${run}: Club Membership` })).toContainText(/Paid £[\d.]+ by Direct Debit on [^.]*\. If you decline, they need a refund\./);
   await shot(admin, "admin-applications");
   await admin.getByRole("button", { name: `Accept Iris Joiner${run}` }).click();
   await expect(admin.getByText("Application accepted")).toBeVisible();
@@ -817,7 +833,14 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
     sql(`select count(*), count(distinct p.household_id), min(m.status::text), min(t.code)
            from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
            join membership_types t on t.id = m.membership_type_id where p.last_name = 'Joiner${run}'`),
-  ).toBe("2|1|awaiting_payment|D");
+  ).toBe("2|1|active|D");
+  // Accepting records the payment they made when applying, and posts the income.
+  expect(
+    sql(`select r.method, count(tx.id)
+           from member_receipts r join people p on p.id = r.payer_person_id
+           join member_receipt_lines rl on rl.receipt_id = r.id left join transactions tx on tx.receipt_line_id = rl.id
+          where p.email = 'iris-${run}@example.test' and r.status = 'paid' group by r.id`),
+  ).toBe("card|1");
 
   await admin.goto("/admin/applications");
   await admin.getByRole("region", { name: `Kay Spammy${run}: Club Membership` }).getByLabel("Reason (optional)").fill("Not a real person");

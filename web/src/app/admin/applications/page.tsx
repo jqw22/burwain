@@ -15,7 +15,12 @@ type Application = {
   people: string;
   postcode: string | null;
   has_medical: boolean;
+  paid_method: "card" | "direct_debit" | null;
+  paid_pence: number | null;
+  paid_at: string | null;
 };
+
+const METHOD: Record<string, string> = { card: "card", direct_debit: "Direct Debit" };
 
 const ERRORS: Record<string, string> = {
   accept: "We couldn't accept that application. It may already have been dealt with.",
@@ -38,8 +43,8 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/adm
       <AdminNav current="applications" />
       <p className="text-slate-700">
         People who applied on the public Join page (<span className="font-mono text-sm">/join</span>). Accepting adds
-        them as members, exactly like Add new member, with their membership awaiting payment. Declining deletes their
-        details.
+        them as members, exactly like Add new member. If they paid when applying, their membership is marked as paid and
+        the payment recorded under Income; otherwise it is awaiting payment. Declining deletes their details.
       </p>
       {params.saved === "decline" && <Notice message="Application declined and the details deleted." />}
       {error && (
@@ -76,6 +81,14 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/adm
               <div className="sm:col-span-2">
                 <dt className="text-slate-500">{a.people_count === 1 ? "Person" : `${a.people_count} people`}</dt>
                 <dd>{a.people}</dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-slate-500">Payment</dt>
+                <dd>
+                  {a.paid_at
+                    ? `Paid ${pounds(a.paid_pence ?? 0)} by ${METHOD[a.paid_method ?? ""] ?? a.paid_method} on ${ukDate(a.paid_at)}. If you decline, they need a refund.`
+                    : "Not paid yet"}
+                </dd>
               </div>
               <div className="sm:col-span-2">
                 <dt className="text-slate-500">Medical information</dt>
