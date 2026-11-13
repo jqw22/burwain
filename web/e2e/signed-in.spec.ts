@@ -299,15 +299,28 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(page.getByText("Test checkout.")).toBeVisible();
   await shot(page, "checkout");
   await expect(page.getByRole("link", { name: "Pay later" })).toHaveCount(0);
+  // Boat storage at £35 a boat, up to 3, added to the same payment.
+  const order = page.getByRole("region", { name: "Your order" });
+  await order.getByRole("button", { name: "Add a boat" }).click();
+  await order.getByRole("group", { name: "Boat 1" }).getByLabel("Class").fill("Laser");
+  await order.getByRole("group", { name: "Boat 1" }).getByLabel("Sail number").fill("123456");
+  await order.getByRole("button", { name: "Add a boat" }).click();
+  await order.getByRole("button", { name: "Add a boat" }).click();
+  await expect(order.getByRole("button", { name: "Add a boat" })).toHaveCount(0); // 3 is the most
+  await order.getByRole("button", { name: "Remove boat 3" }).click();
+  await order.getByRole("button", { name: "Remove boat 2" }).click();
+  await expect(order).toContainText(/Total to pay\s*£290/);
+  await shot(page, "checkout-boats");
   await page.getByLabel("Direct Debit").check();
-  await page.getByRole("button", { name: "Pay £255" }).click();
-  await expect(page.getByText("Your payment of £255 by Direct Debit is confirmed.")).toBeVisible();
+  await page.getByRole("button", { name: "Pay £290" }).click();
+  await expect(page.getByText("Your payment of £290 by Direct Debit is confirmed.")).toBeVisible();
   await shot(page, "checkout-confirmed");
   await expect(page.getByText("Your membership is now paid.")).toBeVisible();
   await page.getByRole("link", { name: "Back to Member" }).click();
   // The test payment is recorded: the membership is paid and the income is posted.
   await expect(page.getByRole("region", { name: "Your membership" }).getByText(new RegExp(`Family for Sam, Alex, Robin: £255\\s*Paid\\s*1 Jan ${next}`))).toBeVisible();
   await expect(page.getByRole("link", { name: "Pay now" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Your membership" })).toContainText(/Laser 123456: £35\s*Paid/);
   await expect(page.getByRole("button", { name: "Renew", exact: true })).toHaveCount(0);
   expect(
     sql(`select count(*) from memberships m join club_years cy on cy.id = m.club_year_id join people p on p.id = m.payer_person_id
@@ -318,7 +331,11 @@ test("the family's main contact renews for next year from Your details", async (
            from member_receipts r join people p on p.id = r.payer_person_id
            join member_receipt_lines rl on rl.receipt_id = r.id left join transactions tx on tx.receipt_line_id = rl.id
           where p.email = '${leadEmail}' and r.status = 'paid' group by r.id`),
-  ).toBe("direct_debit 25500 1");
+  ).toBe("direct_debit 29000 2");
+  expect(
+    sql(`select count(*) from transactions tx join transaction_categories c on c.id = tx.category_id
+          where c.name = 'Boat storage' and tx.description = 'Boat storage ${next}: Laser 123456'`),
+  ).toBe("1");
   await shot(page, "renew-after");
 });
 
@@ -386,7 +403,7 @@ test("an admin finds a member, edits them and views their medical details", asyn
   expect(names).toEqual(["Sam", "Alex", "Robin"]);
   // Type, Status, Renewal, Expected and Remind columns; no Payment, Postcode, Email or Mobile.
   const headers = (await page.getByRole("columnheader").allTextContents()).map((t) => t.replace("▲", "").trim());
-  expect(headers).toEqual(["Name", "Type", "Status", "Renewal", "Expected", "Remind"]);
+  expect(headers).toEqual(["Name", "Type", "Status", "Renewal", "Expected", "Boats", "Remind"]);
   const sam = page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) });
   await expect(sam.getByRole("cell").nth(1)).toHaveText("Family");
   await expect(sam.getByRole("cell").nth(2)).toHaveText("Active");
@@ -804,6 +821,11 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   await two.getByLabel("First name").fill("Jon");
   await two.getByLabel("Last name").fill(`Joiner${run}`);
   await two.getByLabel("Date of birth").fill("1978-08-08");
+  // A boat, stored with the membership and paid with the application.
+  const storage = page.getByRole("region", { name: "Boat storage" });
+  await storage.getByRole("button", { name: "Add a boat" }).click();
+  await storage.getByLabel("Class").fill("Topper");
+  await storage.getByLabel("Sail number").fill("t555");
   await shot(page, "join");
   // Paying is part of applying (a test checkout: no money is taken). The payment is held until an admin accepts.
   await expect(form.getByText("Test checkout.")).toBeVisible();
@@ -813,7 +835,7 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   await expect(page.getByText(/Your payment of £[\d.]+ by card is confirmed\./)).toBeVisible();
   await shot(page, "join-thanks");
   // The payment shows in the finance transactions straight away.
-  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}' and direction = 'in' and receipt_line_id is null`)).toBe("1");
+  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}' and direction = 'in' and receipt_line_id is null`)).toBe("2");
 
   // A second application, which the admin will decline.
   await page.goto("/join");
@@ -839,6 +861,7 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   await expect(iris).toContainText(`Jon Joiner${run}`);
   await expect(iris).toContainText("Given (visible on their member page once accepted)");
   await expect(iris).not.toContainText("Hay fever");
+  await expect(iris).toContainText("Topper T555 (£35)");
   await expect(iris).toContainText(/Paid £[\d.]+ by card on [^.]*\. If you decline, they need a refund\./);
   await expect(admin.getByRole("region", { name: `Kay Spammy${run}: Club Membership` })).toContainText(/Paid £[\d.]+ by Direct Debit on [^.]*\. If you decline, they need a refund\./);
   await shot(admin, "admin-applications");
@@ -855,8 +878,9 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
            from member_receipts r join people p on p.id = r.payer_person_id
            join member_receipt_lines rl on rl.receipt_id = r.id left join transactions tx on tx.receipt_line_id = rl.id
           where p.email = 'iris-${run}@example.test' and r.status = 'paid' group by r.id`),
-  ).toBe("card|1");
-  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}'`)).toBe("1"); // the same transaction, now linked
+  ).toBe("card|2");
+  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}'`)).toBe("2"); // the same transactions, now linked
+  expect(sql(`select string_agg(bs.boat_class || ' ' || bs.sail_number || ' ' || bs.status, ',') from boat_storages bs join people p on p.id = bs.person_id where p.email = 'iris-${run}@example.test'`)).toBe("Topper T555 active");
 
   await admin.goto("/admin/applications");
   await admin.getByRole("region", { name: `Kay Spammy${run}: Club Membership` }).getByLabel("Reason (optional)").fill("Not a real person");
@@ -937,6 +961,54 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   await expect(page.getByText(/0 people matching/)).toBeVisible();
   await expect(page.getByRole("row", { name: new RegExp(`Contact${run}, Cass`) })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /^Contact \(\d+\)$/ })).toHaveCount(0);
+});
+
+test("an admin changes boat storage prices, and adds and removes boats on a member's page", async ({ browser }) => {
+  const page = await adminPage(browser);
+  await page.goto("/admin/types");
+  const prices = page.getByRole("region", { name: "Boat storage prices" });
+  await expect(prices.getByRole("textbox", { name: /^Members rate/ })).toHaveValue("35");
+  await expect(prices.getByRole("textbox", { name: /^Non-members rate/ })).toHaveValue("80");
+  await prices.getByRole("textbox", { name: /^Members rate/ }).fill("36.50");
+  await prices.getByRole("button", { name: "Save storage prices" }).click();
+  await expect(page.getByText("Boat storage prices saved.")).toBeVisible();
+  expect(sql(`select price_pence from boat_storage_options where members_rate`)).toBe("3650");
+  await shot(page, "admin-storage-prices");
+  await prices.getByRole("textbox", { name: /^Members rate/ }).fill("35");
+  await prices.getByRole("button", { name: "Save storage prices" }).click();
+  await expect(page.getByText("Boat storage prices saved.")).toBeVisible();
+
+  // A member who didn't renew but left their boat: charged the non-members rate, paid in cash.
+  const id = sql(`select id from people where email = '${leadEmail}'`);
+  await page.goto(`/admin/members/${id}`);
+  const card = page.getByRole("region", { name: "Boat storage" });
+  await card.getByRole("link", { name: "Edit boat storage" }).click();
+  const add = page.getByRole("form", { name: "Add a boat" });
+  await add.getByLabel("Class").fill("Mirror");
+  await add.getByLabel("Sail number").fill("70001");
+  await add.getByLabel("Rate").selectOption("non_members");
+  await add.getByLabel("Payment received").selectOption("cash");
+  await add.getByRole("button", { name: "Add boat" }).click();
+  await expect(page.getByText("Boat storage updated.")).toBeVisible();
+  await expect(card).toContainText(/Mirror 70001: £80 \(non-members rate\), Paid/);
+  // An unpaid one can be removed; a paid one can't.
+  await add.getByLabel("Class").fill("Optimist");
+  await add.getByLabel("Sail number").fill("99");
+  await add.getByRole("button", { name: "Add boat" }).click();
+  await expect(card).toContainText(/Optimist 99: £35, Awaiting payment/);
+  await expect(card.getByRole("button", { name: "Remove Mirror 70001" })).toHaveCount(0);
+  await shot(page, "admin-member-boats");
+  await card.getByRole("button", { name: "Remove Optimist 99" }).click();
+  await expect(page.getByText("Boat storage updated.")).toBeVisible();
+  await expect(card).not.toContainText("Optimist");
+  expect(
+    sql(`select count(*) from transactions tx join transaction_categories c on c.id = tx.category_id
+          where c.name = 'Boat storage' and tx.method = 'cash' and tx.amount_pence = 8000 and tx.description like '%Mirror 70001 (non-members rate)'`),
+  ).toBe("1");
+
+  // The Members list counts the boats stored.
+  await page.goto(`/admin/members?q=lead-${run}`);
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) }).getByRole("cell").nth(5)).toHaveText(/^[1-3]$/);
 });
 
 test("an admin adds a membership type, changes its price and makes it inactive", async ({ browser }) => {

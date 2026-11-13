@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { text } from "@/lib/me";
 import { peopleFromForm } from "@/lib/member-form";
+import { boatsFromForm } from "@/lib/boats";
 
 export type JoinState = {
   error?: string;
@@ -24,6 +25,8 @@ const KNOWN: [string, string][] = [
   ["age limit", "Someone is over the age limit for that membership, or their date of birth is missing."],
   ["Up to 4", "A Family membership covers up to 4 people."],
   ["not available", "That membership type isn't available at the moment."],
+  ["Up to 3 boats", "Up to 3 boats can be stored per membership."],
+  ["class and sail number", "Please give a class and sail number for each boat."],
   ["Too many", "We're getting a lot of applications right now. Please try again in an hour."],
 ];
 
@@ -51,6 +54,7 @@ export async function submitApplication(_prev: JoinState, form: FormData): Promi
     address_line4: text(form, "address_line4"),
     postcode: text(form, "postcode"),
     people,
+    boats: boatsFromForm(form),
   };
   const supabase = await createClient();
   const { data: applicationId, error } = await supabase.rpc("submit_application", { p });

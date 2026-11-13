@@ -23,6 +23,7 @@ type Membership = {
   membership_types: MembershipType | null;
   membership_people: { person_id: string }[];
 };
+type Boat = { id: string; boat_class: string | null; sail_number: string | null; price_pence: number; status: string; starts_on: string; ends_on: string };
 type Due = { person_id: string; membership_id: string; code: string; ends_on: string; renewed: boolean };
 type Member = { id: string; first_name: string; last_name: string; date_of_birth: string | null };
 
@@ -53,10 +54,19 @@ export async function RenewalCard({
     .gte("membership_types.ends_on", today)
     .neq("status", "cancelled")
     .order("created_at");
-  const [{ data: membershipsData }, { data: dueData }] = await Promise.all([
+  const [{ data: membershipsData }, { data: dueData }, { data: boatData }] = await Promise.all([
     householdId ? query.eq("household_id", householdId) : query.eq("payer_person_id", personId),
     supabase.rpc("my_renewals"),
+    // The household's boats stored now or later (the page only shows the family's own).
+    supabase
+      .from("boat_storages")
+      .select("id, boat_class, sail_number, price_pence, status, starts_on, ends_on")
+      .neq("status", "cancelled")
+      .gte("ends_on", today)
+      .order("starts_on")
+      .order("created_at"),
   ]);
+  const boats = (boatData ?? []) as Boat[];
   const memberships = ((membershipsData ?? []) as unknown as Membership[]).sort((a, b) =>
     a.membership_types!.starts_on.localeCompare(b.membership_types!.starts_on),
   );
@@ -175,6 +185,24 @@ export async function RenewalCard({
                   </p>
                 </>
               ))}
+          </div>
+        )}
+        {boats.length > 0 && (
+          <div>
+            <h3 className="font-medium">Boat storage</h3>
+            <ul className="mt-2 space-y-2">
+              {boats.map((b) => (
+                <li key={b.id}>
+                  <strong>
+                    {b.boat_class} {b.sail_number}
+                  </strong>
+                  : {pounds(b.price_pence)}
+                  {status(b.status)}
+                  <span className="block text-sm text-slate-600">{typeDates(b)}</span>
+                </li>
+              ))}
+            </ul>
+            {canRenew && boats.some((b) => b.status === "awaiting_payment") && !memberships.some((m) => m.status === "awaiting_payment") && payNow}
           </div>
         )}
       </div>

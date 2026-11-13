@@ -18,6 +18,8 @@ type Application = {
   paid_method: "card" | "direct_debit" | null;
   paid_pence: number | null;
   paid_at: string | null;
+  boats: string | null;
+  boats_pence: number;
 };
 
 const METHOD: Record<string, string> = { card: "card", direct_debit: "Direct Debit" };
@@ -82,10 +84,14 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/adm
                 <dd>{a.people}</dd>
               </div>
               <div className="sm:col-span-2">
+                <dt className="text-slate-500">Boat storage</dt>
+                <dd>{a.boats ? `${a.boats} (${pounds(a.boats_pence)})` : "None"}</dd>
+              </div>
+              <div className="sm:col-span-2">
                 <dt className="text-slate-500">Payment</dt>
                 <dd>
                   {a.paid_at
-                    ? `Paid ${pounds(a.paid_pence ?? 0)} by ${METHOD[a.paid_method ?? ""] ?? a.paid_method} on ${ukDate(a.paid_at)}. If you decline, they need a refund.`
+                    ? `Paid ${pounds((a.paid_pence ?? 0) + a.boats_pence)} by ${METHOD[a.paid_method ?? ""] ?? a.paid_method} on ${ukDate(a.paid_at)}. If you decline, they need a refund.`
                     : "Not paid yet"}
                 </dd>
               </div>

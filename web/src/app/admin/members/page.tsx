@@ -127,7 +127,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
   if (q) query = query.or(`first_name.ilike.*${q}*,last_name.ilike.*${q}*,email.ilike.*${q}*`);
 
   const today = ukToday();
-  const [{ data: people }, { data: held }, { data: notice }, { data: types }, { data: dueData }] = await Promise.all([
+  const [{ data: people }, { data: held }, { data: notice }, { data: types }, { data: dueData }, { data: boatData }] = await Promise.all([
     query,
     supabase
       .from("membership_people")
@@ -137,7 +137,11 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     supabase.from("membership_types").select("code, annual_price_pence, starts_on").eq("is_open", true),
     // Main contacts with a renewal outstanding: the people a renewal reminder can be sent to.
     supabase.rpc("renewal_reminder_recipients"),
+    // Boats stored now or later, counted against whoever they're stored for.
+    supabase.from("boat_storages").select("person_id").neq("status", "cancelled").gte("ends_on", today),
   ]);
+  const boatCount = new Map<string, number>();
+  for (const b of (boatData ?? []) as { person_id: string }[]) boatCount.set(b.person_id, (boatCount.get(b.person_id) ?? 0) + 1);
   const remindable = new Map(
     ((dueData ?? []) as { person_id: string; last_reminded_at: string | null }[]).map((d) => [d.person_id, d.last_reminded_at]),
   );
@@ -322,6 +326,9 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
               <th className="px-3 py-2 font-medium" title="The fee if an outstanding membership is renewed as it is. Shown once per membership.">
                 Expected
               </th>
+              <th className="px-3 py-2 font-medium" title="Boats stored now or booked for later.">
+                Boats
+              </th>
               <th className="px-3 py-2 font-medium" title="Main contacts with a renewal outstanding. Tick to send a renewal reminder.">
                 Remind
               </th>
@@ -371,6 +378,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                     )}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">{expected !== null ? pounds(expected) : ""}</td>
+                  <td className="px-3 py-2">{boatCount.get(p.id) ?? ""}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {remindable.has(p.id) && (
                       <label className="flex items-center gap-2">

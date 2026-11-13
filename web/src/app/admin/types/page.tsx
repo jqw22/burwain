@@ -3,7 +3,7 @@ import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { meWithRole, pounds } from "@/lib/me";
 import { typeDates, ukToday, yearLater } from "@/lib/quote";
-import { copyPeriod, copyType, saveType, setActive } from "./actions";
+import { copyPeriod, copyType, saveStoragePrices, saveType, setActive } from "./actions";
 
 type MembershipType = {
   id: string;
@@ -37,6 +37,7 @@ const SAVED: Record<string, string> = {
   copied: "Copied with the dates a year later. Check the details and price below, then save.",
   copiedall: "Membership types copied with the dates a year later. Check the prices, and make inactive any you don't want.",
   deactivated: "Membership type is now inactive. Existing memberships aren't affected.",
+  storage: "Boat storage prices saved. They apply to boats added from now on.",
 };
 const ERRORS: Record<string, string> = {
   admin: "Only club admins can change membership types.",
@@ -50,6 +51,7 @@ const ERRORS: Record<string, string> = {
   copy: "We couldn't copy that. There may already be a copy starting a year later.",
   dates: "Please give a start date and an end date, with the end date on or after the start date.",
   save: "We couldn't save that. Please try again.",
+  storage: "Please enter both boat storage prices in pounds, for example 35 or 35.50.",
 };
 
 const select = "mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2";
@@ -177,6 +179,9 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
     .order("sort_order")
     .order("name");
   const types = (data ?? []) as MembershipType[];
+  const { data: storageData } = await supabase.from("boat_storage_options").select("id, members_rate, price_pence");
+  const storage = (storageData ?? []) as { id: string; members_rate: boolean; price_pence: number }[];
+  const storagePrice = (members: boolean) => storage.find((o) => o.members_rate === members)?.price_pence ?? 0;
   const today = ukToday();
   const current = types.filter((t) => t.is_open && t.ends_on >= today);
   const inactive = types.filter((t) => !t.is_open && t.ends_on >= today);
@@ -321,6 +326,28 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
             );
           })}
         </div>
+      </Card>
+
+      <Card title="Boat storage prices" id="storage">
+        <form action={saveStoragePrices} className="grid gap-4 sm:grid-cols-3">
+          <Field
+            label="Members rate (£)"
+            name="members_price"
+            required
+            defaultValue={(storagePrice(true) / 100).toFixed(2).replace(/\.00$/, "")}
+            hint="Per sailing dinghy, including road trailer. Members add boats when they renew or join."
+          />
+          <Field
+            label="Non-members rate (£)"
+            name="non_members_price"
+            required
+            defaultValue={(storagePrice(false) / 100).toFixed(2).replace(/\.00$/, "")}
+            hint="Charged by an admin to someone who didn't renew but left their boat at the club."
+          />
+          <div className="flex items-end">
+            <SaveButton pendingText="Saving…">Save storage prices</SaveButton>
+          </div>
+        </form>
       </Card>
 
       <Card title={`Inactive (${inactive.length})`}>

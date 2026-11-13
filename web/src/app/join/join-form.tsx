@@ -3,6 +3,8 @@
 import { useActionState, useState } from "react";
 import { Card, SaveButton } from "@/components/fields";
 import { PersonFields, addButton } from "@/components/person-fields";
+import { BoatFields } from "@/components/boat-fields";
+import { MAX_BOATS, type Boat } from "@/lib/boats";
 import { typeDates } from "@/lib/quote";
 import { submitApplication, type JoinState } from "./actions";
 
@@ -32,7 +34,7 @@ function pounds(pence: number) {
   return `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
 }
 
-export function JoinForm({ options }: { options: JoinOption[] }) {
+export function JoinForm({ options, boatPrice }: { options: JoinOption[]; boatPrice: number }) {
   const [state, action] = useActionState<JoinState, FormData>(submitApplication, {});
   const v = state.values ?? {};
   const [typeId, setTypeId] = useState(v.type_id ?? "");
@@ -41,6 +43,8 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
   // Show each type's dates in the list when they don't all run for the same dates.
   const mixed = new Set(options.map((o) => `${o.starts_on}|${o.ends_on}`)).size > 1;
   const people = chosen?.cover === "dual" ? 2 : chosen?.cover === "family" ? Math.min(1 + extra, MAX_FAMILY) : 1;
+  const [boats, setBoats] = useState<Boat[]>([]);
+  const total = chosen ? chosen.price_pence + boats.length * boatPrice : 0;
 
   if (state.done) {
     return (
@@ -49,7 +53,7 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
           <div className="space-y-3 text-slate-800" role="status">
             <p>
               Thanks{state.done.name ? `, ${state.done.name}` : ""}. We&apos;ve received your application for{" "}
-              <strong>{state.done.type}</strong> ({state.done.year}), {state.done.price}.
+              <strong>{state.done.type}</strong> ({state.done.year}).
             </p>
             <p>
               The membership secretary will check it and email {state.done.email || "you"}. Once you&apos;re accepted you
@@ -84,7 +88,7 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
       <input type="hidden" name="people_count" value={people} />
       <input type="hidden" name="type_label" value={chosen?.type_name ?? ""} />
       <input type="hidden" name="year_label" value={chosen ? typeDates(chosen) : ""} />
-      <input type="hidden" name="price_label" value={chosen ? pounds(chosen.price_pence) : ""} />
+      <input type="hidden" name="price_label" value={chosen ? pounds(total) : ""} />
       {/* Hidden from people; bots fill it in. */}
       <div aria-hidden="true" className="absolute left-[-9999px] h-px w-px overflow-hidden">
         <label>
@@ -145,6 +149,12 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
       )}
 
       {chosen && (
+        <Card title="Boat storage">
+          <BoatFields boats={boats} onChange={setBoats} max={MAX_BOATS} price={boatPrice} />
+        </Card>
+      )}
+
+      {chosen && (
         <div className="space-y-3">
           <p className="text-sm text-slate-600">
             The club holds your details to run your membership, in line with UK data protection law. Medical
@@ -171,7 +181,7 @@ export function JoinForm({ options }: { options: JoinOption[] }) {
               </span>
             </label>
           </fieldset>
-          <SaveButton pendingText="Processing…">Pay {pounds(chosen.price_pence)} and send application</SaveButton>
+          <SaveButton pendingText="Processing…">Pay {pounds(total)} and send application</SaveButton>
         </div>
       )}
     </form>
