@@ -93,7 +93,12 @@ export async function adminSavePreferences(form: FormData) {
   const id = String(form.get("id"));
   if (!allowed) back(id, "error", "preferences", "preferences", true);
   const consent = form.get("news_consent") === "on";
-  const { data: before } = await supabase.from("people").select("news_consent").eq("id", id).single<{ news_consent: boolean }>();
+  const groupEmails = form.get("group_emails") === "on";
+  const { data: before } = await supabase
+    .from("people")
+    .select("news_consent, emails_unsubscribed_at")
+    .eq("id", id)
+    .single<{ news_consent: boolean; emails_unsubscribed_at: string | null }>();
   const { error } = await supabase
     .from("people")
     .update({
@@ -101,6 +106,8 @@ export async function adminSavePreferences(form: FormData) {
       // Record when consent was given (admins bypass the trigger that normally does this).
       ...(before?.news_consent !== consent ? { news_consent_at: consent ? new Date().toISOString() : null } : {}),
       directory_opt_out: form.get("directory_listed") !== "on",
+      // Unsubscribed from group emails (keeps the original date if they were already).
+      emails_unsubscribed_at: groupEmails ? null : (before?.emails_unsubscribed_at ?? new Date().toISOString()),
     })
     .eq("id", id);
   back(id, error ? "error" : "saved", "preferences", "preferences", Boolean(error));

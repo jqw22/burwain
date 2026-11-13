@@ -35,14 +35,60 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// Plain text to simple HTML: paragraphs on blank lines, line breaks kept, web addresses made into links.
+// Group emails (Communications admin > Send email) only know who the person is, not their membership.
+export const GROUP_PLACEHOLDERS = PLACEHOLDERS.filter((p) => p.key === "first_name" || p.key === "last_name");
+
+export function unknownGroupPlaceholders(text: string) {
+  const known = new Set<string>(GROUP_PLACEHOLDERS.map((p) => p.key));
+  return [...new Set([...text.matchAll(PATTERN)].map((m) => m[1]))].filter((k) => !known.has(k));
+}
+
+// An image in an email is written in the text as [image: https://...] on its own line.
+export const IMAGE_PATTERN = /\[image: (https?:\/\/[^\s\]]+)\]/g;
+export const imageMarker = (url: string) => `[image: ${url}]`;
+
+function linkify(escaped: string) {
+  return escaped.replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, (url) => `<a href="${url}">${url}</a>`).replace(/\n/g, "<br>");
+}
+
+const imgTag = (url: string) =>
+  `<img src="${escapeHtml(url)}" alt="" style="display: block; max-width: 100%; height: auto; border: 0; margin: 0 auto">`;
+
+// Plain text to simple HTML: paragraphs on blank lines, line breaks kept, web addresses made into links,
+// and [image: ...] lines shown as pictures.
 export function textToHtml(text: string) {
   const paragraphs = text.trim().split(/\n{2,}/).map((p) =>
-    escapeHtml(p)
-      .replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, (url) => `<a href="${url}">${url}</a>`)
-      .replace(/\n/g, "<br>"),
+    p
+      .split(IMAGE_PATTERN)
+      // split() with a capture group gives text, url, text, url, ...
+      .map((part, i) => (i % 2 === 1 ? imgTag(part) : linkify(escapeHtml(part))))
+      .join(""),
   );
   return `<div style="font-family: Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #1e293b">${paragraphs
     .map((p) => `<p style="margin: 0 0 1em">${p}</p>`)
     .join("")}</div>`;
+}
+
+// The plain-text copy of an email leaves images out.
+export function textWithoutImages(text: string) {
+  return text.replace(IMAGE_PATTERN, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+const logoTag = (url: string) =>
+  `<div style="text-align: center; margin: 0 0 24px"><img src="${escapeHtml(url)}" alt="Burwain" style="max-width: 200px; max-height: 120px; height: auto; border: 0"></div>`;
+
+// The club logo (if there is one) above an email's message.
+export function withLogo(html: string, logoUrl: string | null | undefined) {
+  return logoUrl ? `<div style="max-width: 640px; margin: 0 auto">${logoTag(logoUrl)}${html}</div>` : html;
+}
+
+// A group email: the club logo (if there is one) at the top, the message, then the unsubscribe footer.
+export function groupEmailHtml(body: string, opts: { logoUrl?: string | null; unsubscribeUrl: string }) {
+  const logo = opts.logoUrl ? logoTag(opts.logoUrl) : "";
+  const footer = `<p style="margin: 32px 0 0; padding-top: 12px; border-top: 1px solid #e2e8f0; font-family: Arial, sans-serif; font-size: 12px; color: #64748b">You're getting this email because you're a member of Burwain or on the club's email list. <a href="${escapeHtml(opts.unsubscribeUrl)}" style="color: #64748b">Unsubscribe from these emails</a>.</p>`;
+  return `<div style="max-width: 640px; margin: 0 auto">${logo}${textToHtml(body)}${footer}</div>`;
+}
+
+export function groupEmailText(body: string, unsubscribeUrl: string) {
+  return `${textWithoutImages(body)}\n\n--\nTo stop getting these emails, unsubscribe here: ${unsubscribeUrl}`;
 }

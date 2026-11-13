@@ -6,7 +6,7 @@ export function emailSendingEnabled() {
   return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 }
 
-export type OutgoingEmail = { to: string; subject: string; text: string; html: string };
+export type OutgoingEmail = { to: string; subject: string; text: string; html: string; headers?: Record<string, string> };
 export type SendResult = { ok: true } | { ok: false; error: string };
 
 const BATCH = 100; // Resend's batch endpoint takes up to 100 emails per call.
@@ -29,6 +29,7 @@ export async function sendEmails(emails: OutgoingEmail[]): Promise<SendResult[]>
             subject: e.subject,
             text: e.text,
             html: e.html,
+            ...(e.headers ? { headers: e.headers } : {}),
             ...(process.env.EMAIL_REPLY_TO ? { reply_to: process.env.EMAIL_REPLY_TO } : {}),
           })),
         ),
