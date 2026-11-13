@@ -247,66 +247,6 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
         )}
       </Card>
 
-      <Card id="boats" title="Boat storage" action={edit("boats", "boat storage")}>
-        {messages("boats")}
-        {boats.length === 0 ? (
-          <p className="text-sm text-slate-600">No boats stored.</p>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {boats.map((b) => (
-              <li key={b.id} className="flex items-center justify-between gap-4 py-2">
-                <span>
-                  <strong>
-                    {b.boat_class} {b.sail_number}
-                  </strong>
-                  : {pounds(b.price_pence)}
-                  {b.boat_storage_options?.members_rate === false && " (non-members rate)"}, {STATUS_LABEL[b.status] ?? b.status}
-                  <span className="block text-sm text-slate-500">{typeDates(b)}</span>
-                </span>
-                {editing === "boats" && b.status === "awaiting_payment" && (
-                  <form action={adminRemoveBoat}>
-                    <input type="hidden" name="id" value={b.id} />
-                    <input type="hidden" name="person_id" value={m.id} />
-                    <SaveButton variant="link" pendingText="Removing…" aria-label={`Remove ${b.boat_class} ${b.sail_number}`}>
-                      Remove
-                    </SaveButton>
-                  </form>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {editing === "boats" && (
-          <form action={adminAddBoat} aria-label="Add a boat" className="mt-4 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
-            <input type="hidden" name="id" value={m.id} />
-            <Field label="Class" name="boat_class" required hint="For example Laser" />
-            <Field label="Sail number" name="sail_number" required />
-            <label className="block sm:col-span-2">
-              <span className="text-sm font-medium">Rate</span>
-              <select name="rate" defaultValue="members" className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2">
-                <option value="members">Members rate: {pounds(ratePrice(true))}</option>
-                <option value="non_members">Non-members rate (didn&apos;t renew but left their boat): {pounds(ratePrice(false))}</option>
-              </select>
-            </label>
-            <Field label="Stored from" name="starts_on" type="date" required defaultValue={`${thisYear}-01-01`} />
-            <Field label="Stored until" name="ends_on" type="date" required defaultValue={`${thisYear}-12-31`} />
-            <label className="block">
-              <span className="text-sm font-medium">Payment received</span>
-              <select name="payment_method" defaultValue="" className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2">
-                <option value="">Not yet (awaiting payment)</option>
-                <option value="cash">Cash</option>
-                <option value="cheque">Cheque</option>
-                <option value="bank_transfer">Bank transfer</option>
-              </select>
-            </label>
-            <Field label="Date received" name="paid_on" type="date" defaultValue={ukToday()} />
-            <FormButtons base={base} section="boats" cancelText="Done" wide>
-              Add boat
-            </FormButtons>
-          </form>
-        )}
-      </Card>
-
       <Card id="contact" title="Contact details" action={edit("contact", "contact details")}>
         {messages("contact")}
         {editing === "contact" ? (
@@ -391,6 +331,66 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
               )
             )}
           </>
+        )}
+      </Card>
+
+      <Card id="boats" title="Boat storage" action={edit("boats", "boat storage")}>
+        {messages("boats")}
+        {boats.length === 0 ? (
+          <p className="text-sm text-slate-600">No boats stored.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {boats.map((b) => (
+              <li key={b.id} className="flex items-center justify-between gap-4 py-2">
+                <span>
+                  <strong>
+                    {b.boat_class} {b.sail_number}
+                  </strong>
+                  : {pounds(b.price_pence)}
+                  {b.boat_storage_options?.members_rate === false && " (non-members rate)"}, {STATUS_LABEL[b.status] ?? b.status}
+                  <span className="block text-sm text-slate-500">{typeDates(b)}</span>
+                </span>
+                {editing === "boats" && b.status === "awaiting_payment" && (
+                  <form action={adminRemoveBoat}>
+                    <input type="hidden" name="id" value={b.id} />
+                    <input type="hidden" name="person_id" value={m.id} />
+                    <SaveButton variant="link" pendingText="Removing…" aria-label={`Remove ${b.boat_class} ${b.sail_number}`}>
+                      Remove
+                    </SaveButton>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {editing === "boats" && (
+          <form action={adminAddBoat} aria-label="Add a boat" className="mt-4 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
+            <input type="hidden" name="id" value={m.id} />
+            <Field label="Class" name="boat_class" required hint="For example Laser" />
+            <Field label="Sail number" name="sail_number" required />
+            <label className="block sm:col-span-2">
+              <span className="text-sm font-medium">Rate</span>
+              <select name="rate" defaultValue="members" className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2">
+                <option value="members">Members rate: {pounds(ratePrice(true))}</option>
+                <option value="non_members">Non-members rate (didn&apos;t renew but left their boat): {pounds(ratePrice(false))}</option>
+              </select>
+            </label>
+            <Field label="Stored from" name="starts_on" type="date" required defaultValue={`${thisYear}-01-01`} />
+            <Field label="Stored until" name="ends_on" type="date" required defaultValue={`${thisYear}-12-31`} />
+            <label className="block">
+              <span className="text-sm font-medium">Payment received</span>
+              <select name="payment_method" defaultValue="" className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2">
+                <option value="">Not yet (awaiting payment)</option>
+                <option value="cash">Cash</option>
+                <option value="cheque">Cheque</option>
+                <option value="bank_transfer">Bank transfer</option>
+              </select>
+            </label>
+            <Field label="Date received" name="paid_on" type="date" defaultValue={ukToday()} />
+            <FormButtons base={base} section="boats" cancelText="Done" wide>
+              Add boat
+            </FormButtons>
+          </form>
         )}
       </Card>
 
