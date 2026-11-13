@@ -18,6 +18,7 @@ const SECTIONS = {
   import: "membership",
   send: "comms",
   emails: "comms",
+  log: "comms",
   contacts: "comms",
   memberships: "finance",
   transactions: "finance",
@@ -31,6 +32,7 @@ const LINKS = [
   { key: "send", href: "/admin/emails/send", label: "Send email" },
   { key: "contacts", href: "/admin/contacts/new", label: "Add contact" },
   { key: "emails", href: "/admin/emails", label: "Templates" },
+  { key: "log", href: "/admin/emails/log", label: "Email log" },
   { key: "transactions", href: "/admin/transactions", label: "Transactions" },
   { key: "categories", href: "/admin/categories", label: "Categories" },
 ] as const;

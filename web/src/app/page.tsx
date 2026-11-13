@@ -85,6 +85,11 @@ export default async function AdminHomePage() {
                 Templates
               </Link>
             </li>
+            <li>
+              <Link href="/admin/emails/log" className="text-sky-800 underline">
+                Email log
+              </Link>
+            </li>
           </ul>
         </section>
       )}
