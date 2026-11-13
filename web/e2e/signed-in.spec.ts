@@ -349,7 +349,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
-  expect(await links("Communications admin")).toEqual(["Send email", "Add contact", "Templates"]);
+  expect(await links("Communications admin")).toEqual(["Send email", "Add contact", "Templates", "Email log"]);
   expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
@@ -945,7 +945,7 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   await page.getByRole("link", { name: "Add contact", exact: true }).click();
   // It sits under Communications, with the Communications tabs.
   await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link")).toHaveText(["Send email", "Add contact", "Templates"]);
+  await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link")).toHaveText(["Send email", "Add contact", "Templates", "Email log"]);
   // Cancel goes back to the Admin page.
   await expect(page.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/");
   const form = page.getByRole("form", { name: "Add a contact" });
@@ -1288,6 +1288,14 @@ test("an admin sends a group email with a logo and a picture, and a contact unsu
   expect(toGail.headers?.["List-Unsubscribe"]).toMatch(/\/unsubscribe\?t=/);
   expect(mailbox.some((e) => e.to[0] === leadEmail && e.text.startsWith("Hello Sam,"))).toBe(true);
 
+  // The Email log lists it; opening it shows the message and who got it.
+  await page.getByRole("navigation", { name: "Communications admin" }).getByRole("link", { name: "Email log" }).click();
+  await expect(page.getByRole("row", { name: `Club news ${run}` })).toContainText("Group email");
+  await page.getByRole("link", { name: `Club news ${run}` }).click();
+  await expect(page.getByRole("region", { name: "Sent to (2)" }).getByRole("row", { name: `Gail Group${run}` })).toContainText("Sent");
+  await expect(page.getByRole("region", { name: `Club news ${run}` })).toContainText("The clubhouse opens on Saturday.");
+  await page.goto("/admin/emails/send");
+
   // Images can be opened without logging in, as email apps do.
   const imageUrl = toGail.html.match(/<img src="(http[^"]+\/email-images\/[^"]+)"/)![1].replace(/^https?:\/\/[^/]+/, "http://localhost:3100");
   const image = await fetch(imageUrl);
@@ -1308,9 +1316,11 @@ test("an admin sends a group email with a logo and a picture, and a contact unsu
   await expect(page.getByRole("row", { name: `Gail Group${run}` })).toContainText("Unsubscribed");
 });
 
-test("a member can't open the group email page", async ({ browser }) => {
+test("a member can't open the group email page or the email log", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/admin/emails/send");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+  await page.goto("/admin/emails/log");
   await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 
