@@ -1092,7 +1092,7 @@ test("an admin ticks members on the Members list, picks a reminder, previews, te
   await page.getByRole("button", { name: "Send reminder…" }).click();
 
   await expect(page.getByRole("heading", { name: "Send renewal reminders" })).toBeVisible();
-  await page.getByLabel("Reminder").selectOption({ label: "Renewal reminder" });
+  await page.getByRole("combobox", { name: "Reminder" }).selectOption({ label: "Renewal reminder" });
   await page.getByRole("button", { name: "Use this reminder" }).click();
   const selected = page.getByRole("region", { name: /^2\. Members selected/ });
   await expect(selected.getByRole("row", { name: `Rita Remind${run}` })).toContainText("£185");
@@ -1126,7 +1126,7 @@ test("an admin ticks members on the Members list, picks a reminder, previews, te
   await row("Rita").getByRole("checkbox").check();
   await row("Quinn").getByRole("checkbox").check();
   await page.getByRole("button", { name: "Send reminder…" }).click();
-  await page.getByLabel("Reminder").selectOption({ label: `Final reminder ${run}` });
+  await page.getByRole("combobox", { name: "Reminder" }).selectOption({ label: `Final reminder ${run}` });
   await page.getByRole("button", { name: "Use this reminder" }).click();
   await expect(page.getByRole("region", { name: /^2\. Members selected/ }).getByRole("row", { name: `Rita Remind${run}` })).toContainText("Not yet");
   await expect(page.getByRole("region", { name: /^3\. Preview/ })).toContainText("final reminder");
