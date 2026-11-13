@@ -13,6 +13,7 @@ const ERRORS: Record<string, string> = {
   date: "Please give the date of the transaction.",
   description: "Please say what the transaction was for.",
   amount: "Please give an amount in pounds, more than £0, for example 125.50.",
+  nocategory: "Please choose a category.",
   category: "That category is for money going the other way. Please pick another.",
   inactive: "That category is no longer in use. Please pick another.",
   save: "We couldn't save that transaction. Please check the details and try again.",
