@@ -371,9 +371,9 @@ test("an admin finds a member, edits them and views their medical details", asyn
   // The family stays together: Sam (main contact) first, then Alex and Robin indented under them.
   const names = (await page.getByRole("row").allTextContents()).slice(1).map((t) => t.match(/Tester\w*, (Sam|Alex|Robin)/)?.[1]);
   expect(names).toEqual(["Sam", "Alex", "Robin"]);
-  // Type, Status, Renewal and Expected columns; no Payment, Postcode, Email or Mobile.
+  // Type, Status, Renewal, Expected and Remind columns; no Payment, Postcode, Email or Mobile.
   const headers = (await page.getByRole("columnheader").allTextContents()).map((t) => t.replace("▲", "").trim());
-  expect(headers).toEqual(["Name", "Type", "Status", "Renewal", "Expected"]);
+  expect(headers).toEqual(["Name", "Type", "Status", "Renewal", "Expected", "Remind"]);
   const sam = page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) });
   await expect(sam.getByRole("cell").nth(1)).toHaveText("Family");
   await expect(sam.getByRole("cell").nth(2)).toHaveText("Active");
