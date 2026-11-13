@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { renewalYear } from "../reminders/render";
+import { renewalYear } from "../members/remind/render";
 import { headers } from "next/headers";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice } from "@/components/fields";
@@ -20,7 +20,6 @@ const ERRORS: Record<string, string> = {
   body: "Please write the message.",
   placeholder: "Some placeholders weren't recognised. Check the spelling against the list of placeholders.",
   duplicate: "Another template already has that name. Please choose a different one.",
-  renewal: "Another template is already the renewal reminder. Change that one to General first, or edit it instead.",
   save: "We couldn't save that. Please try again.",
 };
 

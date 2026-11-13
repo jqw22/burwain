@@ -329,7 +329,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible();
   await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
-  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Renewal reminders", "Import", "Public join form"]);
+  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Email templates", "Add contact"]);
   expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories"]);
 
@@ -337,7 +337,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
   const bar = page.getByRole("navigation", { name: "Membership admin" });
   await expect(page.getByRole("heading", { name: "Membership", exact: true })).toBeVisible();
-  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Renewal reminders", "Import"]);
+  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Import"]);
   // The heading row links between the three admin areas; the one you're in is the heading.
   const areas = page.getByRole("navigation", { name: "Admin areas" });
   await expect(areas.getByRole("link")).toHaveText(["Membership", "Communications", "Finance"]);
@@ -384,9 +384,9 @@ test("an admin finds a member, edits them and views their medical details", asyn
   // The family stays together: Sam (main contact) first, then Alex and Robin indented under them.
   const names = (await page.getByRole("row").allTextContents()).slice(1).map((t) => t.match(/Tester\w*, (Sam|Alex|Robin)/)?.[1]);
   expect(names).toEqual(["Sam", "Alex", "Robin"]);
-  // Type, Status, Renewal and Expected columns; no Payment, Postcode, Email or Mobile.
+  // Type, Status, Renewal, Expected and Remind columns; no Payment, Postcode, Email or Mobile.
   const headers = (await page.getByRole("columnheader").allTextContents()).map((t) => t.replace("▲", "").trim());
-  expect(headers).toEqual(["Name", "Type", "Status", "Renewal", "Expected"]);
+  expect(headers).toEqual(["Name", "Type", "Status", "Renewal", "Expected", "Remind"]);
   const sam = page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) });
   await expect(sam.getByRole("cell").nth(1)).toHaveText("Family");
   await expect(sam.getByRole("cell").nth(2)).toHaveText("Active");
@@ -1064,22 +1064,16 @@ test("an admin edits the renewal reminder email with a live preview, and adds an
   await expect(page.getByText("Email template saved.")).toBeVisible();
   await expect(page.getByRole("row", { name: "Renewal reminder" })).toContainText(`Renew for {renewal_year}, {first_name} ${run}`);
 
-  // Only one template can be the renewal reminder.
+  // There can be several renewal reminders, e.g. a final one.
   await page.getByRole("link", { name: "Add an email template" }).click();
   const add = page.getByRole("form", { name: "Add an email template" });
-  await add.getByLabel("Template name").fill(`Open day ${run}`);
+  await add.getByLabel("Template name").fill(`Final reminder ${run}`);
   await add.getByLabel("Used for").selectOption("renewal_reminder");
-  await add.getByLabel("Subject").fill("Open day");
-  await add.getByLabel("Message").fill("Hello {first_name}, come along!");
+  await add.getByLabel("Subject").fill("Last chance to renew, {first_name}");
+  await add.getByLabel("Message").fill("Hello {first_name}, this is your final reminder: {renewal_link}");
   await add.getByRole("button", { name: "Add template" }).click();
-  await expect(page.getByText("Another template is already the renewal reminder.")).toBeVisible();
-  const retry = page.getByRole("form", { name: "Add an email template" });
-  await retry.getByLabel("Template name").fill(`Open day ${run}`);
-  await retry.getByLabel("Subject").fill("Open day");
-  await retry.getByLabel("Message").fill("Hello {first_name}, come along!");
-  await retry.getByRole("button", { name: "Add template" }).click();
   await expect(page.getByText("Email template added.")).toBeVisible();
-  await expect(page.getByRole("row", { name: `Open day ${run}` })).toContainText("General");
+  await expect(page.getByRole("row", { name: `Final reminder ${run}` })).toContainText("Renewal reminder");
   await shot(page, "admin-email-templates");
 });
 
@@ -1089,72 +1083,78 @@ test("a member can't open the email templates page", async ({ browser }) => {
   await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 
-test("an admin previews, tests and sends renewal reminders, and a daily limit is reported", async ({ browser }) => {
-  // Rita has a 2026 membership and hasn't renewed; Quinn's email will hit the pretend daily limit.
-  for (const [first, email] of [["Rita", `remind-${run}@example.test`], ["Quinn", `quota-${run}@example.test`]]) {
+test("an admin ticks members on the Members list, picks a reminder, previews, tests and sends it", async ({ browser }) => {
+  // Rita and Quinn have a membership ending soon and haven't renewed; Quinn's email will hit the pretend daily limit.
+  // Nell has no email address, which the send screen flags.
+  for (const [first, email] of [["Rita", `'remind-${run}@example.test'`], ["Quinn", `'quota-${run}@example.test'`], ["Nell", "null"]]) {
     sql(`
-      with p as (insert into people (first_name, last_name, date_of_birth, email) values ('${first}', 'Remind${run}', '1985-03-03', '${email}') returning id),
+      with p as (insert into people (first_name, last_name, date_of_birth, email) values ('${first}', 'Remind${run}', '1985-03-03', ${email}) returning id),
       m as (insert into memberships (club_year_id, membership_type_id, payer_person_id, status, price_pence)
             select current_club_year_id(), (select id from membership_types where code = 'IS' and current_date between starts_on and ends_on), id, 'active', 18500 from p returning id, payer_person_id)
       insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
     `);
   }
   const page = await adminPage(browser);
-  // Found in the Membership admin box on Home.
-  await page.goto("/");
-  await page.getByRole("link", { name: "Renewal reminders", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Membership", exact: true })).toBeVisible();
-  const rita = page.getByRole("row", { name: `Rita Remind${run}` });
-  await expect(rita).toContainText("Individual Sailing");
-  await expect(rita).toContainText("£185");
-  await expect(rita).toContainText("Not yet");
+  await page.goto(`/admin/members?q=Remind${run}`);
+  const row = (first: string) => page.getByRole("row").filter({ hasText: `Remind${run}, ${first}` });
+  // Nothing is ticked for you.
+  for (const first of ["Rita", "Quinn", "Nell"]) await expect(row(first).getByRole("checkbox", { name: `Remind ${first} Remind${run}` })).not.toBeChecked();
+  await row("Rita").getByRole("checkbox").check();
+  await row("Nell").getByRole("checkbox").check();
+  await shot(page, "members-remind-ticks");
+  await page.getByRole("button", { name: "Send reminder…" }).click();
 
-  await rita.getByRole("link", { name: `Preview email for Rita Remind${run}` }).click();
-  const preview = page.getByRole("region", { name: `Preview: Rita Remind${run}` });
+  await expect(page.getByRole("heading", { name: "Send renewal reminders" })).toBeVisible();
+  await page.getByRole("combobox", { name: "Reminder" }).selectOption({ label: "Renewal reminder" });
+  await page.getByRole("button", { name: "Use this reminder" }).click();
+  const selected = page.getByRole("region", { name: /^2\. Members selected/ });
+  await expect(selected.getByRole("row", { name: `Rita Remind${run}` })).toContainText("£185");
+  await expect(selected.getByRole("row", { name: `Rita Remind${run}` })).toContainText("Not yet");
+  await expect(selected.getByRole("row", { name: `Nell Remind${run}` })).toContainText("No email address");
+  await expect(selected).not.toContainText("Quinn");
+  const preview = page.getByRole("region", { name: `3. Preview: Rita Remind${run}` });
   await expect(preview).toContainText("Hello Rita,");
   await expect(preview).toContainText("/profile#renew");
-  await shot(page, "admin-reminders");
+  await shot(page, "remind-send-screen");
 
   await preview.getByRole("button", { name: "Send this as a test to me" }).click();
   await expect(page.getByText(`Test email sent to ${adminEmail}.`)).toBeVisible();
-  const test1 = mailbox.find((e) => e.to[0] === adminEmail);
+  const test1 = mailbox.find((e) => e.to[0] === adminEmail && e.text.includes("Hello Rita,"));
   expect(test1?.subject).toMatch(/^\[Test\] /);
-  expect(test1?.text).toContain("Hello Rita,");
   expect(test1?.from).toBe("Burwain Test <club@example.test>");
 
-  const form = page.getByRole("form", { name: "Send renewal reminders" });
-  await form.getByRole("button", { name: "Untick everyone" }).click();
-  await form.getByRole("checkbox", { name: `Send to Rita Remind${run}` }).check();
-  await form.getByRole("button", { name: "Send to 1 member" }).click();
+  // Nell has no email, so only Rita is sent it.
+  await page.getByRole("button", { name: "Send to 1 member" }).click();
   await expect(page.getByRole("alertdialog", { name: "Confirm sending" })).toContainText("You're about to email 1 member.");
-  await shot(page, "admin-reminders-confirm");
   await page.getByRole("button", { name: "Yes, send now" }).click();
   await expect(page.getByText("Sent 1 renewal reminder.")).toBeVisible();
   const sent = mailbox.find((e) => e.to[0] === `remind-${run}@example.test`);
   expect(sent?.html).toContain('<a href="http');
   expect(sent?.subject).not.toContain("{");
-  // Already reminded, so not ticked again.
-  await expect(page.getByRole("checkbox", { name: `Send to Rita Remind${run}` })).not.toBeChecked();
-  await expect(page.getByRole("row", { name: `Rita Remind${run}` })).not.toContainText("Not yet");
-  expect(
-    sql(`select r.status from email_recipients r join people p on p.id = r.person_id where p.email = 'remind-${run}@example.test'`),
-  ).toBe("sent");
+  await expect(page.getByRole("region", { name: /^2\. Members selected/ }).getByRole("row", { name: `Rita Remind${run}` })).toContainText("Already sent");
 
-  // Hitting the daily limit is reported, and nothing is marked as sent.
-  const again = page.getByRole("form", { name: "Send renewal reminders" });
-  await again.getByRole("button", { name: "Untick everyone" }).click();
-  await again.getByRole("checkbox", { name: `Send to Quinn Remind${run}` }).check();
-  await again.getByRole("button", { name: "Send to 1 member" }).click();
+  // The Members list shows she was reminded; a different reminder template shows she hasn't had that one.
+  await page.goto(`/admin/members?q=Remind${run}`);
+  await expect(row("Rita")).toContainText("Reminded");
+  await row("Rita").getByRole("checkbox").check();
+  await row("Quinn").getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Send reminder…" }).click();
+  await page.getByRole("combobox", { name: "Reminder" }).selectOption({ label: `Final reminder ${run}` });
+  await page.getByRole("button", { name: "Use this reminder" }).click();
+  await expect(page.getByRole("region", { name: /^2\. Members selected/ }).getByRole("row", { name: `Rita Remind${run}` })).toContainText("Not yet");
+  await expect(page.getByRole("region", { name: /^3\. Preview/ })).toContainText("final reminder");
+
+  // Hitting the daily limit is reported (Quinn's address is refused, so the whole batch is).
+  await page.getByRole("button", { name: "Send to 2 members" }).click();
   await page.getByRole("button", { name: "Yes, send now" }).click();
-  const limit = page.getByRole("alert").filter({ hasText: "Sent 0 of 1." });
+  const limit = page.getByRole("alert").filter({ hasText: "Sent 0 of 2." });
   await expect(limit).toBeVisible();
   await expect(limit).toContainText("sending limit was reached");
-  await expect(page.getByRole("row", { name: `Quinn Remind${run}` })).toContainText("Not yet");
 });
 
-test("a member can't open the renewal reminders page", async ({ browser }) => {
+test("a member can't open the send reminders page", async ({ browser }) => {
   const page = await leadPage(browser);
-  await page.goto("/admin/reminders");
+  await page.goto("/admin/members/remind");
   await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
 });
 

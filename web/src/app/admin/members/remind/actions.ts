@@ -12,41 +12,48 @@ async function render(t: Template, r: Recipient, yearLabel: string, to: string, 
   return { to, subject: prefix + fillPlaceholders(t.subject, values), text, html: textToHtml(text) };
 }
 
-function back(query: string): never {
-  redirect(`/admin/reminders?${query}`);
+// Back to the send screen, keeping the same members and template selected.
+function back(form: FormData, query: string): never {
+  const keep = new URLSearchParams();
+  for (const id of form.getAll("p")) keep.append("p", String(id));
+  if (form.get("template")) keep.set("template", String(form.get("template")));
+  if (form.get("preview")) keep.set("preview", String(form.get("preview")));
+  redirect(`/admin/members/remind?${keep}&${query}`);
 }
 
 // Everything a send needs, checked again on the server.
-async function load() {
+async function load(form: FormData) {
   const { supabase, personId, allowed } = await meWithRole("admin");
-  if (!allowed) back("error=admin");
+  if (!allowed) back(form, "error=admin");
   const year = await renewalYear(supabase);
-  if (!year) back("error=closed");
+  if (!year) back(form, "error=closed");
   const { data: template } = await supabase
     .from("email_templates")
     .select("id, subject, body")
     .eq("purpose", "renewal_reminder")
+    .eq("id", String(form.get("template") ?? ""))
     .maybeSingle();
-  if (!template) back("error=template");
-  const { data } = await supabase.rpc("renewal_reminder_recipients");
-  return { supabase, personId, year, template: template as Template, recipients: (data ?? []) as Recipient[] };
+  if (!template) back(form, "error=template");
+  const chosen = new Set(form.getAll("p").map(String));
+  const { data } = await supabase.rpc("renewal_reminder_recipients", { p_template_id: template.id });
+  const recipients = ((data ?? []) as Recipient[]).filter((r) => chosen.has(r.person_id));
+  return { supabase, personId, year, template: template as Template, recipients };
 }
 
 export async function sendTest(form: FormData) {
-  const { supabase, personId, year, template, recipients } = await load();
+  const { supabase, personId, year, template, recipients } = await load(form);
   const { data: me } = await supabase.from("people").select("email").eq("id", personId).single();
-  if (!me?.email) back("error=noemail");
+  if (!me?.email) back(form, "error=noemail");
   const example = recipients.find((r) => r.person_id === String(form.get("preview"))) ?? recipients[0];
-  if (!example) back("error=nobody");
+  if (!example) back(form, "error=nobody");
   const [result] = await sendEmails([await render(template, example, year.label, me.email, "[Test] ")]);
-  back(result.ok ? `saved=test&to=${encodeURIComponent(me.email)}` : `error=send&detail=${encodeURIComponent(result.error)}`);
+  back(form, result.ok ? `saved=test&to=${encodeURIComponent(me.email)}` : `error=send&detail=${encodeURIComponent(result.error)}`);
 }
 
 export async function sendReminders(form: FormData) {
-  const { supabase, personId, year, template, recipients } = await load();
-  const chosen = new Set(form.getAll("person").map(String));
-  const list = recipients.filter((r) => chosen.has(r.person_id) && r.email);
-  if (list.length === 0) back("error=choose");
+  const { supabase, personId, year, template, recipients } = await load(form);
+  const list = recipients.filter((r) => r.email);
+  if (list.length === 0) back(form, "error=nobody");
 
   const { data: campaign, error } = await supabase
     .from("email_campaigns")
@@ -61,7 +68,7 @@ export async function sendReminders(form: FormData) {
     })
     .select("id")
     .single();
-  if (error || !campaign) back("error=save");
+  if (error || !campaign) back(form, "error=save");
 
   const results = await sendEmails(await Promise.all(list.map((r) => render(template, r, year.label, r.email!))));
   const now = new Date().toISOString();
@@ -82,6 +89,7 @@ export async function sendReminders(form: FormData) {
   await supabase.from("email_campaigns").update({ sent_at: now, recipient_count: sent }).eq("id", campaign.id);
   const failed = results.find((r) => !r.ok);
   back(
+    form,
     failed
       ? `error=partial&sent=${sent}&total=${list.length}&detail=${encodeURIComponent(failed.ok ? "" : failed.error)}`
       : `saved=sent&sent=${sent}`,

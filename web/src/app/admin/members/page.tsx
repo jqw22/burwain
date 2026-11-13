@@ -97,6 +97,9 @@ function renewalOf(s: Summary, today: string, noticeDays: number): RenewalStatus
   return daysLeft > noticeDays ? "na" : "outstanding";
 }
 
+// "9 Nov" style date for when a reminder was sent.
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Europe/London" });
+
 // "Jan 2027" style label for when a membership starts.
 const month = (d: string | undefined) =>
   d ? new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }) : "";
@@ -124,7 +127,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
   if (q) query = query.or(`first_name.ilike.*${q}*,last_name.ilike.*${q}*,email.ilike.*${q}*`);
 
   const today = ukToday();
-  const [{ data: people }, { data: held }, { data: notice }, { data: types }] = await Promise.all([
+  const [{ data: people }, { data: held }, { data: notice }, { data: types }, { data: dueData }] = await Promise.all([
     query,
     supabase
       .from("membership_people")
@@ -132,7 +135,12 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       .neq("memberships.status", "cancelled"),
     supabase.rpc("renewal_notice_days"),
     supabase.from("membership_types").select("code, annual_price_pence, starts_on").eq("is_open", true),
+    // Main contacts with a renewal outstanding: the people a renewal reminder can be sent to.
+    supabase.rpc("renewal_reminder_recipients"),
   ]);
+  const remindable = new Map(
+    ((dueData ?? []) as { person_id: string; last_reminded_at: string | null }[]).map((d) => [d.person_id, d.last_reminded_at]),
+  );
   const openTypes = (types ?? []) as { code: string; annual_price_pence: number; starts_on: string }[];
   // Expected renewal fee: the full price of the next period's type with the same code (e.g. next year's
   // Family), or, if that hasn't been set up yet, the price of the type they have now.
@@ -231,7 +239,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
           </Link>
         </div>
       </div>
-      <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700" open>
+      <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
         <summary className="cursor-pointer font-medium text-slate-900">How status and renewal are worked out</summary>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <div>
@@ -297,6 +305,12 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
         Showing {rows.length} {rows.length === 1 ? "person" : "people"}
         {q && <> matching &ldquo;{q}&rdquo;</>}, sorted by {sort === "type" ? "membership type" : "name"}.
       </p>
+      <form id="remind" action="/admin/members/remind" className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-600">To send renewal reminders, tick the members in the Remind column, then press Send reminder.</p>
+        <button type="submit" className="rounded border border-slate-400 bg-white px-4 py-2 font-medium text-slate-800 hover:border-sky-800 hover:bg-sky-50">
+          Send reminder…
+        </button>
+      </form>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-600">
@@ -307,6 +321,9 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
               <th className="px-3 py-2 font-medium">Renewal</th>
               <th className="px-3 py-2 font-medium" title="The fee if an outstanding membership is renewed as it is. Shown once per membership.">
                 Expected
+              </th>
+              <th className="px-3 py-2 font-medium" title="Main contacts with a renewal outstanding. Tick to send a renewal reminder.">
+                Remind
               </th>
             </tr>
           </thead>
@@ -354,6 +371,14 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                     )}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">{expected !== null ? pounds(expected) : ""}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {remindable.has(p.id) && (
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" form="remind" name="p" value={p.id} aria-label={`Remind ${p.first_name} ${p.last_name}`} />
+                        {remindable.get(p.id) && <span className="text-xs text-slate-500">Reminded {shortDate(remindable.get(p.id)!)}</span>}
+                      </label>
+                    )}
+                  </td>
                 </tr>
               );
             })}
