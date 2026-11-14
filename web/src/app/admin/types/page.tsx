@@ -3,7 +3,7 @@ import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { meWithRole, pounds } from "@/lib/me";
 import { typeDates, ukToday, yearLater } from "@/lib/quote";
-import { copyPeriod, copyType, saveStoragePrices, saveType, setActive } from "./actions";
+import { copyType, saveStoragePrices, saveType, setActive } from "./actions";
 
 type MembershipType = {
   id: string;
@@ -35,7 +35,6 @@ const SAVED: Record<string, string> = {
   updated: "Membership type saved.",
   activated: "Membership type is active again. It's offered to new members and for renewal.",
   copied: "Copied with the dates a year later. Check the details and price below, then save.",
-  copiedall: "Membership types copied with the dates a year later. Check the prices, and make inactive any you don't want.",
   deactivated: "Membership type is now inactive. Existing memberships aren't affected.",
   storage: "Boat storage prices saved. They apply to boats added from now on.",
 };
@@ -199,12 +198,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
   const y = Number(today.slice(0, 4)) + (today.slice(5) >= "11-01" ? 1 : 0);
   const defaults = { starts_on: `${y}-01-01`, ends_on: `${y}-12-31` };
 
-  const saved =
-    params.saved === "copiedall" && params.count === "0"
-      ? "Those types have all been copied already."
-      : typeof params.saved === "string"
-        ? SAVED[params.saved]
-        : undefined;
+  const saved = typeof params.saved === "string" ? SAVED[params.saved] : undefined;
   const error = typeof params.error === "string" ? ERRORS[params.error] : undefined;
 
   const table = (list: MembershipType[], label: string) => (
@@ -303,25 +297,10 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
         <div className="space-y-6">
           {periods.map((p) => {
             const list = current.filter((t) => t.starts_on === p.starts_on && t.ends_on === p.ends_on);
-            const toCopy = list.filter(notCopied).length;
-            const later = { starts_on: yearLater(p.starts_on), ends_on: yearLater(p.ends_on) };
             return (
               <div key={`${p.starts_on}|${p.ends_on}`}>
                 <h3 className="font-medium text-slate-900">{typeDates(p)}</h3>
                 {table(list, `Types for ${typeDates(p)}`)}
-                {toCopy > 0 && (
-                  <form action={copyPeriod} className="mt-2 flex flex-wrap items-center gap-3 rounded border border-sky-200 bg-sky-50 p-3">
-                    <input type="hidden" name="starts_on" value={p.starts_on} />
-                    <input type="hidden" name="ends_on" value={p.ends_on} />
-                    <span className="text-sm text-sky-950">
-                      Copy {toCopy === list.length ? (toCopy === 1 ? "this type" : `all ${toCopy} types`) : `the ${toCopy} not yet copied`}, with
-                      the dates moved to {typeDates(later)} and the same prices to change afterwards.
-                    </span>
-                    <SaveButton variant="secondary" pendingText="Copying…" aria-label={`Copy the types for ${typeDates(p)} to a year later`}>
-                      {toCopy === 1 ? "Copy it" : "Copy these types"}
-                    </SaveButton>
-                  </form>
-                )}
               </div>
             );
           })}
