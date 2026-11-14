@@ -1282,6 +1282,12 @@ test("an admin ticks members on the Members list, picks a reminder, previews, te
       insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
     `);
   }
+  // Rita stores a boat this year, for the boat placeholders.
+  sql(`insert into boat_storages (person_id, option_id, boat_class, sail_number, starts_on, ends_on, price_pence, status)
+       select p.id, o.id, 'Laser', '777', date_trunc('year', current_date)::date, (date_trunc('year', current_date) + interval '1 year - 1 day')::date, 3500, 'active'
+         from people p, boat_storage_options o where p.email = 'remind-${run}@example.test' and o.members_rate`);
+  sql(`update email_templates set body = body || E'\n\nBoats: {boats} ({boat_count} at {boat_storage_price}). Total with storage: {renewal_total}.'
+        where name = 'Renewal reminder' and body not like '%{boats}%'`);
   const page = await adminPage(browser);
   await page.goto(`/admin/members?q=Remind${run}`);
   const row = (first: string) => page.getByRole("row").filter({ hasText: `Remind${run}, ${first}` });
@@ -1303,6 +1309,7 @@ test("an admin ticks members on the Members list, picks a reminder, previews, te
   const preview = page.getByRole("region", { name: `3. Preview: Rita Remind${run}` });
   await expect(preview).toContainText("Hello Rita,");
   await expect(preview).toContainText("/profile#renew");
+  await expect(preview).toContainText("Boats: Laser 777 (1 at £35). Total with storage: £220.");
   await shot(page, "remind-send-screen");
 
   await preview.getByRole("button", { name: "Send this as a test to me" }).click();

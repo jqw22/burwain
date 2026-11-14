@@ -1,3 +1,4 @@
+import { pounds } from "@/lib/me";
 import Link from "next/link";
 import { renewalYear } from "../members/remind/render";
 import { headers } from "next/headers";
@@ -38,7 +39,11 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
   const templates = (data ?? []) as Template[];
   const h = await headers();
   const host = h.get("host");
+  const { data: boatPrice } = await supabase.rpc("boat_storage_price", { p_members: true });
+  const each = Number(boatPrice) || 3500;
   const examples = exampleValues({
+    boat_storage_price: pounds(each),
+    boat_storage_total: pounds(each * 2),
     renewal_year: year?.label ?? String(new Date().getFullYear() + 1),
     ...(host ? { renewal_link: `${host.startsWith("localhost") ? "http" : "https"}://${host}/profile#renew` } : {}),
   });
