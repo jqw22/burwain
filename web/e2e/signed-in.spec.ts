@@ -355,6 +355,36 @@ test("the family's main contact renews for next year from Your details", async (
   await shot(page, "renew-after");
 });
 
+test("a member whose membership has lapsed can still renew from Your details, at the full price", async ({ browser }) => {
+  // Lena's Individual Sailing membership ran for 2024, so it has ended. Renewal is still open to her.
+  const lenaEmail = `lena-${run}@example.test`;
+  sql(`
+    with t as (
+      insert into membership_types (starts_on, ends_on, code, name, category, cover, annual_price_pence, is_open, sort_order)
+      select '2024-01-01', '2024-12-31', 'L${run.slice(-5).toUpperCase()}', name, category, cover, annual_price_pence, false, sort_order
+        from membership_types where code = 'IS' limit 1 returning id
+    ), h as (insert into households (address_line1, postcode) values ('5 Old Quay', 'BB5 5OQ') returning id),
+    p as (insert into people (household_id, first_name, last_name, date_of_birth, email)
+          select id, 'Lena', 'Lapsed${run}', '1975-05-05', '${lenaEmail}' from h returning id, household_id),
+    m as (insert into memberships (club_year_id, membership_type_id, payer_person_id, household_id, status, price_pence)
+          select ensure_club_year(2024), t.id, p.id, p.household_id, 'active', 18500 from t, p returning id, payer_person_id)
+    insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
+  `);
+  sql(`update households h set lead_person_id = p.id from people p where p.household_id = h.id and p.email = '${lenaEmail}'`);
+  const context = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
+  const page = await context.newPage();
+  await signIn(page, lenaEmail);
+  await page.goto("/profile");
+  const box = page.getByRole("region", { name: "Your current membership" });
+  await expect(box.getByRole("heading", { name: "Renew your membership" })).toBeVisible();
+  await expect(box.getByText("Your membership ended on 31 Dec 2024. You can still renew here.")).toBeVisible();
+  await expect(box.getByText("No current membership")).toHaveCount(0);
+  // Types still running are offered too, at the full price (no pro rata for existing members).
+  await expect(box.getByLabel("Membership type").locator("option", { hasText: /^Individual Sailing.*: £185$/ }).first()).toBeAttached();
+  await shot(page, "renew-lapsed");
+  await context.close();
+});
+
 test("an admin's home page has Membership admin, Communications admin and Finance admin sections", async ({ browser }) => {
   const page = await adminPage(browser);
   const section = (name: string) => page.getByRole("main").locator("section", { has: page.getByRole("heading", { name, exact: true }) });

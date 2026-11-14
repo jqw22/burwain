@@ -102,7 +102,7 @@ function TypeForm({ type, nextOrder, defaults }: { type: MembershipType | null; 
           name="price"
           defaultValue={type ? (type.annual_price_pence / 100).toFixed(2) : ""}
           required
-          hint="For the whole period from the start date to the end date. People joining later pay for the months left. Memberships already taken keep their price."
+          hint="For the whole period from the start date to the end date. Brand-new members joining later pay for the months left; existing and lapsed members pay the full price. Memberships already taken keep their price."
         />
         <label className="block">
           <span className="text-sm font-medium">Category</span>

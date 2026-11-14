@@ -192,7 +192,7 @@ const MEMBERSHIP_ERRORS: [string, string][] = [
   ["not available", "unavailable"],
   ["up to 4", "four"],
   ["due for renewal", "notmember"],
-  ["starts after today", "unavailable"],
+  ["starts after", "unavailable"],
   ["main contact", "lead"],
 ];
 function membershipError(message: string) {
