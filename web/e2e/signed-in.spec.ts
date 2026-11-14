@@ -1451,10 +1451,10 @@ test("members read the handbook: five sections, a few lines each, expandable, no
   await expect(page).toHaveURL(/\/handbook$/);
   await expect(page.getByRole("heading", { level: 2 })).toHaveText([
     "General Information",
-    "Notice of Race",
-    "Sailing Instructions",
     "Safety",
     "Code of Conduct",
+    "Notice of Race",
+    "Sailing Instructions",
   ]);
   await expect(page.getByRole("link", { name: /^Edit / })).toHaveCount(0);
   const safety = page.getByRole("region", { name: "Safety" });
