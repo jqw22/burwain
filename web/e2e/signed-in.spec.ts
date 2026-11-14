@@ -347,10 +347,11 @@ test("the family's main contact renews for next year from Your details", async (
            from member_receipts r join people p on p.id = r.payer_person_id
            join member_receipt_lines rl on rl.receipt_id = r.id left join transactions tx on tx.receipt_line_id = rl.id
           where p.email = '${leadEmail}' and r.status = 'paid' group by r.id`),
-  ).toBe("direct_debit 29000 2");
+  ).toBe("direct_debit 29000 0");
+  // Member payments don't create finance transactions: finance enters bank lines by hand.
   expect(
-    sql(`select count(*) from transactions tx join transaction_categories c on c.id = tx.category_id
-          where c.name = 'Boat storage' and tx.description = 'Boat storage ${next}: Laser 123456'`),
+    sql(`select count(*) from member_receipt_lines rl join member_receipts r on r.id = rl.receipt_id join people p on p.id = r.payer_person_id
+          where p.email = '${leadEmail}' and rl.description = 'Boat storage ${next}: Laser 123456'`),
   ).toBe("1");
   await shot(page, "renew-after");
 });
@@ -451,24 +452,31 @@ test("an admin finds a member, edits them and views their medical details", asyn
   // The family stays together: Sam (main contact) first, then Alex and Robin indented under them.
   const names = (await page.getByRole("row").allTextContents()).slice(1).map((t) => t.match(/Tester\w*, (Sam|Alex|Robin)/)?.[1]);
   expect(names).toEqual(["Sam", "Alex", "Robin"]);
-  // Type, Status, Renewal, Expected and Remind columns; no Payment, Postcode, Email or Mobile.
+  // Type, Status, Renewal, money (Expected, Boats, Paid) and Remind columns; no Payment, Postcode, Email or Mobile.
   const headers = (await page.getByRole("columnheader").allTextContents()).map((t) => t.replace("▲", "").trim());
-  expect(headers).toEqual(["Name", "Type", "Status", "Renewal", "Expected", "Boats", "Remind"]);
+  expect(headers).toEqual(["Name", "Type", "Status", "Renewal", "Expected", "Boats", "Paid", "Remind"]);
   const sam = page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) });
-  await expect(sam.getByRole("cell").nth(1)).toHaveText("Family");
-  await expect(sam.getByRole("cell").nth(2)).toHaveText("Active");
+  // The main contact's Type shows when the membership runs to, in grey; family members just the type.
+  const samEnds = sql(`
+    select to_char(t.ends_on, 'FMDD Mon YYYY')
+      from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
+      join membership_types t on t.id = m.membership_type_id
+     where p.email = '${leadEmail}' and current_date between t.starts_on and t.ends_on and m.status <> 'cancelled' limit 1`);
+  await expect(sam.getByRole("cell").nth(1)).toHaveText(`Family to ${samEnds}`);
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) }).getByRole("cell").nth(1)).toHaveText("Family");
+  await expect(sam.getByRole("cell").nth(2)).toHaveText(/^Active( New)?$/);
   // The rules are explained at the top, and only Active and Lapsed have filter buttons.
   await expect(page.getByText("How status and renewal are worked out")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Filter by membership status" })).toContainText(/^Membership:/);
   const statusFilters = page.getByRole("navigation", { name: "Filter by membership status" }).getByRole("link");
-  await expect(statusFilters).toHaveText([/^All \(\d+\)$/, /^Active \(\d+\)$/, /^Lapsed \(\d+\)$/]);
-  // Renewal: Outstanding within 60 days of Sam's membership ending (unless next year's is paid), otherwise n/a.
+  await expect(statusFilters).toHaveText([/^All \(\d+\)$/, /^Active \(\d+\)$/, /^Lapsed \(\d+\)$/, /^New \(\d+\)$/]);
+  // Renewal bands from Sam's membership end date (unless next year's is paid): Due <60d, Due <30d, otherwise n/a.
   const renewal = sql(`
     select case when exists (
              select 1 from memberships m2 join membership_types t2 on t2.id = m2.membership_type_id
                join membership_people mp2 on mp2.membership_id = m2.id
               where mp2.person_id = p.id and t2.starts_on > current_date and m2.status = 'active') then 'Paid'
-           when t.ends_on - current_date > 60 then 'n/a' else 'Outstanding' end
+           when t.ends_on - current_date > 60 then 'n/a' when t.ends_on - current_date > 30 then 'Due <60d' else 'Due <30d' end
       from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
       join membership_types t on t.id = m.membership_type_id
      where p.email = '${leadEmail}' and current_date between t.starts_on and t.ends_on and m.status <> 'cancelled' limit 1`);
@@ -481,9 +489,24 @@ test("an admin finds a member, edits them and views their medical details", asyn
       from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
       join membership_types t on t.id = m.membership_type_id
      where p.email = '${leadEmail}' and current_date between t.starts_on and t.ends_on and m.status <> 'cancelled' limit 1`);
-  const feeText = `£${(Number(fee) / 100).toFixed(Number(fee) % 100 === 0 ? 0 : 2)}`;
-  await expect(sam.getByRole("cell").nth(4)).toHaveText(renewal === "Outstanding" ? feeText : "");
+  const gbp = (pence: number) => `£${(pence / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const outstanding = renewal.startsWith("Due");
+  await expect(sam.getByRole("cell").nth(4)).toHaveText(outstanding ? gbp(Number(fee)) : "");
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) }).getByRole("cell").nth(4)).toHaveText("");
+  // Paid: what was received for the latest membership (boats included), once per membership.
+  const paid = Number(sql(`
+    with latest as (
+      select m.id from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
+        join membership_types t on t.id = m.membership_type_id
+       where p.email = '${leadEmail}' and m.status <> 'cancelled' and t.ends_on >= current_date
+       order by t.starts_on desc limit 1)
+    select coalesce(sum(rl.amount_pence), 0) from member_receipt_lines rl join member_receipts r on r.id = rl.receipt_id and r.status = 'paid'
+      left join boat_storages bs on bs.id = rl.boat_storage_id
+     where rl.membership_id in (select id from latest) or bs.membership_id in (select id from latest)`));
+  await expect(sam.getByRole("cell").nth(6)).toHaveText(paid ? gbp(paid) : "");
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) }).getByRole("cell").nth(6)).toHaveText("");
+  // A totals row adds up the money columns for the people shown.
+  await expect(page.getByRole("row", { name: /^Total \(3 people shown\)/ })).toBeVisible();
   await page.getByRole("navigation", { name: "Filter by renewal status" }).getByRole("link", { name: new RegExp(`^${renewal} \\(\\d+\\)$`) }).click();
   await expect(page).toHaveURL(/renewal=/);
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toBeVisible();
@@ -504,8 +527,9 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await page.getByRole("link", { name: /^Lapsed \(\d+\)$/ }).click();
   const pat = page.getByRole("row", { name: new RegExp(`Tester${run}, Pat`) });
   await expect(pat.getByRole("cell").nth(2)).toHaveText("Lapsed");
-  // Lapsed within the last 90 days, so the renewal is Outstanding.
-  await expect(pat.getByRole("cell").nth(3)).toHaveText("Outstanding");
+  // Lapsed within the last 90 days, so the renewal is Due or Overdue, depending on how long ago it ended.
+  await expect(pat.getByRole("cell").nth(3)).toHaveText(/^(Due|Overdue >30d|Overdue >60d)$/);
+  await expect(pat.getByRole("cell").nth(1)).toContainText("ended");
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) })).toHaveCount(0);
   await shot(page, "admin-members-lapsed");
   await page.getByRole("link", { name: /^Active \(\d+\)$/ }).click();
@@ -594,6 +618,9 @@ test("finance sees this month's transactions with who paid, a running balance, s
        select (date_trunc('month', current_date) - interval '1 day')::date, 'Old grant ${run}', 'in'::txn_direction, 99900, id, 'bank_transfer'::payment_method from transaction_categories where name = 'Other income'`);
   sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method)
        select current_date, 'Raffle donation ${run}', 'in'::txn_direction, 2550, id, 'cash'::payment_method from transaction_categories where name = 'Donations'`);
+  // Member payments no longer create transactions: finance enters the bank line by hand, naming who paid.
+  sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method, party)
+       select current_date, 'Associate Membership subscription', 'in'::txn_direction, 3000, id, 'cheque'::payment_method, 'Alex Tester${run}' from transaction_categories where name = 'Subscriptions'`);
   const page = await adminPage(browser);
   await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
@@ -613,7 +640,7 @@ test("finance sees this month's transactions with who paid, a running balance, s
   await expect(insurance).toContainText("Bank transfer");
   await expect(insurance).toContainText("£450.00");
 
-  // Who paid: the cheque Alex paid for their Associate membership.
+  // Who paid: the cheque Alex paid for their Associate membership (entered by finance).
   const cheque = page.getByRole("row", { name: new RegExp(`Associate Membership .*Alex Tester${run}`) });
   await expect(cheque).toContainText("Cheque");
 
@@ -941,8 +968,8 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
   await expect(page.getByRole("status")).toContainText("We've received your application for Dual");
   await expect(page.getByText(/Your payment of £[\d.]+ by card is confirmed\./)).toBeVisible();
   await shot(page, "join-thanks");
-  // The payment shows in the finance transactions straight away.
-  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}' and direction = 'in' and receipt_line_id is null`)).toBe("2");
+  // Paying doesn't create finance transactions: finance enters bank lines by hand.
+  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}'`)).toBe("0");
 
   // A second application, which the admin will decline.
   await page.goto("/join");
@@ -979,14 +1006,14 @@ test("a visitor applies on the public Join page, and an admin accepts one and de
            from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
            join membership_types t on t.id = m.membership_type_id where p.last_name = 'Joiner${run}'`),
   ).toBe("2|1|active|D");
-  // Accepting records the payment they made when applying, and posts the income.
+  // Accepting records the payment they made when applying (membership and boat), with no finance transactions.
   expect(
-    sql(`select r.method, count(tx.id)
+    sql(`select r.method, count(rl.id), count(tx.id)
            from member_receipts r join people p on p.id = r.payer_person_id
            join member_receipt_lines rl on rl.receipt_id = r.id left join transactions tx on tx.receipt_line_id = rl.id
           where p.email = 'iris-${run}@example.test' and r.status = 'paid' group by r.id`),
-  ).toBe("card|2");
-  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}'`)).toBe("2"); // the same transactions, now linked
+  ).toBe("card|2|0");
+  expect(sql(`select count(*) from transactions where party = 'Iris Joiner${run}'`)).toBe("0");
   expect(sql(`select string_agg(bs.boat_class || ' ' || bs.sail_number || ' ' || bs.status, ',') from boat_storages bs join people p on p.id = bs.person_id where p.email = 'iris-${run}@example.test'`)).toBe("Topper T555 active");
 
   await admin.goto("/admin/applications");
@@ -1118,13 +1145,10 @@ test("an admin changes boat storage prices, and adds and removes boats on a memb
   await expect(page.getByText("Boat storage updated.")).toBeVisible();
   await expect(card).not.toContainText("Optimist");
   expect(
-    sql(`select count(*) from transactions tx join transaction_categories c on c.id = tx.category_id
-          where c.name = 'Boat storage' and tx.method = 'cash' and tx.amount_pence = 8000 and tx.description like '%Mirror 70001 (non-members rate)'`),
+    sql(`select count(*) from member_receipt_lines rl join member_receipts r on r.id = rl.receipt_id
+          where r.method = 'cash' and r.status = 'paid' and rl.amount_pence = 8000 and rl.description like '%Mirror 70001 (non-members rate)'`),
   ).toBe("1");
-
-  // The Members list counts the boats stored.
-  await page.goto(`/admin/members?q=lead-${run}`);
-  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Sam`) }).getByRole("cell").nth(5)).toHaveText(/^[1-3]$/);
+  expect(sql(`select count(*) from transactions where description like '%Mirror 70001%'`)).toBe("0");
 });
 
 test("an admin adds a membership type, changes its price and makes it inactive", async ({ browser }) => {
