@@ -7,7 +7,7 @@ import { emailSendingEnabled } from "@/lib/mailer";
 import { meWithRole, pounds, ukDate } from "@/lib/me";
 import { sendReminders, sendTest } from "./actions";
 import { ConfirmSend } from "./confirm-send";
-import { renewalYear, valuesFor, type Recipient } from "./render";
+import { boatsFor, renewalYear, valuesFor, type Recipient } from "./render";
 
 type Template = { id: string; name: string; subject: string; body: string };
 
@@ -41,7 +41,7 @@ export default async function RemindPage({ searchParams }: PageProps<"/admin/mem
   const leftOut = ids.length - chosen.length;
   const sendable = chosen.filter((r) => r.email);
   const preview = sendable.find((r) => r.person_id === p("preview")) ?? sendable[0];
-  const values = preview && year ? await valuesFor(preview, year.label) : null;
+  const values = preview && year ? await valuesFor(preview, year.label, (await boatsFor(supabase, [preview.person_id])).get(preview.person_id)) : null;
   const enabled = emailSendingEnabled();
   const logo = await logoUrl(supabase);
 

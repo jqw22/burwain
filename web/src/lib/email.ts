@@ -6,6 +6,11 @@ export const PLACEHOLDERS = [
   { key: "renewal_year", label: "The year they're renewing for", example: "2027" },
   { key: "renewal_price", label: "What renewing will cost", example: "£255" },
   { key: "renewal_link", label: "Link to log in and renew", example: "https://burwain.netlify.app/profile#renew" },
+  { key: "boats", label: "Boats they store now (class and sail number)", example: "Laser 123456, Topper 4321" },
+  { key: "boat_count", label: "How many boats they store now", example: "2" },
+  { key: "boat_storage_price", label: "Boat storage price per boat (members rate)", example: "£35" },
+  { key: "boat_storage_total", label: "What storing the same boats again will cost", example: "£70" },
+  { key: "renewal_total", label: "Renewal plus storing the same boats again", example: "£325" },
 ] as const;
 
 export const PURPOSES = {
