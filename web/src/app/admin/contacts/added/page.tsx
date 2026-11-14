@@ -32,7 +32,7 @@ export default async function ContactAddedPage({ searchParams }: PageProps<"/adm
         <Link href="/admin/contacts/new" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-950">
           Add another contact
         </Link>
-        <Link href="/" className="text-sm text-slate-600 underline">
+        <Link href="/admin" className="text-sm text-slate-600 underline">
           Back to Admin
         </Link>
       </div>

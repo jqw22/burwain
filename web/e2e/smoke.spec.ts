@@ -29,7 +29,7 @@ test("the Join page opens without a login", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Join Burwain" })).toBeVisible();
 });
 
-for (const path of ["/profile", "/membership", "/admin/applications", "/profile/member/00000000-0000-0000-0000-000000000000"]) {
+for (const path of ["/profile", "/admin", "/calendar", "/volunteer", "/handbook", "/membership", "/admin/applications", "/profile/member/00000000-0000-0000-0000-000000000000"]) {
   test(`${path} needs a login`, async ({ page }) => {
     await page.goto(path);
     await expect(page).toHaveURL(/\/login$/);
