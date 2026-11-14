@@ -25,13 +25,16 @@ export function BudgetGrid({ year, categories, canEdit }: { year: number; catego
   const income = subTotals("in");
   const spend = subTotals("out");
   const net = MONTHS.map((_, m) => income[m] - spend[m]);
+  // Cumulative balance: the running total of income minus expenditure, month by month from January.
+  const cumulative = net.map((_, m) => sum(net.slice(0, m + 1)));
   const bad = categories.some((c) => text[c.id].some((t) => parsePounds(t) === null));
 
   const yy = String(year).slice(2);
   const num = "whitespace-nowrap px-1 py-1 text-right tabular-nums";
   const nameCell = "sticky left-0 z-10 whitespace-nowrap bg-inherit py-1 pl-2 pr-3 text-left";
 
-  const totalsRow = (label: string, values: number[], strong = false) => (
+  // last: the value in the Total column (normally the year's sum).
+  const totalsRow = (label: string, values: number[], strong = false, last = sum(values)) => (
     <tr className={strong ? "border-t-2 border-slate-400 bg-slate-100 font-semibold" : "border-t border-slate-300 bg-slate-50 font-medium"}>
       <th scope="row" className={nameCell}>
         {label}
@@ -41,7 +44,7 @@ export function BudgetGrid({ year, categories, canEdit }: { year: number; catego
           {money(v)}
         </td>
       ))}
-      <td className={`${num} pr-2 ${sum(values) < 0 ? "text-red-700" : ""}`}>{money(sum(values))}</td>
+      <td className={`${num} pr-2 ${last < 0 ? "text-red-700" : ""}`}>{money(last)}</td>
     </tr>
   );
 
@@ -120,6 +123,7 @@ export function BudgetGrid({ year, categories, canEdit }: { year: number; catego
           {section("in", "Income")}
           {section("out", "Expenditure")}
           {totalsRow("Total", net, true)}
+          {totalsRow("Cumulative balance", cumulative, false, cumulative[11])}
         </tbody>
       </table>
     </div>
