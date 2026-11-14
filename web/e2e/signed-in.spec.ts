@@ -743,6 +743,16 @@ test("finance fills in a monthly budget in whole pounds with income and expendit
   );
   await shot(page, "admin-budget");
 
+  // Print: just the budget table, without the menus, buttons or year links.
+  await expect(page.getByRole("button", { name: "Print" })).toBeVisible();
+  await page.emulateMedia({ media: "print" });
+  await expect(page.getByRole("banner")).toBeHidden();
+  await expect(page.getByRole("navigation", { name: "Finance admin" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Save budget" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Budget for 2031" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /^Income sub-total/ })).toBeVisible();
+  await page.emulateMedia({ media: "screen" });
+
   // Clearing a cell removes the figure.
   await page.getByLabel("Insurance Jan 2031").fill("");
   await page.getByRole("button", { name: "Save budget" }).click();

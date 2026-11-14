@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Notice } from "@/components/fields";
+import { PrintButton } from "@/components/print-button";
 import { defaultBudgetYear } from "@/lib/budget";
 import { createClient } from "@/lib/supabase/server";
 import { requireMe } from "@/lib/me";
@@ -55,22 +56,29 @@ export default async function BudgetPage({ searchParams }: PageProps<"/admin/bud
   return (
     <div className="space-y-6">
       <AdminNav current="budget" />
-      <Notice message={params.saved ? `Budget for ${year} saved.` : undefined} />
+      <div className="print:hidden">
+        <Notice message={params.saved ? `Budget for ${year} saved.` : undefined} />
+      </div>
       {error && <p className="rounded bg-red-50 p-3 text-red-800">{error}</p>}
 
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h2 className="text-xl font-semibold">Budget for {year}</h2>
-        <p className="flex items-baseline gap-3 text-sm">
-          <span>←</span> {yearLink(year - 1)} <span className="text-slate-400">|</span> {yearLink(year + 1)} <span>→</span>
-        </p>
+        <div className="flex items-center gap-4 print:hidden">
+          <p className="flex items-baseline gap-3 text-sm">
+            <span>←</span> {yearLink(year - 1)} <span className="text-slate-400">|</span> {yearLink(year + 1)} <span>→</span>
+          </p>
+          <PrintButton />
+        </div>
       </div>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-slate-600 print:hidden">
         {isFinance
           ? "Type the planned amount for each category and month, then press Save budget. Figures are in whole pounds. Leave a cell blank for nothing planned. The totals update as you type."
           : "The planned amount for each category and month. Only finance logins can change the figures."}{" "}
         Categories come from the Categories screen.
       </p>
 
+      {/* Print the budget sideways on one page width. */}
+      <style>{"@media print { @page { size: A4 landscape; margin: 10mm; } }"}</style>
       <BudgetGrid key={year} year={year} categories={categories} canEdit={Boolean(isFinance)} />
     </div>
   );

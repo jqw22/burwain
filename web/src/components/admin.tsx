@@ -54,7 +54,7 @@ export async function AdminNav({ current, heading = true }: { current: keyof typ
   const { data: isAdmin } = await (await createClient()).rpc("has_role", { r: "admin" });
   const areas = AREAS.filter((a) => isAdmin || !a.adminOnly);
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 print:hidden">
       <nav aria-label="Admin areas" className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-2xl">
         {areas.map((a) => {
           const here = a.key === section;
