@@ -6,9 +6,10 @@ type InputProps = {
   required?: boolean;
   autoComplete?: string;
   hint?: string;
+  list?: string;
 };
 
-export function Field({ label, name, defaultValue, type = "text", required, autoComplete, hint }: InputProps) {
+export function Field({ label, name, defaultValue, type = "text", required, autoComplete, hint, list }: InputProps) {
   return (
     <label className="block">
       <span className="text-sm font-medium">{label}</span>
@@ -17,6 +18,7 @@ export function Field({ label, name, defaultValue, type = "text", required, auto
         type={type}
         required={required}
         autoComplete={autoComplete}
+        list={list}
         defaultValue={defaultValue ?? ""}
         className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2"
       />

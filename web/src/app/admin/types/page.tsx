@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
-import { meWithRole, pounds } from "@/lib/me";
+import { adminAccess, pounds } from "@/lib/me";
 import { typeDates, ukToday, yearLater } from "@/lib/quote";
 import { copyType, saveStoragePrices, saveType, setActive } from "./actions";
 
@@ -168,8 +168,9 @@ function TypeForm({ type, nextOrder, defaults }: { type: MembershipType | null; 
 
 export default async function TypesPage({ searchParams }: PageProps<"/admin/types">) {
   const params = await searchParams;
-  const { supabase, allowed } = await meWithRole("admin");
-  if (!allowed) return <NotAllowed />;
+  // Finance logins can see the types and prices; only admins change them.
+  const { supabase, canView, isAdmin } = await adminAccess();
+  if (!canView) return <NotAllowed who="club admins and finance" />;
 
   const { data } = await supabase
     .from("membership_types")
@@ -191,7 +192,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
   // Current and upcoming types, grouped by their dates.
   const periods = [...new Map(current.map((t) => [`${t.starts_on}|${t.ends_on}`, { starts_on: t.starts_on, ends_on: t.ends_on }])).values()];
 
-  const edit = typeof params.edit === "string" ? params.edit : "";
+  const edit = isAdmin && typeof params.edit === "string" ? params.edit : "";
   const editing = types.find((t) => t.id === edit) ?? null;
   const nextOrder = Math.max(0, ...types.map((t) => t.sort_order)) + 10;
   // New types start on 1 January: this year, or next year once renewals for it are close.
@@ -236,6 +237,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
                 </td>
                 <td className="py-2 pr-4">{pounds(t.annual_price_pence)}</td>
                 <td className="py-2">
+                  {isAdmin && (
                   <div className="flex items-center justify-end gap-3 whitespace-nowrap">
                     <Link href={`/admin/types?edit=${t.id}#edit`} className="text-sky-800 underline" aria-label={`Edit ${t.name}`}>
                       Edit
@@ -254,6 +256,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
                       </form>
                     )}
                   </div>
+                  )}
                 </td>
               </tr>
             );
@@ -285,7 +288,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
       <Card
         title={`Current and upcoming (${current.length})`}
         action={
-          !edit && (
+          !edit && isAdmin && (
             <Link href="/admin/types?edit=new#edit" className="rounded bg-sky-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-950">
               Add a membership type
             </Link>
@@ -308,6 +311,7 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
       </Card>
 
       <Card title="Boat storage prices" id="storage">
+        {isAdmin ? (
         <form action={saveStoragePrices} className="grid gap-4 sm:grid-cols-3">
           <Field
             label="Members rate (£)"
@@ -327,6 +331,12 @@ export default async function TypesPage({ searchParams }: PageProps<"/admin/type
             <SaveButton pendingText="Saving…">Save storage prices</SaveButton>
           </div>
         </form>
+        ) : (
+          <ul className="space-y-1 text-slate-800">
+            <li>Members rate: {pounds(storagePrice(true))}</li>
+            <li>Non-members rate: {pounds(storagePrice(false))}</li>
+          </ul>
+        )}
       </Card>
 
       <Card title={`Inactive (${inactive.length})`}>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card } from "@/components/fields";
-import { meWithRole } from "@/lib/me";
+import { adminAccess } from "@/lib/me";
 import { PURPOSE_LABEL, sentWhen } from "./format";
 
 type Campaign = {
@@ -16,8 +16,8 @@ type Campaign = {
 
 // Communications admin > Email log: every group email and renewal reminder sent, newest first.
 export default async function EmailLogPage() {
-  const { supabase, allowed } = await meWithRole("admin");
-  if (!allowed) return <NotAllowed />;
+  const { supabase, canView } = await adminAccess();
+  if (!canView) return <NotAllowed who="club admins and finance" />;
 
   const { data } = await supabase
     .from("email_campaigns")
