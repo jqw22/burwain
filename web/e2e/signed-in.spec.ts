@@ -1019,6 +1019,15 @@ test("members see a directory of adult members, without payment status", async (
   await page.getByRole("link", { name: "Clear search" }).click();
   await expect(page.getByLabel("Search the directory")).toHaveValue("");
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Alex`) })).toBeVisible();
+
+  // A WhatsApp chat button only for people happy to be contacted on WhatsApp.
+  sql(`update people set mobile = '07700 900456', whatsapp = false where first_name = 'Alex' and last_name = 'Tester${run}'`);
+  await page.reload();
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Alex`) })).toContainText("07700 900456");
+  await expect(page.getByRole("link", { name: `WhatsApp Alex Tester${run}` })).toHaveCount(0);
+  sql(`update people set whatsapp = true where first_name = 'Alex' and last_name = 'Tester${run}'`);
+  await page.reload();
+  await expect(page.getByRole("link", { name: `WhatsApp Alex Tester${run}` })).toHaveAttribute("href", "https://wa.me/447700900456");
 });
 
 test("an admin renews a membership for a member", async ({ browser }) => {

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { Card } from "@/components/fields";
 import { LiveSearch } from "@/components/live-search";
 import { requireMe } from "@/lib/me";
+import { WhatsAppLink } from "@/components/whatsapp-link";
 
-type Entry = { id: string; first_name: string; last_name: string; mobile: string | null; email: string | null; membership: string };
+type Entry = { id: string; first_name: string; last_name: string; mobile: string | null; email: string | null; membership: string; whatsapp: boolean };
 
 export default async function DirectoryPage({ searchParams }: PageProps<"/directory">) {
   const params = await searchParams;
@@ -46,7 +47,10 @@ export default async function DirectoryPage({ searchParams }: PageProps<"/direct
                     <td className="py-2 pr-4">
                       {e.last_name}, {e.first_name}
                     </td>
-                    <td className="py-2 pr-4">{e.mobile}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {e.mobile}
+                      {e.whatsapp && <WhatsAppLink mobile={e.mobile} name={`${e.first_name} ${e.last_name}`} />}
+                    </td>
                     <td className="py-2 pr-4">
                       {e.email && (
                         <a href={`mailto:${e.email}`} className="text-sky-800 underline">

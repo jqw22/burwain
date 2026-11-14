@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { NotAllowed, STATUS_LABEL } from "@/components/admin";
+import { WhatsAppLink } from "@/components/whatsapp-link";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { EditLink, FormButtons, Item, LINK } from "@/app/profile/ui";
 import { ageOn, meWithRole, PERSON_FIELDS, pounds, ukDate, type Person } from "@/lib/me";
@@ -278,7 +279,13 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
             <Item label="Name" value={[m.title, m.first_name, m.last_name].filter(Boolean).join(" ")} />
             <Item label="Date of birth" value={m.date_of_birth && ukDate(m.date_of_birth)} />
             <Item label="Email (also their login)" value={m.email} />
-            <Item label="Mobile" value={m.mobile} />
+            <div>
+              <dt className="text-sm text-slate-500">Mobile</dt>
+              <dd className="text-slate-800">
+                {m.mobile || "Not given"}
+                {m.whatsapp && <WhatsAppLink mobile={m.mobile} name={`${m.first_name} ${m.last_name}`} />}
+              </dd>
+            </div>
             <Item label="Happy to be contacted on WhatsApp" value={m.whatsapp ? "Yes" : "No"} />
             <Item label="Emergency contact" value={[m.emergency_contact_name, m.emergency_contact_mobile].filter(Boolean).join(", ")} />
             <Item label="First joined" value={m.first_joined_on && ukDate(m.first_joined_on)} />

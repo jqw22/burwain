@@ -117,6 +117,7 @@ do $$ begin
   assert (select count(*) from audit_log) > 0, 'superadmin sees change log';
   assert (select count(*) from member_directory()) = 2, 'directory lists adults with a membership (Alice and Eve, not junior Bob), paid or not';
   assert (select membership from member_directory() where first_name = 'Eve') = 'Associate Membership, Club Membership', 'directory shows membership type';
+  assert (select whatsapp from member_directory() where first_name = 'Eve') is not null, 'directory says whether each person is happy to use WhatsApp';
 end $$;
 
 \echo 'Member (Alice): history linked to income'
