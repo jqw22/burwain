@@ -108,6 +108,11 @@ export default async function AdminHomePage() {
                 Budget
               </Link>
             </li>
+            <li>
+              <Link href="/admin/actual" className="text-sky-800 underline">
+                Actual
+              </Link>
+            </li>
           </ul>
         </section>
       )}

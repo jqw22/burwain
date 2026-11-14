@@ -969,4 +969,32 @@ reset role;
 reset request.jwt.claim.sub;
 delete from user_roles where person_id = '20000000-0000-0000-0000-00000000000e' and role = 'admin';
 
+\echo 'Actual: transactions per category and month; finance marks months complete'
+insert into transactions (occurred_on, description, direction, amount_pence, category_id) values
+  ('2027-01-10', 'Insurance 2027', 'out', 48000, (select id from transaction_categories where name = 'Insurance')),
+  ('2027-01-20', 'Insurance refund 2027', 'in', 3000, (select id from transaction_categories where name = 'Insurance')),
+  ('2027-02-05', 'Donation 2027', 'in', 2500, (select id from transaction_categories where name = 'Donations'));
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+do $$ begin
+  assert (select amount_pence from budget_actuals(2027) a join transaction_categories c on c.id = a.category_id
+           where c.name = 'Insurance' and a.month = 1) = 45000, 'a refund reduces the category';
+  assert (select amount_pence from budget_actuals(2027) a join transaction_categories c on c.id = a.category_id
+           where c.name = 'Donations' and a.month = 2) = 2500, 'income by month';
+  perform set_budget_month_complete(2027, 1, true);
+  perform set_budget_month_complete(2027, 1, true);   -- ticking twice is fine
+  assert (select count(*) from budget_months_complete where year = 2027) = 1, 'January complete';
+  perform set_budget_month_complete(2027, 1, false);
+  assert (select count(*) from budget_months_complete where year = 2027) = 0, 'unticked';
+  perform set_budget_month_complete(2027, 2, true);
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select set_budget_month_complete(2027, 3, true)$q$, 'Only finance');
+do $$ begin
+  assert (select count(*) from budget_actuals(2027)) = 0, 'members see no actuals';
+  assert (select count(*) from budget_months_complete) = 0, 'members see no completed months';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'

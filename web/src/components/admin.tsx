@@ -24,6 +24,7 @@ const SECTIONS = {
   transactions: "finance",
   categories: "finance",
   budget: "finance",
+  actual: "finance",
 } as const;
 const LINKS = [
   { key: "members", href: "/admin/members", label: "Members" },
@@ -38,6 +39,7 @@ const LINKS = [
   { key: "memberships", href: "/admin/memberships", label: "Income" },
   { key: "categories", href: "/admin/categories", label: "Categories" },
   { key: "budget", href: "/admin/budget", label: "Budget" },
+  { key: "actual", href: "/admin/actual", label: "Actual" },
 ] as const;
 const SECTION_NAME = { membership: "Membership admin", comms: "Communications admin", finance: "Finance admin" };
 
