@@ -4,13 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 // The top bar links. The page you're on is shown bold and underlined.
-// Member is the landing page. Admin comes after Directory, for admin and finance logins only,
+// Home is the landing page. Admin is last, for admin and finance logins only,
 // and admin pages count as Admin because they're reached from it.
 const LINKS = [
+  { href: "/", label: "Home", match: (p: string) => p === "/" },
   { href: "/profile", label: "Member", match: (p: string) => p.startsWith("/profile") || p.startsWith("/family") || p.startsWith("/membership") },
   { href: "/directory", label: "Directory", match: (p: string) => p.startsWith("/directory") },
+  { href: "/calendar", label: "Calendar", match: (p: string) => p.startsWith("/calendar") },
+  { href: "/volunteer", label: "Volunteer", match: (p: string) => p.startsWith("/volunteer") },
+  { href: "/handbook", label: "Handbook", match: (p: string) => p.startsWith("/handbook") },
 ];
-const ADMIN = { href: "/", label: "Admin", match: (p: string) => p === "/" || p.startsWith("/admin") };
+const ADMIN = { href: "/admin", label: "Admin", match: (p: string) => p.startsWith("/admin") };
 
 export function TopNav({ showAdmin }: { showAdmin: boolean }) {
   const path = usePathname();

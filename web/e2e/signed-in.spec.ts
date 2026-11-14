@@ -81,14 +81,14 @@ async function signIn(page: Page, email: string) {
   await requestCode(page, email);
   await page.getByLabel("6-digit code").fill(await latestCode(email));
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/localhost:3100\/profile$/);
+  await expect(page).toHaveURL(/localhost:3100\/$/);
 }
 
 // The link in the same email still works too, in the browser that asked for it.
 async function signInWithLink(page: Page, email: string) {
   await requestCode(page, email);
   await page.goto(await latestLink(email));
-  await expect(page).toHaveURL(/localhost:3100\/profile$/);
+  await expect(page).toHaveURL(/localhost:3100\/$/);
 }
 
 // Sign the lead in once and share the session, as a real member would stay signed in.
@@ -107,7 +107,7 @@ async function adminPage(browser: import("@playwright/test").Browser) {
     await signInWithLink(await admin.newPage(), adminEmail);
   }
   const page = await admin.newPage();
-  await page.goto("/");
+  await page.goto("/admin");
   return page;
 }
 test.afterAll(async () => {
@@ -150,8 +150,22 @@ async function shot(page: Page, name: string) {
 
 test("a member signs in with an email link and sees their membership", async ({ browser }) => {
   const page = await leadPage(browser);
-  // Members land on the Member page; the Admin page sends them back there.
+  // Everyone lands on Home. The top bar has Home, Member, Directory, Calendar, Volunteer and Handbook (members don't see Admin).
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Welcome to Burwain, Sam", exact: true })).toBeVisible();
+  const bar = page.getByRole("banner").getByRole("link");
+  await expect(bar).toHaveText(["Home", "Member", "Directory", "Calendar", "Volunteer", "Handbook"]);
+  await expect(page.getByRole("banner").getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+  for (const [name, path] of [["Calendar", "/calendar"], ["Volunteer", "/volunteer"], ["Handbook", "/handbook"]]) {
+    await page.getByRole("banner").getByRole("link", { name }).click();
+    await expect(page).toHaveURL(new RegExp(`${path}$`));
+    await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+    await expect(page.getByText("Coming soon")).toBeVisible();
+  }
+  // The Admin page sends members back to Home.
+  await page.goto("/admin");
+  await expect(page).toHaveURL(/localhost:3100\/$/);
+  await page.getByRole("banner").getByRole("link", { name: "Member" }).click();
   await expect(page).toHaveURL(/\/profile$/);
   await expect(page.getByRole("heading", { name: "Welcome Sam", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Your current membership" })).toContainText(/Family for Sam, Alex, Robin: £255\s*Paid/);
@@ -346,6 +360,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   const section = (name: string) => page.getByRole("main").locator("section", { has: page.getByRole("heading", { name, exact: true }) });
   const links = async (name: string) => (await section(name).getByRole("link").allTextContents()).map((t) => t.trim());
   await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link")).toHaveText(["Home", "Member", "Directory", "Calendar", "Volunteer", "Handbook", "Admin"]);
   await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
@@ -363,14 +378,17 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(areas.getByRole("link", { name: "Membership" })).toHaveAttribute("aria-current", "page");
   await shot(page, "admin-areas");
   await areas.getByRole("link", { name: "Communications" }).click();
-  await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
+  // Communications opens on Send email.
+  await expect(page).toHaveURL(/\/admin\/emails\/send$/);
+  await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link", { name: "Send email" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "Admin areas" }).getByRole("link", { name: "Communications" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("navigation", { name: "Communications admin" })).toBeVisible();
   await page.getByRole("navigation", { name: "Admin areas" }).getByRole("link", { name: "Finance" }).click();
   await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Finance admin" })).toBeVisible();
   await page.getByRole("navigation", { name: "Admin areas" }).getByRole("link", { name: "Membership" }).click();
   await expect(page.getByRole("navigation", { name: "Membership admin" })).toBeVisible();
-  await page.goto("/");
+  await page.goto("/admin");
   await shot(page, "admin-home");
 });
 
@@ -941,13 +959,13 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   // Found in the Communications admin box on Home, not on the Members screen.
   await page.goto("/admin/members");
   await expect(page.getByRole("link", { name: "+ Add contact" })).toHaveCount(0);
-  await page.goto("/");
+  await page.goto("/admin");
   await page.getByRole("link", { name: "Add contact", exact: true }).click();
   // It sits under Communications, with the Communications tabs.
   await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Communications admin" }).getByRole("link")).toHaveText(["Send email", "Add contact", "Templates", "Email log"]);
   // Cancel goes back to the Admin page.
-  await expect(page.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/");
+  await expect(page.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/admin");
   const form = page.getByRole("form", { name: "Add a contact" });
   await form.getByLabel("First name").fill("Cass");
   await form.getByLabel("Last name").fill(`Contact${run}`);
@@ -1111,7 +1129,7 @@ test("an admin copies membership types to a year later, changes a price on the c
 test("an admin edits the renewal reminder email with a live preview, and adds another template", async ({ browser }) => {
   const page = await adminPage(browser);
   // Found in the Communications admin box on Home.
-  await page.goto("/");
+  await page.goto("/admin");
   await page.getByRole("link", { name: "Templates", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Communications", exact: true })).toBeVisible();
   await expect(page.getByRole("row", { name: "Renewal reminder" })).toContainText("Renewal reminder");

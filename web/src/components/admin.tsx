@@ -41,7 +41,7 @@ const SECTION_NAME = { membership: "Membership admin", comms: "Communications ad
 // The three admin areas. The heading row links between them; the area you're in is the page heading.
 const AREAS = [
   { key: "membership", label: "Membership", href: "/admin/members", adminOnly: true },
-  { key: "comms", label: "Communications", href: "/admin/emails", adminOnly: true },
+  { key: "comms", label: "Communications", href: "/admin/emails/send", adminOnly: true },
   { key: "finance", label: "Finance", href: "/admin/transactions", adminOnly: false },
 ] as const;
 

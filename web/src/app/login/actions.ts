@@ -48,7 +48,7 @@ export async function verifyLoginCode(formData: FormData) {
   if (error) redirect("/login?sent=1&error=code");
 
   store.delete({ name: EMAIL_COOKIE, path: "/login" });
-  redirect("/profile");
+  redirect("/");
 }
 
 export async function resendCode() {
