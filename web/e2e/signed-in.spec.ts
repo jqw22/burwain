@@ -1243,6 +1243,9 @@ test("an admin sends a group email with a logo and a picture, and a contact unsu
   await page.goto("/admin/emails");
   await page.getByLabel("Upload logo").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
   await expect(page.getByRole("img", { name: "Club logo" })).toBeVisible();
+  // Template previews show the logo too.
+  await page.getByRole("link", { name: `Edit Club news ${run}` }).click();
+  await expect(page.getByRole("region", { name: "Preview" }).getByRole("img", { name: "Burwain" })).toBeVisible();
 
   await page.getByRole("navigation", { name: "Communications admin" }).getByRole("link", { name: "Send email" }).click();
   await expect(page.getByRole("heading", { name: "Send a group email" })).toBeVisible();
