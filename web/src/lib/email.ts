@@ -74,8 +74,9 @@ export function textWithoutImages(text: string) {
   return text.replace(IMAGE_PATTERN, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// Centred with a table as well as CSS, because some email apps ignore CSS centring.
 const logoTag = (url: string) =>
-  `<div style="text-align: center; margin: 0 0 24px"><img src="${escapeHtml(url)}" alt="Burwain" style="max-width: 200px; max-height: 120px; height: auto; border: 0"></div>`;
+  `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 24px"><tr><td align="center" style="text-align: center"><img src="${escapeHtml(url)}" alt="Burwain" width="100" style="display: block; margin: 0 auto; width: 100px; max-width: 100px; max-height: 60px; height: auto; border: 0; object-fit: contain"></td></tr></table>`;
 
 // The club logo (if there is one) above an email's message.
 export function withLogo(html: string, logoUrl: string | null | undefined) {

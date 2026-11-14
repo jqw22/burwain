@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice, SaveButton } from "@/components/fields";
-import { fillPlaceholders, textToHtml } from "@/lib/email";
+import { fillPlaceholders, textToHtml, withLogo } from "@/lib/email";
+import { logoUrl } from "@/lib/email-images";
 import { emailSendingEnabled } from "@/lib/mailer";
 import { meWithRole, pounds, ukDate } from "@/lib/me";
 import { sendReminders, sendTest } from "./actions";
@@ -42,6 +43,7 @@ export default async function RemindPage({ searchParams }: PageProps<"/admin/mem
   const preview = sendable.find((r) => r.person_id === p("preview")) ?? sendable[0];
   const values = preview && year ? await valuesFor(preview, year.label) : null;
   const enabled = emailSendingEnabled();
+  const logo = await logoUrl(supabase);
 
   // Links and hidden fields that keep the selected members.
   const keep = (change: Record<string, string>) => {
@@ -202,7 +204,7 @@ export default async function RemindPage({ searchParams }: PageProps<"/admin/mem
                   <strong>{fillPlaceholders(template.subject, values)}</strong>
                 </p>
                 {/* Built from escaped text by textToHtml, so it's safe to show as HTML. */}
-                <div className="mt-3 break-words" dangerouslySetInnerHTML={{ __html: textToHtml(fillPlaceholders(template.body, values)) }} />
+                <div className="mt-3 break-words" dangerouslySetInnerHTML={{ __html: withLogo(textToHtml(fillPlaceholders(template.body, values)), logo) }} />
               </div>
               {enabled && (
                 <form action={sendTest} className="mt-4">

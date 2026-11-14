@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { ImageButton, insertAtCursor } from "@/components/image-button";
 import { SaveButton } from "@/components/save-button";
-import { PLACEHOLDERS, PURPOSES, fillPlaceholders, imageMarker, textToHtml, unknownPlaceholders } from "@/lib/email";
+import { PLACEHOLDERS, PURPOSES, fillPlaceholders, imageMarker, textToHtml, unknownPlaceholders, withLogo } from "@/lib/email";
 import { saveTemplate } from "./actions";
 
 type Template = { id: string; name: string; purpose: string; subject: string; body: string };
@@ -12,7 +12,7 @@ type Template = { id: string; name: string; purpose: string; subject: string; bo
 const input = "mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2";
 
 // Edit a template on the left, see it filled in with example member details on the right.
-export function TemplateForm({ template, examples }: { template: Template | null; examples: Record<string, string> }) {
+export function TemplateForm({ template, examples, logoUrl }: { template: Template | null; examples: Record<string, string>; logoUrl: string | null }) {
   const [subject, setSubject] = useState(template?.subject ?? "");
   const [body, setBody] = useState(template?.body ?? "");
   const unknown = unknownPlaceholders(`${subject} ${body}`);
@@ -85,7 +85,7 @@ export function TemplateForm({ template, examples }: { template: Template | null
             <strong>{fillPlaceholders(subject, examples)}</strong>
           </p>
           {/* Built from escaped text by textToHtml, so it's safe to show as HTML. */}
-          <div className="mt-3 break-words" dangerouslySetInnerHTML={{ __html: textToHtml(fillPlaceholders(body, examples)) }} />
+          <div className="mt-3 break-words" dangerouslySetInnerHTML={{ __html: withLogo(textToHtml(fillPlaceholders(body, examples)), logoUrl) }} />
         </div>
       </section>
     </div>

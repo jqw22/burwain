@@ -60,7 +60,7 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
 
       {edit && (
         <Card title={editing ? `Edit ${editing.name}` : "Add an email template"} id="edit">
-          <TemplateForm key={editing?.id ?? "new"} template={editing} examples={examples} />
+          <TemplateForm key={editing?.id ?? "new"} template={editing} examples={examples} logoUrl={logo} />
         </Card>
       )}
 
