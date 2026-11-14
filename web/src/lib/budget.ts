@@ -2,24 +2,27 @@
 
 export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// "£1,200.50" -> 120050 pence; blank -> 0; anything else (letters, minus, 3 decimals) -> null.
+// Budgets are in whole pounds (James: 0 decimal places keeps the columns narrow).
+// "£1,200" -> 120000 pence; blank -> 0; anything else (letters, minus, pence) -> null.
+// "1,200.00" is accepted as whole pounds.
 export function parsePounds(text: string): number | null {
-  const v = text.replace(/[£,\s]/g, "");
+  const v = text.replace(/[£,\s]/g, "").replace(/\.0{1,2}$/, "");
   if (v === "") return 0;
-  if (!/^\d+(\.\d{1,2})?$/.test(v) && !/^\.\d{1,2}$/.test(v)) return null;
-  const pence = Math.round(Number(v) * 100);
+  if (!/^\d+$/.test(v)) return null;
+  const pence = Number(v) * 100;
   return pence > 2_000_000_000 ? null : pence;
 }
 
-// 120050 -> "1,200.50"; 0 -> "" (an empty cell).
+const whole = (pence: number) => Math.round(pence / 100).toLocaleString("en-GB", { maximumFractionDigits: 0 });
+
+// 120000 -> "1,200"; 0 -> "" (an empty cell).
 export function cellText(pence: number) {
-  return pence === 0 ? "" : (pence / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return pence === 0 ? "" : whole(pence);
 }
 
-// Totals: always 2 decimal places, with a minus sign when below zero.
+// Totals: whole pounds, with a minus sign when below zero.
 export function money(pence: number) {
-  const abs = (Math.abs(pence) / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${pence < 0 ? "−" : ""}£${abs}`;
+  return `${pence < 0 ? "−" : ""}£${whole(Math.abs(pence))}`;
 }
 
 // Budgets are usually set up ahead, so from October the screen opens on next year.
