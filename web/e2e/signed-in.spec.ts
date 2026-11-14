@@ -365,7 +365,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Send email", "Add contact", "Templates", "Email log"]);
-  expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories"]);
+  expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories", "Budget"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
@@ -567,7 +567,7 @@ test("finance sees this month's transactions with who paid, a running balance, s
   const page = await adminPage(browser);
   await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Transactions", "Categories"]);
+  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Transactions", "Categories", "Budget"]);
 
   // This month by default: last month's grant isn't shown.
   const month = sql(`select to_char(date_trunc('month', current_date), 'YYYY-MM-DD') || '|' || to_char(date_trunc('month', current_date) + interval '1 month' - interval '1 day', 'YYYY-MM-DD')`).split("|");
@@ -702,6 +702,51 @@ test("finance adds, renames and makes inactive a transaction category", async ({
   await expect(page.getByText("Category is active again")).toBeVisible();
   await page.goto("/admin/transactions/new");
   await expect(page.getByLabel("Category").locator("option", { hasText: `Coaching fees ${run}` })).toHaveCount(1);
+});
+
+test("finance fills in a monthly budget with income and expenditure sub-totals", async ({ browser }) => {
+  sql(`delete from budget_amounts where year = 2031`);
+  const page = await adminPage(browser);
+  const finance = page.getByRole("main").locator("section", { has: page.getByRole("heading", { name: "Finance admin", exact: true }) });
+  await finance.getByRole("link", { name: "Budget", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /^Budget for \d{4}$/ })).toBeVisible();
+  await page.goto("/admin/budget?year=2031");
+  await expect(page.getByRole("heading", { name: "Budget for 2031" })).toBeVisible();
+  const header = (await page.getByRole("row").first().getByRole("columnheader").allTextContents()).map((t) => t.trim());
+  expect(header).toEqual(["Category", "Jan '31", "Feb '31", "Mar '31", "Apr '31", "May '31", "Jun '31", "Jul '31", "Aug '31", "Sep '31", "Oct '31", "Nov '31", "Dec '31", "Total"]);
+
+  await page.getByLabel("Donations Jan 2031").fill("1200.5");
+  await page.getByLabel("Donations Feb 2031").fill("£300");
+  await page.getByLabel("Insurance Jan 2031").fill("450");
+  const row = (name: string) => page.getByRole("row", { name: new RegExp(`^${name}`) });
+  const cells = async (name: string) => (await row(name).getByRole("cell").allTextContents()).map((t) => t.trim());
+  // The totals work out as you type: Jan income 1,200.50, spend 450, so 750.50 left.
+  expect((await cells("Income sub-total")).slice(0, 2)).toEqual(["£1,200.50", "£300.00"]);
+  expect((await cells("Income sub-total")).at(-1)).toBe("£1,500.50");
+  expect((await cells("Expenditure sub-total"))[0]).toBe("£450.00");
+  expect((await cells("Total \\(income")).slice(0, 2)).toEqual(["£750.50", "£300.00"]);
+  expect((await cells("Total \\(income")).at(-1)).toBe("£1,050.50");
+  await expect(page.getByText("You have changes that aren't saved yet.")).toBeVisible();
+
+  // Something that isn't money is outlined and can't be saved.
+  await page.getByLabel("Insurance Feb 2031").fill("abc");
+  await expect(page.getByRole("button", { name: "Save budget" })).toBeDisabled();
+  await page.getByLabel("Insurance Feb 2031").fill("");
+
+  await page.getByRole("button", { name: "Save budget" }).click();
+  await expect(page.getByText("Budget for 2031 saved.")).toBeVisible();
+  await expect(page.getByLabel("Donations Jan 2031")).toHaveValue("1,200.50");
+  expect(sql(`select string_agg(c.name || ':' || b.month || ':' || b.amount_pence, ',' order by c.name, b.month) from budget_amounts b join transaction_categories c on c.id = b.category_id where b.year = 2031`)).toBe(
+    "Donations:1:120050,Donations:2:30000,Insurance:1:45000",
+  );
+  await shot(page, "admin-budget");
+
+  // Clearing a cell removes the figure.
+  await page.getByLabel("Insurance Jan 2031").fill("");
+  await page.getByRole("button", { name: "Save budget" }).click();
+  await expect(page.getByText("Budget for 2031 saved.")).toBeVisible();
+  expect(sql(`select count(*) from budget_amounts where year = 2031`)).toBe("2");
+  sql(`delete from budget_amounts where year = 2031`);
 });
 
 test("an admin adds new members: joining a family, a new family paying cash, and a whole family", async ({ browser }) => {

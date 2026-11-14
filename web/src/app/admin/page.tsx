@@ -103,6 +103,11 @@ export default async function AdminHomePage() {
                 Categories
               </Link>
             </li>
+            <li>
+              <Link href="/admin/budget" className="text-sky-800 underline">
+                Budget
+              </Link>
+            </li>
           </ul>
         </section>
       )}
