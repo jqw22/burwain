@@ -17,12 +17,12 @@ export default async function AdminHomePage() {
   ]);
   // This Admin page is for admin and finance logins; members go back to Home.
   if (!isAdmin && !isFinance) redirect("/");
-  const waiting = isAdmin ? ((await supabase.rpc("pending_applications")).data ?? []).length : 0;
+  const waiting = ((await supabase.rpc("pending_applications")).data ?? []).length;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Admin</h1>
-      {isAdmin && (
+      {/* Finance logins see the Membership and Communications areas too, without the pages that only make changes. */}
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="font-semibold">Membership admin</h2>
           <ul className="mt-2 space-y-1">
@@ -43,10 +43,17 @@ export default async function AdminHomePage() {
               </Link>
             </li>
             <li>
+              <Link href="/admin/titles" className="text-sky-800 underline">
+                Club titles
+              </Link>
+            </li>
+            {isAdmin && (
+            <li>
               <Link href="/admin/import" className="text-sky-800 underline">
                 Import
               </Link>
             </li>
+            )}
             <li>
               {/* Temporary: the public join form will be linked from the club website later. */}
               <Link href="/join" className="text-sky-800 underline">
@@ -56,21 +63,23 @@ export default async function AdminHomePage() {
             </li>
           </ul>
         </section>
-      )}
-      {isAdmin && (
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="font-semibold">Communications admin</h2>
           <ul className="mt-2 space-y-1">
+            {isAdmin && (
             <li>
               <Link href="/admin/emails/send" className="text-sky-800 underline">
                 Send email
               </Link>
             </li>
+            )}
+            {isAdmin && (
             <li>
               <Link href="/admin/contacts/new" className="text-sky-800 underline">
                 Add contact
               </Link>
             </li>
+            )}
             <li>
               <Link href="/admin/emails" className="text-sky-800 underline">
                 Templates
@@ -83,8 +92,6 @@ export default async function AdminHomePage() {
             </li>
           </ul>
         </section>
-      )}
-      {(isAdmin || isFinance) && (
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="font-semibold">Finance admin</h2>
           <ul className="mt-2 space-y-1">
@@ -115,7 +122,6 @@ export default async function AdminHomePage() {
             </li>
           </ul>
         </section>
-      )}
     </div>
   );
 }

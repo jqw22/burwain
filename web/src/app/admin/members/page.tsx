@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LiveSearch } from "@/components/live-search";
 import { AdminNav, NotAllowed } from "@/components/admin";
-import { ageOn, meWithRole } from "@/lib/me";
+import { adminAccess, ageOn } from "@/lib/me";
 import { ukToday } from "@/lib/quote";
 
 type Row = {
@@ -137,8 +137,9 @@ const month = (d: string | undefined) =>
 
 export default async function MembersPage({ searchParams }: PageProps<"/admin/members">) {
   const params = await searchParams;
-  const { supabase, allowed } = await meWithRole("admin");
-  if (!allowed) return <NotAllowed />;
+  // Finance logins see the list too, but can't add members or send reminders.
+  const { supabase, canView, isAdmin } = await adminAccess();
+  if (!canView) return <NotAllowed who="club admins and finance" />;
 
   // Letters, digits, spaces, @ . - ' only, so the search can't break the query.
   const q = (typeof params.q === "string" ? params.q : "").replace(/[^\p{L}\p{N} @.\-']/gu, "").trim();
@@ -322,11 +323,13 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       <AdminNav current="members" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-600">Everyone on the member list, with their membership and renewal status.</p>
+        {isAdmin && (
         <div className="flex flex-wrap gap-2">
           <Link href="/admin/members/new" className="rounded bg-sky-800 px-4 py-2 font-medium text-white hover:bg-sky-900">
             + Add new member
           </Link>
         </div>
+        )}
       </div>
       <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
         <summary className="cursor-pointer font-medium text-slate-900">How status and renewal are worked out</summary>
@@ -408,12 +411,14 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
         Showing {rows.length} {rows.length === 1 ? "person" : "people"}
         {q && <> matching &ldquo;{q}&rdquo;</>}, sorted by {sort === "type" ? "membership type" : "name"}.
       </p>
+      {isAdmin && (
       <form id="remind" action="/admin/members/remind" className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-600">To send renewal reminders, tick the members in the Remind column, then press Send reminder.</p>
         <button type="submit" className="rounded border border-slate-400 bg-white px-4 py-2 font-medium text-slate-800 hover:border-sky-800 hover:bg-sky-50">
           Send reminder…
         </button>
       </form>
+      )}
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-600">
@@ -497,7 +502,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                   <td className="px-3 py-2 whitespace-nowrap">
                     {remindable.has(p.id) && (
                       <label className="flex items-center gap-2">
-                        <input type="checkbox" form="remind" name="p" value={p.id} aria-label={`Remind ${p.first_name} ${p.last_name}`} />
+                        {isAdmin && <input type="checkbox" form="remind" name="p" value={p.id} aria-label={`Remind ${p.first_name} ${p.last_name}`} />}
                         {remindable.get(p.id) && <span className="text-xs text-slate-500">Reminded {shortDate(remindable.get(p.id)!)}</span>}
                       </label>
                     )}

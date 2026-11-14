@@ -37,10 +37,25 @@ export function text(form: FormData, name: string): string | null {
 }
 
 // The signed-in member plus whether they hold a role (superadmins pass every check).
-export async function meWithRole(role: "admin" | "finance") {
+export async function meWithRole(role: "admin" | "finance" | "superadmin") {
   const me = await requireMe();
   const { data } = await me.supabase.rpc("has_role", { r: role });
   return { ...me, allowed: Boolean(data) };
+}
+
+// What the signed-in person may do in the admin areas. Admins manage Membership and Communications;
+// finance logins can look at those areas but not change them. Finance manages the Finance area and
+// admins can only look at it. Superadmins pass every check and also manage roles and club titles.
+export async function adminAccess() {
+  const me = await requireMe();
+  const [{ data: a }, { data: f }, { data: s }] = await Promise.all([
+    me.supabase.rpc("has_role", { r: "admin" }),
+    me.supabase.rpc("has_role", { r: "finance" }),
+    me.supabase.rpc("has_role", { r: "superadmin" }),
+  ]);
+  const isAdmin = Boolean(a);
+  const isFinance = Boolean(f);
+  return { ...me, isAdmin, isFinance, isSuper: Boolean(s), canView: isAdmin || isFinance };
 }
 
 export function ageOn(dob: string | null, on = new Date()) {

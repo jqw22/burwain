@@ -4,7 +4,7 @@ import { NotAllowed, STATUS_LABEL } from "@/components/admin";
 import { WhatsAppLink } from "@/components/whatsapp-link";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { EditLink, FormButtons, Item, LINK } from "@/app/profile/ui";
-import { ageOn, meWithRole, PERSON_FIELDS, pounds, ukDate, type Person } from "@/lib/me";
+import { adminAccess, ageOn, PERSON_FIELDS, pounds, ukDate, type Person } from "@/lib/me";
 import { RenewForm, type RenewPerson, type RenewType } from "@/app/profile/renew-form";
 import { quote, typeDates, ukToday } from "@/lib/quote";
 import {
@@ -18,6 +18,9 @@ import {
   adminSaveMedical,
   adminSaveMember,
   adminSavePreferences,
+  superAddTitle,
+  superRemoveTitle,
+  superSaveRoles,
 } from "./actions";
 
 type Household = {
@@ -55,6 +58,8 @@ const SAVED: Record<string, string> = {
   contact: "Contact added. They'll get club emails if they agreed to them. To make them a member, add a membership below.",
   renewed: "Membership added. It's awaiting payment; finance can record the payment on the Income page.",
   boats: "Boat storage updated.",
+  roles: "Access saved. It takes effect the next time they sign in or open a page.",
+  title: "Club titles updated.",
 };
 const ERRORS: Record<string, string> = {
   details: "We couldn't save those details. Please check them and try again.",
@@ -72,6 +77,8 @@ const ERRORS: Record<string, string> = {
   renew: "We couldn't add that membership. Please try again.",
   boats: "We couldn't add that boat. Give a class, sail number and dates; up to 3 boats per membership; a payment needs its date.",
   boatremove: "Only boat storage that hasn't been paid for can be removed.",
+  roles: "We couldn't save that access. Check they have an email address (their login), and that the club keeps at least one superadmin.",
+  title: "We couldn't update the club titles. Please check the title name.",
 };
 const SECTION: Record<string, string> = {
   details: "contact",
@@ -91,14 +98,24 @@ const SECTION: Record<string, string> = {
   renew: "membership",
   boats: "boats",
   boatremove: "boats",
+  roles: "roles",
+  title: "roles",
+};
+
+const ROLE_LABEL: Record<string, string> = { admin: "Admin", finance: "Finance", superadmin: "Superadmin" };
+const ROLE_HINT: Record<string, string> = {
+  admin: "Membership and Communications admin; can look at Finance.",
+  finance: "Finance admin; can look at Membership and Communications.",
+  superadmin: "Everything, plus access and club titles.",
 };
 
 // An admin's view of one member: the same boxes as Your details, each opened for editing with its Edit link.
+// Finance logins see the same page without Edit links or medical information.
 export default async function AdminMemberPage({ params, searchParams }: PageProps<"/admin/members/[id]">) {
   const { id } = await params;
   const query = await searchParams;
-  const { supabase, allowed } = await meWithRole("admin");
-  if (!allowed) return <NotAllowed />;
+  const { supabase, canView, isAdmin, isSuper } = await adminAccess();
+  if (!canView) return <NotAllowed who="club admins and finance" />;
 
   const { data: m } = await supabase
     .from("people")
@@ -107,7 +124,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
     .maybeSingle<Person & { emails_unsubscribed_at: string | null }>();
   if (!m) notFound();
 
-  const [{ data: household }, { data: family }, { data: history }, { data: quals }, { data: roles }] = await Promise.all([
+  const [{ data: household }, { data: family }, { data: history }, { data: quals }, { data: roles }, { data: titleData }, { data: allTitles }] = await Promise.all([
     m.household_id
       ? supabase.from("households").select("*").eq("id", m.household_id).maybeSingle<Household>()
       : Promise.resolve({ data: null }),
@@ -122,7 +139,13 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
     supabase.rpc("membership_history"),
     supabase.from("qualifications").select("id, name, awarded_on, expires_on").eq("person_id", id).order("expires_on"),
     supabase.from("user_roles").select("role").eq("person_id", id),
+    supabase.from("person_titles").select("title_id, club_titles(name, sort_order)").eq("person_id", id),
+    supabase.from("club_titles").select("name").eq("is_active", true).order("sort_order").order("name"),
   ]);
+  const roleSet = new Set(((roles ?? []) as { role: string }[]).map((r) => r.role));
+  const titles = ((titleData ?? []) as unknown as { title_id: string; club_titles: { name: string; sort_order: number } }[]).sort(
+    (a, b) => a.club_titles.sort_order - b.club_titles.sort_order || a.club_titles.name.localeCompare(b.club_titles.name),
+  );
   const [{ data: boatData }, { data: storagePrices }] = await Promise.all([
     supabase
       .from("boat_storages")
@@ -170,9 +193,11 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
     .map((t) => ({ ...t, annual_price_pence: hadMembership ? t.annual_price_pence : quote(t, today0).price }));
 
   const base = `/admin/members/${id}`;
-  const editing = typeof query.edit === "string" ? query.edit : null;
+  const requested = typeof query.edit === "string" ? query.edit : null;
+  // Admins edit everything except access and titles, which only superadmins change.
+  const editing = requested === "roles" ? (isSuper ? requested : null) : isAdmin ? requested : null;
   // Viewing medical details is logged, so it only happens when an admin asks to see or edit them.
-  const showMedical = query.medical === "show" || editing === "medical";
+  const showMedical = isAdmin && (query.medical === "show" || editing === "medical");
   const medical = showMedical
     ? ((await supabase.rpc("get_medical_record", { p_person: id })).data as { details: string | null; updated_at: string }[] | null)?.[0]
     : undefined;
@@ -202,7 +227,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
       )}
     </>
   );
-  const edit = (section: string, label: string) => editing !== section && <EditLink base={base} section={section} label={label} />;
+  const edit = (section: string, label: string) => isAdmin && editing !== section && <EditLink base={base} section={section} label={label} />;
 
   return (
     <div className="space-y-6">
@@ -213,8 +238,10 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
         {m.first_name} {m.last_name}
         {age !== null && <span className="ml-2 text-base font-normal text-slate-600">age {age}</span>}
       </h1>
-      {(roles ?? []).length > 0 && (
-        <p className="text-sm text-slate-600">Roles: {(roles as { role: string }[]).map((r) => r.role).join(", ")}</p>
+      {(roleSet.size > 0 || titles.length > 0) && (
+        <p className="text-sm text-slate-600">
+          {[...titles.map((t) => t.club_titles.name), ...["superadmin", "admin", "finance"].filter((r) => roleSet.has(r)).map((r) => ROLE_LABEL[r])].join(", ")}
+        </p>
       )}
       {(savedKey === "added" || savedKey === "accepted") && <Notice message={SAVED[savedKey]} />}
 
@@ -236,7 +263,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
         <Link href="/admin/memberships" className={`mt-3 inline-block ${LINK}`}>
           Payments
         </Link>
-        {renewTypes.length > 0 && (
+        {isAdmin && renewTypes.length > 0 && (
           <div className="mt-4 rounded border border-sky-200 bg-sky-50 p-4">
             <h3 className="font-medium text-sky-950">Renew or add a membership</h3>
             <p className="text-sm text-slate-600">
@@ -251,6 +278,68 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
               button="Save membership"
             />
           </div>
+        )}
+      </Card>
+
+      <Card
+        id="roles"
+        title="Access and club titles"
+        action={isSuper && editing !== "roles" && <EditLink base={base} section="roles" label="access and club titles" />}
+      >
+        {messages("roles")}
+        {editing === "roles" ? (
+          <div className="space-y-6">
+            <form action={superSaveRoles} className="space-y-3">
+              <input type="hidden" name="id" value={m.id} />
+              <h3 className="font-medium">Admin access</h3>
+              <p className="text-sm text-slate-600">They sign in with their own email address, so they need one on their contact details.</p>
+              {["admin", "finance", "superadmin"].map((r) => (
+                <Checkbox key={r} label={`${ROLE_LABEL[r]}: ${ROLE_HINT[r]}`} name={r} defaultChecked={roleSet.has(r)} />
+              ))}
+              <SaveButton>Save access</SaveButton>
+            </form>
+            <div className="space-y-3 border-t border-slate-100 pt-4">
+              <h3 className="font-medium">Club titles</h3>
+              <p className="text-sm text-slate-600">Shown at the top of the Directory. Anyone can have a title, with or without admin access.</p>
+              {titles.length > 0 && (
+                <ul className="divide-y divide-slate-100">
+                  {titles.map((t) => (
+                    <li key={t.title_id} className="flex items-center justify-between py-2">
+                      {t.club_titles.name}
+                      <form action={superRemoveTitle}>
+                        <input type="hidden" name="id" value={m.id} />
+                        <input type="hidden" name="title_id" value={t.title_id} />
+                        <SaveButton variant="link" pendingText="Removing…" aria-label={`Remove title ${t.club_titles.name}`}>
+                          Remove
+                        </SaveButton>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <form action={superAddTitle} className="flex flex-wrap items-end gap-3">
+                <input type="hidden" name="id" value={m.id} />
+                <Field label="Add a title" name="title" required list="club-titles" hint="Pick one or type a new title, for example Commodore" />
+                <datalist id="club-titles">
+                  {((allTitles ?? []) as { name: string }[]).map((t) => (
+                    <option key={t.name} value={t.name} />
+                  ))}
+                </datalist>
+                <SaveButton>Add title</SaveButton>
+              </form>
+            </div>
+            <Link href={`${base}#roles`} className={LINK}>
+              Done
+            </Link>
+          </div>
+        ) : (
+          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+            <Item
+              label="Admin access"
+              value={["superadmin", "admin", "finance"].filter((r) => roleSet.has(r)).map((r) => ROLE_LABEL[r]).join(", ") || "None (member only)"}
+            />
+            <Item label="Club titles" value={titles.map((t) => t.club_titles.name).join(", ") || "None"} />
+          </dl>
         )}
       </Card>
 
@@ -337,7 +426,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
                 <FormButtons base={base} section="family">Save main contact</FormButtons>
               </form>
             ) : (
-              canAddToFamily && (
+              isAdmin && canAddToFamily && (
                 <Link href={`/admin/members/new?household=${household.id}`} className={`mt-3 inline-block ${LINK}`}>
                   Add a new member to this family
                 </Link>
@@ -433,6 +522,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
         </Card>
       )}
 
+      {isAdmin && (
       <Card id="medical" title="Medical information" action={edit("medical", "medical information")}>
         {messages("medical")}
         <p className="mb-4 text-sm text-slate-600">
@@ -469,6 +559,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
           </form>
         )}
       </Card>
+      )}
 
       <Card id="qualifications" title="Qualifications" action={edit("qualifications", "qualifications")}>
         {messages("qualifications")}

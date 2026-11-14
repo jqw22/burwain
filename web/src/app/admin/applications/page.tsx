@@ -1,6 +1,6 @@
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice, SaveButton } from "@/components/fields";
-import { meWithRole, pounds, ukDate } from "@/lib/me";
+import { adminAccess, pounds, ukDate } from "@/lib/me";
 import { acceptApplication, declineApplication } from "./actions";
 
 type Application = {
@@ -33,8 +33,9 @@ const ERRORS: Record<string, string> = {
 // Applications from the public Join page, waiting for an admin.
 export default async function ApplicationsPage({ searchParams }: PageProps<"/admin/applications">) {
   const params = await searchParams;
-  const { supabase, allowed } = await meWithRole("admin");
-  if (!allowed) return <NotAllowed />;
+  // Finance logins can see applications (and payments held on them) but only admins accept or decline.
+  const { supabase, canView, isAdmin } = await adminAccess();
+  if (!canView) return <NotAllowed who="club admins and finance" />;
   const { data } = await supabase.rpc("pending_applications");
   const applications = (data ?? []) as Application[];
   const error = typeof params.error === "string" ? ERRORS[params.error] : undefined;
@@ -100,6 +101,7 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/adm
                 <dd>{a.has_medical ? "Given (visible on their member page once accepted)" : "None given"}</dd>
               </div>
             </dl>
+            {isAdmin && (
             <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-slate-100 pt-4">
               <form action={acceptApplication}>
                 <input type="hidden" name="id" value={a.id} />
@@ -118,6 +120,7 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/adm
                 </SaveButton>
               </form>
             </div>
+            )}
           </Card>
         ))
       )}

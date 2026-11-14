@@ -394,7 +394,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(page.getByRole("banner").getByRole("link")).toHaveText(["Home", "Member", "Directory", "Calendar", "Volunteer", "Handbook", "Admin"]);
   await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
-  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
+  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Club titles", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Send email", "Add contact", "Templates", "Email log"]);
   expect(await links("Finance admin")).toEqual(["Transactions", "Income", "Actual", "Budget", "Categories"]);
 
@@ -402,7 +402,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
   const bar = page.getByRole("navigation", { name: "Membership admin" });
   await expect(page.getByRole("heading", { name: "Membership", exact: true })).toBeVisible();
-  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Import"]);
+  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Club titles", "Import"]);
   // The heading row links between the three admin areas; the one you're in is the heading.
   const areas = page.getByRole("navigation", { name: "Admin areas" });
   await expect(areas.getByRole("link")).toHaveText(["Membership", "Communications", "Finance"]);
@@ -1111,6 +1111,114 @@ test("members see a directory of adult members, without payment status", async (
   sql(`update people set whatsapp = true where first_name = 'Alex' and last_name = 'Tester${run}'`);
   await page.reload();
   await expect(page.getByRole("link", { name: `WhatsApp Alex Tester${run}` })).toHaveAttribute("href", "https://wa.me/447700900456");
+});
+
+test("a superadmin gives a member access and a club title, which shows at the top of the Directory", async ({ browser }) => {
+  const superEmail = `super-${run}@example.test`;
+  sql(`
+    with s as (insert into people (first_name, last_name, date_of_birth, email) values ('Sid', 'Super${run}', '1960-01-01', '${superEmail}') returning id)
+    insert into user_roles (person_id, role) select id, 'superadmin' from s;
+  `);
+  const ctx = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
+  const page = await ctx.newPage();
+  await signIn(page, superEmail);
+  const alexId = sql(`select id from people where first_name = 'Alex' and last_name = 'Tester${run}'`);
+  await page.goto(`/admin/members/${alexId}`);
+  const box = page.locator("#roles");
+  await expect(box).toContainText("None (member only)");
+  await box.getByRole("link", { name: /Edit/ }).click();
+  await box.getByLabel(/^Finance:/).check();
+  await box.getByRole("button", { name: "Save access" }).click();
+  await expect(page.getByText("Access saved.")).toBeVisible();
+  expect(sql(`select string_agg(role::text, ',') from user_roles where person_id = '${alexId}'`)).toBe("finance");
+  await box.getByLabel("Add a title").fill(`Commodore ${run}`);
+  await box.getByRole("button", { name: "Add title" }).click();
+  await expect(page.getByText("Club titles updated.")).toBeVisible();
+  await expect(box.getByRole("listitem")).toContainText([`Commodore ${run}`]);
+  await box.getByRole("link", { name: "Done" }).click();
+  await expect(box).toContainText("Finance");
+  await shot(page, "admin-member-roles");
+
+  // A member with no email can't be given access.
+  const robinId = sql(`select id from people where first_name = 'Robin' and last_name = 'Tester${run}'`);
+  await page.goto(`/admin/members/${robinId}?edit=roles#roles`);
+  await page.locator("#roles").getByLabel(/^Admin:/).check();
+  await page.locator("#roles").getByRole("button", { name: "Save access" }).click();
+  await expect(page.locator("#roles").getByRole("alert")).toContainText("email address");
+
+  // The Club titles page lists the title and who holds it.
+  await page.goto("/admin/titles");
+  await expect(page.getByRole("row", { name: `Commodore ${run}` })).toContainText(`Alex Tester${run}`);
+  await shot(page, "admin-titles");
+
+  // Title holders are in a Club officers box at the top of the Directory.
+  await page.goto("/directory");
+  const officers = page.getByRole("table", { name: "Club officers" });
+  await expect(officers.getByRole("row", { name: new RegExp(`Commodore ${run}`) })).toContainText(`Alex Tester${run}`);
+  await shot(page, "directory-officers");
+  await ctx.close();
+
+  // An admin (not a superadmin) sees access and titles but can't change them.
+  const adminP = await adminPage(browser);
+  await adminP.goto(`/admin/members/${alexId}`);
+  await expect(adminP.locator("#roles")).toContainText(`Commodore ${run}`);
+  await expect(adminP.locator("#roles").getByRole("link", { name: /Edit/ })).toHaveCount(0);
+  sql(`delete from user_roles where person_id = '${alexId}'`);
+});
+
+test("a finance login can look at Membership and Communications admin but not change them", async ({ browser }) => {
+  const financeEmail = `finance-${run}@example.test`;
+  sql(`
+    with f as (insert into people (first_name, last_name, date_of_birth, email) values ('Fran', 'Finance${run}', '1975-01-01', '${financeEmail}') returning id)
+    insert into user_roles (person_id, role) select id, 'finance' from f;
+  `);
+  const ctx = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
+  const page = await ctx.newPage();
+  await signIn(page, financeEmail);
+  await page.goto("/admin");
+  const section = (name: string) => page.getByRole("main").locator("section", { has: page.getByRole("heading", { name, exact: true }) });
+  expect((await section("Membership admin").getByRole("link").allTextContents()).map((t) => t.trim())).toEqual([
+    "Members",
+    "Applications",
+    "Membership types",
+    "Club titles",
+    "Public join form",
+  ]);
+  expect((await section("Communications admin").getByRole("link").allTextContents()).map((t) => t.trim())).toEqual(["Templates", "Email log"]);
+
+  await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
+  await expect(page.getByRole("link", { name: new RegExp(`Tester${run}, Sam`) })).toBeVisible();
+  await expect(page.getByRole("link", { name: "+ Add new member" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send reminder…" })).toHaveCount(0);
+  await page.getByRole("link", { name: new RegExp(`Tester${run}, Sam`) }).click();
+  await expect(page.getByRole("heading", { name: `Sam Tester${run}` })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Edit/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Medical information" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save membership" })).toHaveCount(0);
+
+  await page.goto("/admin/types");
+  await expect(page.getByRole("link", { name: "Add a membership type" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save storage prices" })).toHaveCount(0);
+  await page.goto("/admin/emails");
+  await expect(page.getByRole("link", { name: "Add an email template" })).toHaveCount(0);
+  await page.goto("/admin/emails/send");
+  await expect(page.getByText("This page is for club admins.")).toBeVisible();
+  await ctx.close();
+
+  // Admins can look at Categories but only finance changes them.
+  const adminOnlyEmail = `adminonly-${run}@example.test`;
+  sql(`
+    with a as (insert into people (first_name, last_name, date_of_birth, email) values ('Ari', 'Adminonly${run}', '1972-01-01', '${adminOnlyEmail}') returning id)
+    insert into user_roles (person_id, role) select id, 'admin' from a;
+  `);
+  const ctx2 = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
+  const p2 = await ctx2.newPage();
+  await signIn(p2, adminOnlyEmail);
+  await p2.goto("/admin/categories");
+  await expect(p2.getByRole("heading", { name: "Money out categories" })).toBeVisible();
+  await expect(p2.getByRole("button", { name: "Add category" })).toHaveCount(0);
+  await expect(p2.getByRole("button", { name: /^Make inactive/ })).toHaveCount(0);
+  await ctx2.close();
 });
 
 test("an admin renews a membership for a member", async ({ browser }) => {

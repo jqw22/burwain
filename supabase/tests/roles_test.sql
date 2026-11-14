@@ -95,7 +95,7 @@ select pg_temp.expect_error($q$select * from get_medical_record('20000000-0000-0
 \echo 'Finance (Carol): payment posting and reports'
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
 do $$ begin
-  assert (select count(*) from people) = 1, 'finance cannot read full member records';
+  assert (select count(*) from people) >= 5, 'finance can look at member records (read only)';
   assert (select count(*) from finance_member_status()) = 4, 'finance sees names and status for all memberships';
   insert into member_receipts (id, payer_person_id, amount_pence, fee_pence, method, status, paid_on, recorded_by)
   values ('30000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-00000000000a', 28000, 150, 'card', 'pending', '2026-03-06', '20000000-0000-0000-0000-00000000000c');
@@ -605,7 +605,7 @@ reset request.jwt.claim.sub;
 -- Renewal reminders go to whoever renews, only for memberships not yet renewed; admins only.
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
-select pg_temp.expect_error($q$select * from renewal_reminder_recipients()$q$, 'Admins only');
+select pg_temp.expect_error($q$select * from renewal_reminder_recipients()$q$, 'Admins and finance only');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
 do $$ begin
   assert not exists (select 1 from renewal_reminder_recipients() where email = 'a@example.com'), 'Alice is already covered for 2027';
@@ -996,5 +996,50 @@ do $$ begin
 end $$;
 reset role;
 reset request.jwt.claim.sub;
+
+\echo 'Roles and club titles: superadmins give access and titles; finance can look at admin areas'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+do $$ begin
+  assert (select count(*) from people) >= 5, 'finance sees every member';
+  assert (select count(*) from households) >= 2, 'finance sees every family';
+  perform * from pending_applications();
+  perform * from renewal_reminder_recipients();
+  update people set mobile = '0999' where id = '20000000-0000-0000-0000-00000000000e';
+  assert (select mobile from people where id = '20000000-0000-0000-0000-00000000000e') = '0755', 'finance cannot change members';
+end $$;
+select pg_temp.expect_error($q$select * from get_medical_record('20000000-0000-0000-0000-00000000000a')$q$, 'Not allowed');
+select pg_temp.expect_error($q$select set_member_roles('20000000-0000-0000-0000-00000000000a', '{admin}')$q$, 'Superadmins only');
+select pg_temp.expect_error($q$select add_person_title('20000000-0000-0000-0000-00000000000a', 'Commodore')$q$, 'Superadmins only');
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select pg_temp.expect_error($q$select set_member_roles('20000000-0000-0000-0000-00000000000b', '{admin}')$q$, 'email address');
+select pg_temp.expect_error($q$select set_member_roles('20000000-0000-0000-0000-00000000000d', '{admin}')$q$, 'at least one superadmin');
+do $$ begin
+  perform set_member_roles('20000000-0000-0000-0000-00000000000a', '{admin,finance}');
+  assert (select count(*) from user_roles where person_id = '20000000-0000-0000-0000-00000000000a') = 2, 'Alice has two roles';
+  assert (select granted_by from user_roles where person_id = '20000000-0000-0000-0000-00000000000a' and role = 'admin')
+         = '20000000-0000-0000-0000-00000000000d', 'who gave the role is kept';
+  perform set_member_roles('20000000-0000-0000-0000-00000000000a', '{admin}');
+  assert (select array_agg(role::text) from user_roles where person_id = '20000000-0000-0000-0000-00000000000a') = '{admin}', 'finance removed';
+  perform add_person_title('20000000-0000-0000-0000-00000000000a', 'Commodore');
+  perform add_person_title('20000000-0000-0000-0000-00000000000a', '  commodore ');   -- same title, not a duplicate
+  perform add_person_title('20000000-0000-0000-0000-00000000000b', 'Junior Captain');
+  assert (select count(*) from club_titles) = 2, 'two titles';
+  assert (select count(*) from person_titles) = 2, 'one each';
+  update club_titles set is_active = false where name = 'Junior Captain';
+end $$;
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
+do $$ begin
+  assert (select count(*) from directory_titles()) = 1, 'only active titles in the Directory';
+  assert (select title || ' ' || first_name from directory_titles()) = 'Commodore Alice', 'title holder listed';
+  assert (select count(*) from person_titles) = 0, 'members see only their own titles';
+  delete from person_titles;
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+do $$ begin assert (select count(*) from person_titles) = 2, 'members cannot remove titles'; end $$;
+delete from user_roles where person_id = '20000000-0000-0000-0000-00000000000a';
 
 \echo 'All database tests passed'

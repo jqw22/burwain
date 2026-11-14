@@ -15,6 +15,7 @@ const SECTIONS = {
   members: "membership",
   applications: "membership",
   types: "membership",
+  titles: "membership",
   import: "membership",
   send: "comms",
   emails: "comms",
@@ -26,13 +27,15 @@ const SECTIONS = {
   budget: "finance",
   actual: "finance",
 } as const;
-const LINKS = [
+// adminOnly: pages that only make changes, so finance logins (who can look but not change) don't see them.
+const LINKS: { key: keyof typeof SECTIONS; href: string; label: string; adminOnly?: boolean }[] = [
   { key: "members", href: "/admin/members", label: "Members" },
   { key: "applications", href: "/admin/applications", label: "Applications" },
   { key: "types", href: "/admin/types", label: "Membership types" },
-  { key: "import", href: "/admin/import", label: "Import" },
-  { key: "send", href: "/admin/emails/send", label: "Send email" },
-  { key: "contacts", href: "/admin/contacts/new", label: "Add contact" },
+  { key: "titles", href: "/admin/titles", label: "Club titles" },
+  { key: "import", href: "/admin/import", label: "Import", adminOnly: true },
+  { key: "send", href: "/admin/emails/send", label: "Send email", adminOnly: true },
+  { key: "contacts", href: "/admin/contacts/new", label: "Add contact", adminOnly: true },
   { key: "emails", href: "/admin/emails", label: "Templates" },
   { key: "log", href: "/admin/emails/log", label: "Email log" },
   { key: "transactions", href: "/admin/transactions", label: "Transactions" },
@@ -40,22 +43,22 @@ const LINKS = [
   { key: "actual", href: "/admin/actual", label: "Actual" },
   { key: "budget", href: "/admin/budget", label: "Budget" },
   { key: "categories", href: "/admin/categories", label: "Categories" },
-] as const;
+];
 const SECTION_NAME = { membership: "Membership admin", comms: "Communications admin", finance: "Finance admin" };
 
 // The three admin areas. The heading row links between them; the area you're in is the page heading.
+// Admins and finance logins see all three: each can look at the other's areas without changing them.
 const AREAS = [
-  { key: "membership", label: "Membership", href: "/admin/members", adminOnly: true },
-  { key: "comms", label: "Communications", href: "/admin/emails/send", adminOnly: true },
-  { key: "finance", label: "Finance", href: "/admin/transactions", adminOnly: false },
+  { key: "membership", label: "Membership", href: "/admin/members", financeHref: "/admin/members" },
+  { key: "comms", label: "Communications", href: "/admin/emails/send", financeHref: "/admin/emails" },
+  { key: "finance", label: "Finance", href: "/admin/transactions", financeHref: "/admin/transactions" },
 ] as const;
 
 // heading: false on pages that have their own page title, so there's only one main heading.
 export async function AdminNav({ current, heading = true }: { current: keyof typeof SECTIONS; heading?: boolean }) {
   const section = SECTIONS[current];
-  // Finance users who aren't admins only see the Finance area.
   const { data: isAdmin } = await (await createClient()).rpc("has_role", { r: "admin" });
-  const areas = AREAS.filter((a) => isAdmin || !a.adminOnly);
+  const areas = AREAS.map((a) => ({ ...a, href: isAdmin ? a.href : a.financeHref }));
   return (
     <div className="space-y-3 print:hidden">
       <nav aria-label="Admin areas" className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-2xl">
@@ -80,7 +83,7 @@ export async function AdminNav({ current, heading = true }: { current: keyof typ
         })}
       </nav>
       <nav aria-label={SECTION_NAME[section]} className="flex flex-wrap gap-4 border-b border-slate-200 pb-2 text-sm">
-        {LINKS.filter((l) => SECTIONS[l.key] === section).map((l) => (
+        {LINKS.filter((l) => SECTIONS[l.key] === section && (isAdmin || !l.adminOnly)).map((l) => (
           <Link
             key={l.key}
             href={l.href}

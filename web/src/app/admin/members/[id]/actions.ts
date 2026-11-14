@@ -167,3 +167,29 @@ export async function adminRemoveBoat(form: FormData) {
   if (error) back(id, "error", "boatremove", "boats", true);
   back(id, "saved", "boats", "boats", true);
 }
+
+// Access and club titles: superadmins only (the database checks too).
+export async function superSaveRoles(form: FormData) {
+  const { supabase, allowed } = await meWithRole("superadmin");
+  const id = String(form.get("id"));
+  if (!allowed) back(id, "error", "roles", "roles", true);
+  const roles = ["admin", "finance", "superadmin"].filter((r) => form.get(r) === "on");
+  const { error } = await supabase.rpc("set_member_roles", { p_person: id, p_roles: roles });
+  back(id, error ? "error" : "saved", "roles", "roles", true);
+}
+
+export async function superAddTitle(form: FormData) {
+  const { supabase, allowed } = await meWithRole("superadmin");
+  const id = String(form.get("id"));
+  if (!allowed) back(id, "error", "title", "roles", true);
+  const { error } = await supabase.rpc("add_person_title", { p_person: id, p_title: text(form, "title") ?? "" });
+  back(id, error ? "error" : "saved", "title", "roles", true);
+}
+
+export async function superRemoveTitle(form: FormData) {
+  const { supabase, allowed } = await meWithRole("superadmin");
+  const id = String(form.get("id"));
+  if (!allowed) back(id, "error", "title", "roles", true);
+  const { error } = await supabase.from("person_titles").delete().eq("person_id", id).eq("title_id", String(form.get("title_id")));
+  back(id, error ? "error" : "saved", "title", "roles", true);
+}

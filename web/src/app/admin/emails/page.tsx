@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice } from "@/components/fields";
 import { PURPOSES, exampleValues, type Purpose } from "@/lib/email";
-import { meWithRole, ukDate } from "@/lib/me";
+import { adminAccess, ukDate } from "@/lib/me";
 import { logoUrl } from "@/lib/email-images";
 import { LogoControls } from "./logo-card";
 import { TemplateForm } from "./template-form";
@@ -28,8 +28,9 @@ const ERRORS: Record<string, string> = {
 
 export default async function EmailTemplatesPage({ searchParams }: PageProps<"/admin/emails">) {
   const params = await searchParams;
-  const { supabase, allowed } = await meWithRole("admin");
-  if (!allowed) return <NotAllowed />;
+  // Finance logins can read the templates; only admins change them.
+  const { supabase, canView, isAdmin } = await adminAccess();
+  if (!canView) return <NotAllowed who="club admins and finance" />;
 
   const [{ data }, year, logo] = await Promise.all([
     supabase.from("email_templates").select("id, name, purpose, subject, body, updated_at").order("name"),
@@ -63,7 +64,25 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
         </p>
       )}
 
-      {edit && (
+      {!isAdmin && editing && (
+        <Card title={editing.name} id="edit">
+          <dl className="space-y-3 text-sm">
+            <div>
+              <dt className="text-slate-500">Subject</dt>
+              <dd>{editing.subject}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Message</dt>
+              <dd className="whitespace-pre-wrap">{editing.body}</dd>
+            </div>
+          </dl>
+          <Link href="/admin/emails" className="mt-3 inline-block text-sm text-sky-800 underline">
+            Close
+          </Link>
+        </Card>
+      )}
+
+      {isAdmin && edit && (
         <Card title={editing ? `Edit ${editing.name}` : "Add an email template"} id="edit">
           <TemplateForm key={editing?.id ?? "new"} template={editing} examples={examples} logoUrl={logo} />
         </Card>
@@ -72,7 +91,7 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
       <Card
         title="Templates"
         action={
-          !edit && (
+          !edit && isAdmin && (
             <Link href="/admin/emails?edit=new#edit" className="rounded bg-sky-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-950">
               Add an email template
             </Link>
@@ -104,8 +123,8 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
                     <td className="py-2 pr-4">{t.subject}</td>
                     <td className="py-2 pr-4 text-slate-600">{ukDate(t.updated_at)}</td>
                     <td className="py-2 text-right">
-                      <Link href={`/admin/emails?edit=${t.id}#edit`} className="text-sky-800 underline" aria-label={`Edit ${t.name}`}>
-                        Edit
+                      <Link href={`/admin/emails?edit=${t.id}#edit`} className="text-sky-800 underline" aria-label={`${isAdmin ? "Edit" : "View"} ${t.name}`}>
+                        {isAdmin ? "Edit" : "View"}
                       </Link>
                     </td>
                   </tr>
@@ -116,10 +135,12 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
         )}
       </Card>
 
+      {isAdmin && (
       <Card title="Club logo for emails">
         <p className="mb-3 text-sm text-slate-600">Shown at the top of every group email and renewal reminder.</p>
         <LogoControls logoUrl={logo} />
       </Card>
+      )}
     </div>
   );
 }

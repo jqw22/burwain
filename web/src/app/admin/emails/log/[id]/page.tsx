@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card } from "@/components/fields";
 import { textToHtml } from "@/lib/email";
-import { meWithRole } from "@/lib/me";
+import { adminAccess } from "@/lib/me";
 import { PURPOSE_LABEL, sentWhen } from "../format";
 
 type Campaign = {
@@ -27,8 +27,8 @@ type Recipient = {
 // person when sent) and everyone it went to.
 export default async function EmailLogEntryPage({ params }: PageProps<"/admin/emails/log/[id]">) {
   const { id } = await params;
-  const { supabase, allowed } = await meWithRole("admin");
-  if (!allowed) return <NotAllowed />;
+  const { supabase, canView } = await adminAccess();
+  if (!canView) return <NotAllowed who="club admins and finance" />;
 
   const [{ data: c }, { data: rs }] = await Promise.all([
     supabase

@@ -1,6 +1,6 @@
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice, SaveButton } from "@/components/fields";
-import { meWithRole } from "@/lib/me";
+import { adminAccess } from "@/lib/me";
 import { addCategory, renameCategory, setCategoryActive } from "./actions";
 
 type Category = {
@@ -37,8 +37,9 @@ export default async function CategoriesPage({
   searchParams,
 }: PageProps<"/admin/categories">) {
   const params = await searchParams;
-  const { supabase, allowed } = await meWithRole("finance");
-  if (!allowed) return <NotAllowed who="finance logins" />;
+  // Admins can look at the categories; only finance logins change them.
+  const { supabase, canView, isFinance } = await adminAccess();
+  if (!canView) return <NotAllowed who="finance logins and admins" />;
 
   const [{ data }, { data: used }] = await Promise.all([
     supabase
@@ -92,7 +93,9 @@ export default async function CategoriesPage({
                   className="border-t border-slate-100 align-middle"
                 >
                   <td className="py-2 pr-4">
-                    {LOCKED.has(c.name) ? (
+                    {!isFinance ? (
+                      c.name
+                    ) : LOCKED.has(c.name) ? (
                       <span>
                         {c.name}{" "}
                         <span className="ml-1 text-xs text-slate-500">
@@ -137,7 +140,7 @@ export default async function CategoriesPage({
                     )}
                   </td>
                   <td className="py-2 text-right">
-                    {!LOCKED.has(c.name) && (
+                    {isFinance && !LOCKED.has(c.name) && (
                       <form action={setCategoryActive}>
                         <input type="hidden" name="id" value={c.id} />
                         <input
@@ -174,6 +177,7 @@ export default async function CategoriesPage({
         stop it being picked for new transactions.
       </p>
 
+      {isFinance && (
       <Card title="Add a category">
         <form action={addCategory} className="flex flex-wrap items-end gap-3">
           <label className="block">
@@ -194,6 +198,7 @@ export default async function CategoriesPage({
           <SaveButton>Add category</SaveButton>
         </form>
       </Card>
+      )}
 
       {list("out", "Money out categories")}
       {list("in", "Money in categories")}
