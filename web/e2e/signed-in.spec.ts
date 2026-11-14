@@ -599,9 +599,21 @@ test("finance records a cheque for an Associate membership, which no longer need
   await page.getByLabel("Paid by").selectOption("cheque");
   await page.getByRole("button", { name: "Record payment" }).click();
   await expect(page.getByText("Payment recorded.")).toBeVisible();
-  const row = page.getByRole("row", { name: new RegExp(`Associate Membership .*Alex Tester${run}`) });
-  await expect(row).toContainText("Paid");
-  await expect(row).toContainText("cheque");
+  // The payment appears in the list of income received (this month by default), with who paid and how.
+  const row = page.getByRole("row", { name: new RegExp(`Alex Tester${run} .*Associate Membership`) });
+  await expect(row).toContainText("Membership");
+  await expect(row).toContainText("Cheque");
+  await expect(row).toContainText("£30.00");
+  await expect(page.getByRole("checkbox", { name: `Mark Associate Membership for Alex Tester${run} as paid` })).toHaveCount(0);
+  // Search, like Transactions.
+  await page.getByLabel("Search income").fill(`Alex Tester${run} cheque`);
+  await expect(page).toHaveURL(/q=/);
+  await expect(row).toBeVisible();
+  await page.getByLabel("Search income").fill(`nobody-${run}`);
+  await expect(page.getByText("No payments match that search.")).toBeVisible();
+  // Dates before the payment don't show it.
+  await page.goto("/admin/memberships?from=2001-01-01&to=2001-01-31");
+  await expect(page.getByText("No payments in these dates.")).toBeVisible();
   expect(
     sql(`select m.status from memberships m join membership_people mp on mp.membership_id = m.id
           join people p on p.id = mp.person_id join membership_types t on t.id = m.membership_type_id
@@ -783,6 +795,9 @@ test("finance fills in a monthly budget in whole pounds with income and expendit
   expect((await cells("Expenditure sub-total"))[0]).toBe("£450");
   expect((await cells("Total ")).slice(0, 2)).toEqual(["£750", "£300"]);
   expect((await cells("Total ")).at(-1)).toBe("£1,050");
+  // Cumulative balance: the running total month by month (750, then 750 + 300), ending on the year's total.
+  expect((await cells("Cumulative balance")).slice(0, 3)).toEqual(["£750", "£1,050", "£1,050"]);
+  expect((await cells("Cumulative balance")).at(-1)).toBe("£1,050");
   await expect(page.getByText("You have changes that aren't saved yet.")).toBeVisible();
 
   // Something that isn't money is outlined and can't be saved.

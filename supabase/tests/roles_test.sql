@@ -263,7 +263,12 @@ begin
   assert (select status::text from memberships where id = m) = 'active', 'marked paid';
   assert (select coalesce(sum(total_pence), 0) from income_statement() where direction = 'in') = before, 'no finance transaction posted (finance enters bank lines by hand)';
   assert (select method::text from club_memberships((select id from club_years where label = '2026')) where id = m) = 'cheque', 'payment method shown';
+  assert (select count(*) from member_income(current_date, current_date) where payer_name = 'Eve Other' and kind = 'Membership'
+            and method = 'cheque' and amount_pence = 1500 and covers like '%Eve%') = 1, 'Income list shows the payment, who paid and who it covers';
+  assert (select count(*) from member_income('2001-01-01', '2001-01-31')) = 0, 'Income list follows the dates';
 end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ begin assert (select count(*) from member_income(null, null)) = 0, 'members see no income list'; end $$;
 reset role;
 
 \echo 'Family: the main contact manages every family member''s medical info and qualifications'
