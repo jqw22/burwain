@@ -861,4 +861,31 @@ reset request.jwt.claim.sub;
   select 1/0;
 \endif
 
+\echo 'Handbook: members read, only admins edit'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ begin
+  assert (select count(*) from handbook_sections) = 5, 'members see the five handbook sections';
+  update handbook_sections set body = 'changed by a member' where slug = 'safety';
+  assert not exists (select 1 from handbook_sections where body = 'changed by a member'), 'members cannot edit the handbook';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+do $$ begin
+  update handbook_sections set body = '<p>Wear a buoyancy aid.</p>' where slug = 'safety';
+  assert (select body from handbook_sections where slug = 'safety') = '<p>Wear a buoyancy aid.</p>', 'admins can edit the handbook';
+  insert into handbook_sections (slug, title, position) values ('extra', 'Extra', 6);
+  assert false, 'nobody adds sections from the app';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+set role anon;
+select count(*) = 0 as handbook_hidden from handbook_sections \gset
+reset role;
+\if :handbook_hidden
+\else
+  \echo 'the handbook should not be public'
+  select 1/0;
+\endif
+
 \echo 'All database tests passed'
