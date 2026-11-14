@@ -25,6 +25,12 @@ export function money(pence: number) {
   return `${pence < 0 ? "−" : ""}£${whole(Math.abs(pence))}`;
 }
 
+// Fixed categories: they can't be renamed or made inactive (the database refuses too).
+// Member payments use the first three; "Transfer from Saving" has its own row on the Budget and
+// Actual sheets, between Total and Cumulative balance, so it isn't counted as income.
+export const TRANSFER = "Transfer from Saving";
+export const FIXED_CATEGORIES = new Set(["Subscriptions", "Boat storage", "Payment fees", TRANSFER]);
+
 // Budgets and actuals start in 2026 (James): no earlier years, and the cumulative balance
 // carries forward from 1 January 2026 onwards.
 export const FIRST_BUDGET_YEAR = 2026;
