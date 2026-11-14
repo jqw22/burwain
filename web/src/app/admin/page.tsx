@@ -89,13 +89,13 @@ export default async function AdminHomePage() {
           <h2 className="font-semibold">Finance admin</h2>
           <ul className="mt-2 space-y-1">
             <li>
-              <Link href="/admin/memberships" className="text-sky-800 underline">
-                Income
+              <Link href="/admin/transactions" className="text-sky-800 underline">
+                Transactions
               </Link>
             </li>
             <li>
-              <Link href="/admin/transactions" className="text-sky-800 underline">
-                Transactions
+              <Link href="/admin/memberships" className="text-sky-800 underline">
+                Income
               </Link>
             </li>
             <li>

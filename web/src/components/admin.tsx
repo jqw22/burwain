@@ -35,6 +35,7 @@ const LINKS = [
   { key: "emails", href: "/admin/emails", label: "Templates" },
   { key: "log", href: "/admin/emails/log", label: "Email log" },
   { key: "transactions", href: "/admin/transactions", label: "Transactions" },
+  { key: "memberships", href: "/admin/memberships", label: "Income" },
   { key: "categories", href: "/admin/categories", label: "Categories" },
   { key: "budget", href: "/admin/budget", label: "Budget" },
 ] as const;

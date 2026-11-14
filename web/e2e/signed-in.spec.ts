@@ -396,7 +396,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Send email", "Add contact", "Templates", "Email log"]);
-  expect(await links("Finance admin")).toEqual(["Income", "Transactions", "Categories", "Budget"]);
+  expect(await links("Finance admin")).toEqual(["Transactions", "Income", "Categories", "Budget"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
@@ -624,7 +624,7 @@ test("finance sees this month's transactions with who paid, a running balance, s
   const page = await adminPage(browser);
   await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Transactions", "Categories", "Budget"]);
+  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Transactions", "Income", "Categories", "Budget"]);
 
   // This month by default: last month's grant isn't shown.
   const month = sql(`select to_char(date_trunc('month', current_date), 'YYYY-MM-DD') || '|' || to_char(date_trunc('month', current_date) + interval '1 month' - interval '1 day', 'YYYY-MM-DD')`).split("|");
