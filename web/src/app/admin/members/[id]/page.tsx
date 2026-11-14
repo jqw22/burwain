@@ -162,9 +162,11 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
     .order("sort_order");
   const familyPeople = m.household_id ? ((family ?? []) as Relative[]) : [{ id: m.id, first_name: m.first_name, last_name: m.last_name, date_of_birth: m.date_of_birth }];
   const renewPeople = familyPeople.map((p): RenewPerson => ({ id: p.id, name: `${p.first_name} ${p.last_name}`, date_of_birth: p.date_of_birth }));
+  // Pro rata is for brand-new members only: anyone who has had a membership before pays the full price.
+  const hadMembership = ((history ?? []) as History[]).some((h) => h.person_id === id && h.status !== "cancelled");
   const renewTypes = ((openTypes ?? []) as (RenewType & { sibling_order: number | null })[])
     .filter((t) => t.sibling_order === null || t.sibling_order === 1)
-    .map((t) => ({ ...t, annual_price_pence: quote(t, today0).price }));
+    .map((t) => ({ ...t, annual_price_pence: hadMembership ? t.annual_price_pence : quote(t, today0).price }));
 
   const base = `/admin/members/${id}`;
   const editing = typeof query.edit === "string" ? query.edit : null;
@@ -237,8 +239,8 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
           <div className="mt-4 rounded border border-sky-200 bg-sky-50 p-4">
             <h3 className="font-medium text-sky-950">Renew or add a membership</h3>
             <p className="text-sm text-slate-600">
-              Any active membership type that hasn&apos;t ended. Prices are what they&apos;d pay today: types that have already started are
-              charged for the months left.
+              Any active membership type that hasn&apos;t ended. Members who have had a membership before pay the full price. Only
+              brand-new members pay for the months left on a type that has already started.
             </p>
             <RenewForm
               people={renewPeople}

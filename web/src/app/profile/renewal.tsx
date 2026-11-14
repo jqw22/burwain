@@ -28,7 +28,8 @@ type Due = { person_id: string; membership_id: string; code: string; ends_on: st
 type Member = { id: string; first_name: string; last_name: string; date_of_birth: string | null };
 
 // "Your membership" on Your details: memberships that haven't ended, and renewing from 60 days before one ends.
-// Members renew the people on their memberships into any active type that starts after today.
+// Members whose membership has lapsed can renew too. They renew the people on their memberships into any
+// active type that starts after the membership being renewed ends and hasn't ended yet, at the full price.
 // Adding people who weren't members is done by club admins.
 export async function RenewalCard({
   supabase,
@@ -90,12 +91,15 @@ export async function RenewalCard({
     ...new Set(due.filter((d) => !d.renewed && (people.length === 0 || people.some((p) => p.id === d.person_id))).map((d) => d.person_id)),
   ].sort((a, b) => order(a) - order(b));
   const renewing = due.length > 0;
+  // The membership being renewed ends on (or ended on) this date; new types must start after it.
+  const lastEnd = due.filter((d) => pool.includes(d.person_id)).map((d) => d.ends_on).sort().at(-1) ?? today;
   const { data: typesData } = renewing
     ? await supabase
         .from("membership_types")
         .select("id, code, name, description, cover, annual_price_pence, max_age, sibling_order, starts_on, ends_on")
         .eq("is_open", true)
-        .gt("starts_on", today)
+        .gt("starts_on", lastEnd)
+        .gte("ends_on", today)
         .order("starts_on")
         .order("sort_order")
     : { data: [] };
@@ -152,7 +156,7 @@ export async function RenewalCard({
       </div>
       <div className="mt-4 space-y-4">
         {messages}
-        {running.length === 0 && later.length === 0 && (
+        {running.length === 0 && later.length === 0 && pool.length === 0 && (
           <p className="text-slate-700">No current membership. To join or rejoin, please contact the membership secretary.</p>
         )}
         {running.length > 0 && <ul className="space-y-2">{running.map(line)}</ul>}
@@ -163,7 +167,11 @@ export async function RenewalCard({
             <h3 className="font-medium text-sky-950">{renewing && pool.length > 0 ? "Renew your membership" : "Your next membership"}</h3>
             {renewing && endsOn && (
               <p className="mt-1 text-sm text-sky-950">
-                {pool.length > 0 ? `Your membership ends on ${ukDate(endsOn)}.` : "Everyone due for renewal has been renewed."}
+                {pool.length === 0
+                  ? "Everyone due for renewal has been renewed."
+                  : endsOn < today
+                    ? `Your membership ended on ${ukDate(endsOn)}. You can still renew here.`
+                    : `Your membership ends on ${ukDate(endsOn)}.`}
               </p>
             )}
             {later.length > 0 && <ul className="mt-2 space-y-2">{later.map(line)}</ul>}

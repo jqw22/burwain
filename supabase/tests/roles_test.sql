@@ -395,12 +395,48 @@ do $$ declare n uuid; begin
          array['20000000-0000-0000-0000-00000000000e'::uuid]);
   assert (select t.name from memberships m join membership_types t on t.id = m.membership_type_id where m.id = n) = 'RC Laser Membership', 'can choose a different type';
 end $$;
-select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'A' and starts_on = '2026-01-01'), array['20000000-0000-0000-0000-00000000000e'::uuid])$q$, 'starts after today');
+select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'A' and starts_on = '2026-01-01'), array['20000000-0000-0000-0000-00000000000e'::uuid])$q$, 'starts after your current one');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'C' and starts_on = '2027-01-01'), array['20000000-0000-0000-0000-00000000000e'::uuid])$q$, 'due for renewal');
 select pg_temp.expect_error($q$select renew_my_membership((select id from membership_types where code = 'J1' and starts_on = '2027-01-01'), array[(select id from people where first_name = 'Cleo')])$q$, 'due for renewal');
 reset role;
 reset request.jwt.claim.sub;
+
+\echo 'Lapsed members can still renew, at the full price; pro rata is for brand-new members only'
+-- Lena had a Club membership for 2026. It's now February 2027, so it has ended (lapsed).
+insert into auth.users (id) values ('00000000-0000-0000-0000-00000000001f');
+do $$ declare hh uuid; lena uuid; m uuid; begin
+  insert into households (address_line1, postcode) values ('3 Old Lane', 'BB3 3OL') returning id into hh;
+  insert into people (auth_user_id, household_id, first_name, last_name, date_of_birth, email)
+  values ('00000000-0000-0000-0000-00000000001f', hh, 'Lena', 'Lapsed', '1970-02-02', 'lena@example.com') returning id into lena;
+  update households set lead_person_id = lena where id = hh;
+  insert into memberships (club_year_id, membership_type_id, payer_person_id, household_id, status, price_pence)
+  values ((select id from club_years where label = '2026'), (select id from membership_types where code = 'C' and starts_on = '2026-01-01'),
+          lena, hh, 'active', 3500) returning id into m;
+  insert into membership_people (membership_id, person_id) values (m, lena);
+end $$;
+create or replace function club_today() returns date language sql stable as $$ select '2027-02-10'::date $$;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000001f';
+do $$ declare n uuid; begin
+  assert (select count(*) from my_renewals() where not renewed) = 1, 'Lena''s ended membership can be renewed';
+  n := renew_my_membership((select id from membership_types where code = 'C' and starts_on = '2027-01-01'),
+         array[(select id from people where first_name = 'Lena' and last_name = 'Lapsed')]);
+  assert (select price_pence from memberships where id = n) = 3500, 'existing member pays the full price, not pro rata';
+  assert (select prorata_months from memberships where id = n) = 12, 'whole year';
+  assert (select count(*) from my_renewals() where not renewed) = 0, 'nothing left to renew';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+do $$ declare first uuid; begin
+  first := admin_add_member(jsonb_build_object('address_line1', '4 New St', 'postcode', 'BB4 4NS',
+    'type_id', (select id from membership_types where code = 'C' and starts_on = '2027-01-01'),
+    'people', jsonb_build_array(jsonb_build_object('first_name', 'Nia', 'last_name', 'New', 'date_of_birth', '1985-03-03'))));
+  assert (select m.price_pence from memberships m join membership_people mp on mp.membership_id = m.id where mp.person_id = first) = 3208,
+         'a brand-new member joining in February pays for the 11 months left';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+create or replace function club_today() returns date language sql stable as $$ select '2026-12-05'::date $$;
 
 \echo 'Admins add a whole family on a Family membership, and change medical information'
 set role authenticated;
