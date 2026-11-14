@@ -156,7 +156,7 @@ test("a member signs in with an email link and sees their membership", async ({ 
   const bar = page.getByRole("banner").getByRole("link");
   await expect(bar).toHaveText(["Home", "Member", "Directory", "Calendar", "Volunteer", "Handbook"]);
   await expect(page.getByRole("banner").getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
-  for (const [name, path] of [["Calendar", "/calendar"], ["Volunteer", "/volunteer"], ["Handbook", "/handbook"]]) {
+  for (const [name, path] of [["Calendar", "/calendar"], ["Volunteer", "/volunteer"]]) {
     await page.getByRole("banner").getByRole("link", { name }).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
     await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
@@ -1335,6 +1335,70 @@ test("an admin sends a group email with a logo and a picture, and a contact unsu
   await page.reload();
   await page.getByRole("region", { name: /^2\. Choose who gets it/ }).getByPlaceholder("Search by name or email").fill(`Gail Group${run}`);
   await expect(page.getByRole("row", { name: `Gail Group${run}` })).toContainText("Unsubscribed");
+});
+
+test("members read the handbook: five sections, a few lines each, expandable, no Edit button", async ({ browser }) => {
+  // Long enough text that the preview only shows the first few lines.
+  const long = Array.from({ length: 30 }, (_, i) => `<p>Safety line ${i + 1}.</p>`).join("");
+  sql(`update handbook_sections set body = '<h3>Pontoons</h3>${long}<p>Last safety line.</p>' where slug = 'safety'`);
+  sql(`update handbook_sections set body = '<p>Be kind.</p>' where slug = 'code-of-conduct'`);
+  const page = await leadPage(browser);
+  await page.goto("/");
+  await page.getByRole("banner").getByRole("link", { name: "Handbook" }).click();
+  await expect(page).toHaveURL(/\/handbook$/);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText([
+    "General Information",
+    "Notice of Race",
+    "Sailing Instructions",
+    "Safety",
+    "Code of Conduct",
+  ]);
+  await expect(page.getByRole("link", { name: /^Edit / })).toHaveCount(0);
+  const safety = page.getByRole("region", { name: "Safety" });
+  const text = safety.getByTestId("handbook-text");
+  const collapsed = (await text.boundingBox())!.height;
+  await safety.getByRole("button", { name: "Read all of Safety" }).click();
+  await expect(safety.getByRole("button", { name: "Show less of Safety" })).toHaveAttribute("aria-expanded", "true");
+  expect((await text.boundingBox())!.height).toBeGreaterThan(collapsed * 2);
+  // A short section is shown whole, with no Read more button.
+  const coc = page.getByRole("region", { name: "Code of Conduct" });
+  await expect(coc).toContainText("Be kind.");
+  await expect(coc.getByRole("button")).toHaveCount(0);
+  // Members can't open the edit page.
+  await page.goto("/handbook/safety/edit");
+  await expect(page.getByRole("heading", { name: "Admins only" })).toBeVisible();
+});
+
+test("an admin edits a handbook section with the Edit button", async ({ browser }) => {
+  const page = await adminPage(browser);
+  await page.goto("/handbook");
+  const section = page.getByRole("region", { name: "General Information" });
+  await section.getByRole("link", { name: "Edit General Information" }).click();
+  await expect(page).toHaveURL(/\/handbook\/general-information\/edit$/);
+  await expect(page.getByRole("heading", { name: "Edit General Information" })).toBeVisible();
+  const box = page.getByRole("textbox", { name: "General Information text" });
+  await box.click();
+  await page.keyboard.type("Club keys");
+  await page.getByRole("button", { name: "Make this line a heading" }).click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Make this line normal text" }).click();
+  await page.keyboard.type("Keys cost a ");
+  await page.getByRole("button", { name: "Bold" }).click();
+  await page.keyboard.type("£20 deposit");
+  await page.getByRole("button", { name: "Bold" }).click();
+  await page.keyboard.type(".");
+  // Anything unsafe pasted in is removed when saved.
+  await box.evaluate((el) => el.insertAdjacentHTML("beforeend", '<p style="color:red">Ask the <a href="javascript:alert(1)">secretary</a>.</p><script>alert(1)</script>'));
+  await page.getByRole("button", { name: "Save section" }).click();
+  await expect(page).toHaveURL(/\/handbook\?saved=general-information#general-information$/);
+  await expect(page.getByRole("status")).toHaveText("Section saved.");
+  await expect(section.getByRole("heading", { name: "Club keys", level: 3 })).toBeVisible();
+  await expect(section.locator("strong", { hasText: "£20 deposit" })).toBeVisible();
+  const saved = sql(`select body from handbook_sections where slug = 'general-information'`);
+  expect(saved).toContain("<h3>Club keys</h3>");
+  expect(saved).not.toMatch(/script|javascript|style=/);
+  expect(sql(`select p.email from handbook_sections h join people p on p.id = h.updated_by where slug = 'general-information'`)).toBe(adminEmail);
 });
 
 test("a member can't open the group email page or the email log", async ({ browser }) => {
