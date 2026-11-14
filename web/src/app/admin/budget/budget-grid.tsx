@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { SaveButton } from "@/components/save-button";
-import { FIRST_BUDGET_YEAR, MONTHS, cellText, money, parsePounds } from "@/lib/budget";
+import { FIRST_BUDGET_YEAR, MONTHS, TRANSFER, cellText, money, parsePounds } from "@/lib/budget";
 import { saveBudget } from "./actions";
 
 export type BudgetCategory = { id: string; name: string; direction: "in" | "out"; is_active: boolean; pence: number[] };
@@ -30,14 +30,17 @@ export function BudgetGrid({
   // Unreadable figures count as 0 in the totals and are outlined in red.
   const pence = (id: string, m: number) => parsePounds(text[id][m]) ?? 0;
   const rowTotals = (id: string) => MONTHS.map((_, m) => pence(id, m));
-  const group = (dir: "in" | "out") => categories.filter((c) => c.direction === dir);
+  // "Transfer from Saving" isn't income: it has its own row between Total and Cumulative balance.
+  const transfer = categories.find((c) => c.name === TRANSFER);
+  const group = (dir: "in" | "out") => categories.filter((c) => c.direction === dir && c !== transfer);
   const subTotals = (dir: "in" | "out") => MONTHS.map((_, m) => sum(group(dir).map((c) => pence(c.id, m))));
   const income = subTotals("in");
   const spend = subTotals("out");
   const net = MONTHS.map((_, m) => income[m] - spend[m]);
   // Cumulative balance: the running total of income minus expenditure, month by month from January,
   // starting from the balance brought forward from earlier years (from 2026).
-  const cumulative = net.map((_, m) => broughtForward + sum(net.slice(0, m + 1)));
+  const transfers = MONTHS.map((_, m) => (transfer ? pence(transfer.id, m) : 0));
+  const cumulative = net.map((_, m) => broughtForward + sum(net.slice(0, m + 1)) + sum(transfers.slice(0, m + 1)));
   const bad = categories.some((c) => text[c.id].some((t) => parsePounds(t) === null));
 
   const yy = String(year).slice(2);
@@ -59,6 +62,41 @@ export function BudgetGrid({
     </tr>
   );
 
+  const categoryRow = (c: BudgetCategory) => (
+    <tr key={c.id} className="border-t border-slate-100 bg-white">
+      <th scope="row" className={`${nameCell} font-normal`}>
+        {c.name}
+        {!c.is_active && <span className="ml-1 text-xs text-slate-500">(inactive)</span>}
+      </th>
+      {MONTHS.map((month, m) => (
+        <td key={m} className={num}>
+          {canEdit ? (
+            <input
+              aria-label={`${c.name} ${month} ${year}`}
+              inputMode="decimal"
+              value={text[c.id][m]}
+              onChange={(e) => {
+                const v = e.target.value;
+                setText((t) => ({ ...t, [c.id]: t[c.id].map((x, i) => (i === m ? v : x)) }));
+                setChanged(true);
+              }}
+              onBlur={() => {
+                const p = parsePounds(text[c.id][m]);
+                if (p !== null) setText((t) => ({ ...t, [c.id]: t[c.id].map((x, i) => (i === m ? cellText(p) : x)) }));
+              }}
+              className={`w-[3.75rem] rounded border px-1 py-0.5 text-right tabular-nums print:border-transparent print:bg-transparent print:p-0 ${
+                parsePounds(text[c.id][m]) === null ? "border-red-500 bg-red-50" : "border-slate-300"
+              }`}
+            />
+          ) : (
+            cellText(c.pence[m])
+          )}
+        </td>
+      ))}
+      <td className={`${num} pr-2 font-medium`}>{money(sum(rowTotals(c.id)))}</td>
+    </tr>
+  );
+
   const section = (dir: "in" | "out", title: string) => (
     <>
       <tr className="bg-white">
@@ -73,40 +111,7 @@ export function BudgetGrid({
           </td>
         </tr>
       )}
-      {group(dir).map((c) => (
-        <tr key={c.id} className="border-t border-slate-100 bg-white">
-          <th scope="row" className={`${nameCell} font-normal`}>
-            {c.name}
-            {!c.is_active && <span className="ml-1 text-xs text-slate-500">(inactive)</span>}
-          </th>
-          {MONTHS.map((month, m) => (
-            <td key={m} className={num}>
-              {canEdit ? (
-                <input
-                  aria-label={`${c.name} ${month} ${year}`}
-                  inputMode="decimal"
-                  value={text[c.id][m]}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setText((t) => ({ ...t, [c.id]: t[c.id].map((x, i) => (i === m ? v : x)) }));
-                    setChanged(true);
-                  }}
-                  onBlur={() => {
-                    const p = parsePounds(text[c.id][m]);
-                    if (p !== null) setText((t) => ({ ...t, [c.id]: t[c.id].map((x, i) => (i === m ? cellText(p) : x)) }));
-                  }}
-                  className={`w-[3.75rem] rounded border px-1 py-0.5 text-right tabular-nums print:border-transparent print:bg-transparent print:p-0 ${
-                    parsePounds(text[c.id][m]) === null ? "border-red-500 bg-red-50" : "border-slate-300"
-                  }`}
-                />
-              ) : (
-                cellText(c.pence[m])
-              )}
-            </td>
-          ))}
-          <td className={`${num} pr-2 font-medium`}>{money(sum(rowTotals(c.id)))}</td>
-        </tr>
-      ))}
+      {group(dir).map((c) => categoryRow(c))}
       {totalsRow(dir === "in" ? "Income sub-total" : "Expenditure sub-total", dir === "in" ? income : spend)}
     </>
   );
@@ -134,6 +139,7 @@ export function BudgetGrid({
           {section("in", "Income")}
           {section("out", "Expenditure")}
           {totalsRow("Total", net, true)}
+          {transfer && categoryRow(transfer)}
           {totalsRow(year > FIRST_BUDGET_YEAR ? `Cumulative balance (b/f ${money(broughtForward)})` : "Cumulative balance", cumulative, false, cumulative[11])}
         </tbody>
       </table>

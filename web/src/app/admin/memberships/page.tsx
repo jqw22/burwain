@@ -4,6 +4,7 @@ import { Card, Notice, SaveButton } from "@/components/fields";
 import { LiveSearch } from "@/components/live-search";
 import { meWithRole, pounds, ukDate } from "@/lib/me";
 import { recordPayment } from "./actions";
+import { ReconcileToggle } from "./reconcile-toggle";
 
 type Year = { id: string; label: string; starts_on: string };
 type Income = {
@@ -15,6 +16,7 @@ type Income = {
   covers: string | null;
   method: string | null;
   amount_pence: number;
+  reconciled_at: string | null;
 };
 type Row = {
   id: string;
@@ -56,7 +58,8 @@ const SAVED: Record<string, string> = {
 const ERRORS: Record<string, string> = {
   choose: "Please tick at least one membership to mark as paid.",
   payment: "We couldn't record that payment. Check the date isn't in the future and the memberships are still awaiting payment.",
-  finance: "Only finance logins can record payments.",
+  finance: "Only finance logins can record or reconcile payments.",
+  reconcile: "We couldn't save the Reconciled tick. Please try again.",
 };
 
 // Income: every payment received from members (memberships and boat storage) in one list, between
@@ -94,6 +97,7 @@ export default async function IncomePage({ searchParams }: PageProps<"/admin/mem
   const memberships = sumOf(rows.filter((r) => r.kind === "Membership"));
   const boats = sumOf(rows.filter((r) => r.kind === "Boat storage"));
   const total = sumOf(rows);
+  const unreconciled = rows.filter((r) => !r.reconciled_at);
 
   // Awaiting payment, for every membership year.
   const years = (yearsData ?? []) as Year[];
@@ -104,6 +108,8 @@ export default async function IncomePage({ searchParams }: PageProps<"/admin/mem
   const error = typeof params.error === "string" ? ERRORS[params.error] : undefined;
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" });
 
+  // Where the Reconciled tick returns to: the same dates, search and order.
+  const backQuery = new URLSearchParams({ from, to, ...(q && { q }), ...(order === "asc" && { order }) }).toString();
   const href = (change: Record<string, string>) => {
     const next = new URLSearchParams({ from, to, ...(q && { q }), order, ...change });
     if (next.get("order") === "desc") next.delete("order");
@@ -178,7 +184,10 @@ export default async function IncomePage({ searchParams }: PageProps<"/admin/mem
                   <th className="py-2 pr-4">For</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">How paid</th>
-                  <th className="py-2 text-right">Amount</th>
+                  <th className="py-2 pr-4 text-right">Amount</th>
+                  <th className="py-2 text-center" title="Ticked by finance once the payment is in the bank and entered as a transaction">
+                    Reconciled
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -192,7 +201,22 @@ export default async function IncomePage({ searchParams }: PageProps<"/admin/mem
                     </td>
                     <td className="py-2 pr-4">{r.kind}</td>
                     <td className="py-2 pr-4">{r.method ? (METHOD[r.method] ?? r.method) : ""}</td>
-                    <td className="whitespace-nowrap py-2 text-right">{money(r.amount_pence)}</td>
+                    <td className="whitespace-nowrap py-2 pr-4 text-right">{money(r.amount_pence)}</td>
+                    <td className="py-2 text-center">
+                      {isFinance ? (
+                        <ReconcileToggle
+                          key={`${r.id}-${Boolean(r.reconciled_at)}`}
+                          line={r.id}
+                          label={`${r.payer_name ?? ""} ${r.description}`.trim()}
+                          reconciled={Boolean(r.reconciled_at)}
+                          back={backQuery}
+                        />
+                      ) : r.reconciled_at ? (
+                        <span aria-label="Reconciled">✓</span>
+                      ) : (
+                        ""
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -201,7 +225,10 @@ export default async function IncomePage({ searchParams }: PageProps<"/admin/mem
                   <td className="py-2 pr-4" colSpan={5}>
                     Total
                   </td>
-                  <td className="whitespace-nowrap py-2 text-right">{money(total)}</td>
+                  <td className="whitespace-nowrap py-2 pr-4 text-right">{money(total)}</td>
+                  <td className="whitespace-nowrap py-2 text-center text-xs font-normal text-slate-600">
+                    {unreconciled.length === 0 ? "All reconciled" : `${unreconciled.length} not yet (${money(sumOf(unreconciled))})`}
+                  </td>
                 </tr>
               </tfoot>
             </table>

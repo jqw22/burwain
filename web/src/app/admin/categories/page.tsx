@@ -1,5 +1,6 @@
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice, SaveButton } from "@/components/fields";
+import { FIXED_CATEGORIES as LOCKED, TRANSFER } from "@/lib/budget";
 import { meWithRole } from "@/lib/me";
 import { addCategory, renameCategory, setCategoryActive } from "./actions";
 
@@ -22,23 +23,25 @@ const ERRORS: Record<string, string> = {
   name: "Please give the category a name.",
   direction: "Please choose Money in or Money out.",
   duplicate: "There's already a category with that name.",
-  locked:
-    "That category is used automatically for member payments, so it can't be changed.",
+  locked: "That is a fixed category, so it can't be changed.",
   save: "We couldn't save that. Please try again.",
 };
-
-// Member payments find these by name, so they're locked (the database refuses changes too).
-const LOCKED = new Set(["Subscriptions", "Boat storage", "Payment fees"]);
 
 const input = "rounded border border-slate-300 bg-white px-3 py-2";
 
 // Finance manages the categories used on transactions. Categories are never deleted, only made inactive.
+// Only finance logins can add, rename or make inactive; admins can look.
 export default async function CategoriesPage({
   searchParams,
 }: PageProps<"/admin/categories">) {
   const params = await searchParams;
-  const { supabase, allowed } = await meWithRole("finance");
-  if (!allowed) return <NotAllowed who="finance logins" />;
+  const { supabase, allowed: isAdmin } = await meWithRole("admin");
+  const { data: financeRole } = await supabase.rpc("has_role", {
+    r: "finance",
+  });
+  const isFinance = Boolean(financeRole);
+  if (!isAdmin && !isFinance)
+    return <NotAllowed who="club admins and finance" />;
 
   const [{ data }, { data: used }] = await Promise.all([
     supabase
@@ -96,9 +99,13 @@ export default async function CategoriesPage({
                       <span>
                         {c.name}{" "}
                         <span className="ml-1 text-xs text-slate-500">
-                          (used automatically for member payments)
+                          {c.name === TRANSFER
+                            ? "(fixed: own row on Budget and Actual)"
+                            : "(used automatically for member payments)"}
                         </span>
                       </span>
+                    ) : !isFinance ? (
+                      <span>{c.name}</span>
                     ) : (
                       <form
                         action={renameCategory}
@@ -137,7 +144,7 @@ export default async function CategoriesPage({
                     )}
                   </td>
                   <td className="py-2 text-right">
-                    {!LOCKED.has(c.name) && (
+                    {isFinance && !LOCKED.has(c.name) && (
                       <form action={setCategoryActive}>
                         <input type="hidden" name="id" value={c.id} />
                         <input
@@ -174,26 +181,33 @@ export default async function CategoriesPage({
         stop it being picked for new transactions.
       </p>
 
-      <Card title="Add a category">
-        <form action={addCategory} className="flex flex-wrap items-end gap-3">
-          <label className="block">
-            <span className="text-sm font-medium">Category name</span>
-            <input name="name" required className={`mt-1 block ${input}`} />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium">For</span>
-            <select
-              name="direction"
-              defaultValue="out"
-              className={`mt-1 block ${input}`}
-            >
-              <option value="out">Money out</option>
-              <option value="in">Money in</option>
-            </select>
-          </label>
-          <SaveButton>Add category</SaveButton>
-        </form>
-      </Card>
+      {!isFinance && (
+        <p className="text-sm text-slate-600">
+          Only finance logins can add, rename or make categories inactive.
+        </p>
+      )}
+      {isFinance && (
+        <Card title="Add a category">
+          <form action={addCategory} className="flex flex-wrap items-end gap-3">
+            <label className="block">
+              <span className="text-sm font-medium">Category name</span>
+              <input name="name" required className={`mt-1 block ${input}`} />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium">For</span>
+              <select
+                name="direction"
+                defaultValue="out"
+                className={`mt-1 block ${input}`}
+              >
+                <option value="out">Money out</option>
+                <option value="in">Money in</option>
+              </select>
+            </label>
+            <SaveButton>Add category</SaveButton>
+          </form>
+        </Card>
+      )}
 
       {list("out", "Money out categories")}
       {list("in", "Money in categories")}

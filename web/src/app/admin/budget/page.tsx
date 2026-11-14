@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Notice } from "@/components/fields";
 import { PrintButton } from "@/components/print-button";
-import { FIRST_BUDGET_YEAR, budgetYear } from "@/lib/budget";
+import { FIRST_BUDGET_YEAR, FIXED_CATEGORIES, budgetYear } from "@/lib/budget";
 import { createClient } from "@/lib/supabase/server";
 import { requireMe } from "@/lib/me";
 import { BudgetGrid, type BudgetCategory } from "./budget-grid";
@@ -13,8 +13,6 @@ const ERRORS: Record<string, string> = {
   save: "We couldn't save the budget. Please try again.",
 };
 
-// Same order as the Categories screen: the fixed member-payment categories go last.
-const LOCKED = new Set(["Subscriptions", "Boat storage", "Payment fees"]);
 
 // Finance admin > Budget: a planned amount per category per month for one calendar year.
 // Finance logins can type in figures; admins can look at it.
@@ -49,7 +47,7 @@ export default async function BudgetPage({ searchParams }: PageProps<"/admin/bud
   // Inactive categories only appear if they already have figures for this year.
   const categories: BudgetCategory[] = ((cats ?? []) as { id: string; name: string; direction: "in" | "out"; is_active: boolean }[])
     .filter((c) => c.is_active || figures[c.id])
-    .sort((a, b) => Number(LOCKED.has(a.name)) - Number(LOCKED.has(b.name)) || a.name.localeCompare(b.name))
+    .sort((a, b) => Number(FIXED_CATEGORIES.has(a.name)) - Number(FIXED_CATEGORIES.has(b.name)) || a.name.localeCompare(b.name))
     .map((c) => ({ ...c, pence: figures[c.id] ?? Array(12).fill(0) }));
 
   const error = typeof params.error === "string" ? ERRORS[params.error] : undefined;
