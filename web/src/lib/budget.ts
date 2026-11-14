@@ -25,6 +25,14 @@ export function money(pence: number) {
   return `${pence < 0 ? "−" : ""}£${whole(Math.abs(pence))}`;
 }
 
+// Budgets and actuals start in 2026 (James): no earlier years, and the cumulative balance
+// carries forward from 1 January 2026 onwards.
+export const FIRST_BUDGET_YEAR = 2026;
+export function budgetYear(asked: unknown, now = new Date()) {
+  const y = Number(asked);
+  return Number.isInteger(y) && y >= FIRST_BUDGET_YEAR && y <= 2100 ? y : Math.max(FIRST_BUDGET_YEAR, defaultBudgetYear(now));
+}
+
 // Budgets are usually set up ahead, so from October the screen opens on next year.
 export function defaultBudgetYear(now = new Date()) {
   const [y, m] = now.toLocaleDateString("en-CA", { timeZone: "Europe/London" }).split("-").map(Number);

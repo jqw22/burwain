@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Notice } from "@/components/fields";
 import { PrintButton } from "@/components/print-button";
-import { defaultBudgetYear } from "@/lib/budget";
+import { FIRST_BUDGET_YEAR, budgetYear } from "@/lib/budget";
 import { createClient } from "@/lib/supabase/server";
 import { requireMe } from "@/lib/me";
 import { BudgetGrid, type BudgetCategory } from "./budget-grid";
@@ -28,13 +28,19 @@ export default async function BudgetPage({ searchParams }: PageProps<"/admin/bud
   ]);
   if (!isFinance && !isAdmin) return <NotAllowed who="finance logins and admins" />;
 
-  const asked = Number(params.year);
-  const year = Number.isInteger(asked) && asked >= 2000 && asked <= 2100 ? asked : defaultBudgetYear();
+  const year = budgetYear(params.year);
 
-  const [{ data: cats }, { data: amounts }] = await Promise.all([
+  const [{ data: cats }, { data: amounts }, { data: earlier }] = await Promise.all([
     supabase.from("transaction_categories").select("id, name, direction, is_active"),
     supabase.from("budget_amounts").select("category_id, month, amount_pence").eq("year", year),
+    // Earlier years' budgets (from 2026), for the cumulative balance brought forward.
+    supabase.from("budget_amounts").select("category_id, amount_pence").gte("year", FIRST_BUDGET_YEAR).lt("year", year),
   ]);
+  const directionOf = new Map(((cats ?? []) as { id: string; direction: "in" | "out" }[]).map((c) => [c.id, c.direction]));
+  const broughtForward = ((earlier ?? []) as { category_id: string; amount_pence: number }[]).reduce(
+    (t, a) => t + (directionOf.get(a.category_id) === "in" ? a.amount_pence : -a.amount_pence),
+    0,
+  );
   const figures: Record<string, number[]> = {};
   for (const a of (amounts ?? []) as { category_id: string; month: number; amount_pence: number }[]) {
     figures[a.category_id] ??= Array(12).fill(0);
@@ -65,7 +71,12 @@ export default async function BudgetPage({ searchParams }: PageProps<"/admin/bud
         <h2 className="text-xl font-semibold">Budget for {year}</h2>
         <div className="flex items-center gap-4 print:hidden">
           <p className="flex items-baseline gap-3 text-sm">
-            <span>←</span> {yearLink(year - 1)} <span className="text-slate-400">|</span> {yearLink(year + 1)} <span>→</span>
+            {year > FIRST_BUDGET_YEAR && (
+              <>
+                <span>←</span> {yearLink(year - 1)} <span className="text-slate-400">|</span>
+              </>
+            )}{" "}
+            {yearLink(year + 1)} <span>→</span>
           </p>
           <PrintButton />
         </div>
@@ -79,7 +90,7 @@ export default async function BudgetPage({ searchParams }: PageProps<"/admin/bud
 
       {/* Print the budget sideways on one page width. */}
       <style>{"@media print { @page { size: A4 landscape; margin: 10mm; } }"}</style>
-      <BudgetGrid key={year} year={year} categories={categories} canEdit={Boolean(isFinance)} />
+      <BudgetGrid key={year} year={year} categories={categories} canEdit={Boolean(isFinance)} broughtForward={broughtForward} />
     </div>
   );
 }

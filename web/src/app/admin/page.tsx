@@ -99,8 +99,8 @@ export default async function AdminHomePage() {
               </Link>
             </li>
             <li>
-              <Link href="/admin/categories" className="text-sky-800 underline">
-                Categories
+              <Link href="/admin/actual" className="text-sky-800 underline">
+                Actual
               </Link>
             </li>
             <li>
@@ -109,8 +109,8 @@ export default async function AdminHomePage() {
               </Link>
             </li>
             <li>
-              <Link href="/admin/actual" className="text-sky-800 underline">
-                Actual
+              <Link href="/admin/categories" className="text-sky-800 underline">
+                Categories
               </Link>
             </li>
           </ul>

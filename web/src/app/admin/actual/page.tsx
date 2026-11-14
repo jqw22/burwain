@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { PrintButton } from "@/components/print-button";
-import { MONTHS, defaultBudgetYear, money } from "@/lib/budget";
+import { FIRST_BUDGET_YEAR, MONTHS, budgetYear, money } from "@/lib/budget";
 import { createClient } from "@/lib/supabase/server";
 import { requireMe } from "@/lib/me";
 import { MonthToggle } from "./month-toggle";
@@ -36,15 +36,20 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
   ]);
   if (!isFinance && !isAdmin) return <NotAllowed who="finance logins and admins" />;
 
-  const asked = Number(params.year);
-  const year = Number.isInteger(asked) && asked >= 2000 && asked <= 2100 ? asked : defaultBudgetYear();
+  const year = budgetYear(params.year);
+  const earlierYears = Array.from({ length: year - FIRST_BUDGET_YEAR }, (_, i) => FIRST_BUDGET_YEAR + i);
 
-  const [{ data: cats }, { data: budgetData }, { data: actualData }, { data: completeData }] = await Promise.all([
-    supabase.from("transaction_categories").select("id, name, direction, is_active"),
-    supabase.from("budget_amounts").select("category_id, month, amount_pence").eq("year", year),
-    supabase.rpc("budget_actuals", { p_year: year }),
-    supabase.from("budget_months_complete").select("month").eq("year", year),
-  ]);
+  const [{ data: cats }, { data: budgetData }, { data: actualData }, { data: completeData }, earlierBudgets, earlierComplete, ...earlierActuals] =
+    await Promise.all([
+      supabase.from("transaction_categories").select("id, name, direction, is_active"),
+      supabase.from("budget_amounts").select("category_id, month, amount_pence").eq("year", year),
+      supabase.rpc("budget_actuals", { p_year: year }),
+      supabase.from("budget_months_complete").select("month").eq("year", year),
+      // Earlier years (from 2026), for the cumulative balance brought forward.
+      supabase.from("budget_amounts").select("year, category_id, month, amount_pence").gte("year", FIRST_BUDGET_YEAR).lt("year", year),
+      supabase.from("budget_months_complete").select("year, month").gte("year", FIRST_BUDGET_YEAR).lt("year", year),
+      ...earlierYears.map((y) => supabase.rpc("budget_actuals", { p_year: y })),
+    ]);
   const grid = (rows: { category_id: string; month: number; amount_pence: number }[] | null) => {
     const out: Record<string, number[]> = {};
     for (const r of rows ?? []) {
@@ -57,6 +62,21 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
   const actual = grid(actualData as { category_id: string; month: number; amount_pence: number }[] | null);
   const complete = new Set(((completeData ?? []) as { month: number }[]).map((r) => r.month - 1));
 
+  // Balance brought forward: each earlier year's figures worked out the same way (actual for
+  // complete months, budget for the rest), income minus expenditure.
+  const directionOf = new Map(((cats ?? []) as Category[]).map((c) => [c.id, c.direction]));
+  const signed = (id: string, pence: number) => (directionOf.get(id) === "in" ? pence : -pence);
+  const doneBefore = new Set(((earlierComplete.data ?? []) as { year: number; month: number }[]).map((r) => `${r.year}-${r.month}`));
+  let broughtForward = 0;
+  for (const b of (earlierBudgets.data ?? []) as { year: number; category_id: string; month: number; amount_pence: number }[]) {
+    if (!doneBefore.has(`${b.year}-${b.month}`)) broughtForward += signed(b.category_id, b.amount_pence);
+  }
+  earlierYears.forEach((y, i) => {
+    for (const a of (earlierActuals[i].data ?? []) as { category_id: string; month: number; amount_pence: number }[]) {
+      if (doneBefore.has(`${y}-${a.month}`)) broughtForward += signed(a.category_id, Number(a.amount_pence));
+    }
+  });
+
   // What each cell shows: actual for complete months, budget otherwise.
   const shown = (id: string) => MONTHS.map((_, m) => (complete.has(m) ? (actual[id]?.[m] ?? 0) : (budget[id]?.[m] ?? 0)));
   // Inactive categories only appear if they have figures this year.
@@ -68,7 +88,7 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
   const income = subTotals("in");
   const spend = subTotals("out");
   const net = MONTHS.map((_, m) => income[m] - spend[m]);
-  const cumulative = net.map((_, m) => sum(net.slice(0, m + 1)));
+  const cumulative = net.map((_, m) => broughtForward + sum(net.slice(0, m + 1)));
 
   const yy = String(year).slice(2);
   const num = "whitespace-nowrap px-1 py-1 text-right tabular-nums";
@@ -131,7 +151,12 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
         <h2 className="text-xl font-semibold">Actual for {year}</h2>
         <div className="flex items-center gap-4 print:hidden">
           <p className="flex items-baseline gap-3 text-sm">
-            <span>←</span> {yearLink(year - 1)} <span className="text-slate-400">|</span> {yearLink(year + 1)} <span>→</span>
+            {year > FIRST_BUDGET_YEAR && (
+              <>
+                <span>←</span> {yearLink(year - 1)} <span className="text-slate-400">|</span>
+              </>
+            )}{" "}
+            {yearLink(year + 1)} <span>→</span>
           </p>
           <PrintButton />
         </div>
@@ -156,7 +181,7 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
                   {m} &apos;{yy}
                   <span className="block text-[10px] font-normal">{complete.has(i) ? "Actual" : "Budget"}</span>
                   {isFinance ? (
-                    <MonthToggle year={year} month={i + 1} label={`${m} ${year}`} complete={complete.has(i)} />
+                    <MonthToggle key={`${year}-${i}-${complete.has(i)}`} year={year} month={i + 1} label={`${m} ${year}`} complete={complete.has(i)} />
                   ) : null}
                 </th>
               ))}
@@ -169,7 +194,7 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
             {section("in", "Income")}
             {section("out", "Expenditure")}
             {totalsRow("Total", net, true)}
-            {totalsRow("Cumulative balance", cumulative, false, cumulative[11])}
+            {totalsRow(year > FIRST_BUDGET_YEAR ? `Cumulative balance (b/f ${money(broughtForward)})` : "Cumulative balance", cumulative, false, cumulative[11])}
           </tbody>
         </table>
       </div>
