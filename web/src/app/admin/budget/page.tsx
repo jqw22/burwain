@@ -8,7 +8,7 @@ import { BudgetGrid, type BudgetCategory } from "./budget-grid";
 
 const ERRORS: Record<string, string> = {
   finance: "Only finance logins can change the budget.",
-  amount: "Some figures weren't amounts of money. Please use numbers like 1200 or 1,200.50 (no minus signs).",
+  amount: "Some figures weren't amounts of money. Please use whole pounds like 1200 or 1,200 (no pence or minus signs).",
   save: "We couldn't save the budget. Please try again.",
 };
 
@@ -66,7 +66,7 @@ export default async function BudgetPage({ searchParams }: PageProps<"/admin/bud
       </div>
       <p className="text-sm text-slate-600">
         {isFinance
-          ? "Type the planned amount for each category and month, then press Save budget. Leave a cell blank for nothing planned. The totals update as you type."
+          ? "Type the planned amount for each category and month, then press Save budget. Figures are in whole pounds. Leave a cell blank for nothing planned. The totals update as you type."
           : "The planned amount for each category and month. Only finance logins can change the figures."}{" "}
         Categories come from the Categories screen.
       </p>

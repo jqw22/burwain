@@ -704,7 +704,7 @@ test("finance adds, renames and makes inactive a transaction category", async ({
   await expect(page.getByLabel("Category").locator("option", { hasText: `Coaching fees ${run}` })).toHaveCount(1);
 });
 
-test("finance fills in a monthly budget with income and expenditure sub-totals", async ({ browser }) => {
+test("finance fills in a monthly budget in whole pounds with income and expenditure sub-totals", async ({ browser }) => {
   sql(`delete from budget_amounts where year = 2031`);
   const page = await adminPage(browser);
   const finance = page.getByRole("main").locator("section", { has: page.getByRole("heading", { name: "Finance admin", exact: true }) });
@@ -715,29 +715,31 @@ test("finance fills in a monthly budget with income and expenditure sub-totals",
   const header = (await page.getByRole("row").first().getByRole("columnheader").allTextContents()).map((t) => t.trim());
   expect(header).toEqual(["Category", "Jan '31", "Feb '31", "Mar '31", "Apr '31", "May '31", "Jun '31", "Jul '31", "Aug '31", "Sep '31", "Oct '31", "Nov '31", "Dec '31", "Total"]);
 
-  await page.getByLabel("Donations Jan 2031").fill("1200.5");
+  await page.getByLabel("Donations Jan 2031").fill("1200");
   await page.getByLabel("Donations Feb 2031").fill("£300");
   await page.getByLabel("Insurance Jan 2031").fill("450");
   const row = (name: string) => page.getByRole("row", { name: new RegExp(`^${name}`) });
   const cells = async (name: string) => (await row(name).getByRole("cell").allTextContents()).map((t) => t.trim());
-  // The totals work out as you type: Jan income 1,200.50, spend 450, so 750.50 left.
-  expect((await cells("Income sub-total")).slice(0, 2)).toEqual(["£1,200.50", "£300.00"]);
-  expect((await cells("Income sub-total")).at(-1)).toBe("£1,500.50");
-  expect((await cells("Expenditure sub-total"))[0]).toBe("£450.00");
-  expect((await cells("Total \\(income")).slice(0, 2)).toEqual(["£750.50", "£300.00"]);
-  expect((await cells("Total \\(income")).at(-1)).toBe("£1,050.50");
+  // The totals work out as you type: Jan income 1,200, spend 450, so 750 left.
+  expect((await cells("Income sub-total")).slice(0, 2)).toEqual(["£1,200", "£300"]);
+  expect((await cells("Income sub-total")).at(-1)).toBe("£1,500");
+  expect((await cells("Expenditure sub-total"))[0]).toBe("£450");
+  expect((await cells("Total \\(income")).slice(0, 2)).toEqual(["£750", "£300"]);
+  expect((await cells("Total \\(income")).at(-1)).toBe("£1,050");
   await expect(page.getByText("You have changes that aren't saved yet.")).toBeVisible();
 
   // Something that isn't money is outlined and can't be saved.
   await page.getByLabel("Insurance Feb 2031").fill("abc");
   await expect(page.getByRole("button", { name: "Save budget" })).toBeDisabled();
+  await page.getByLabel("Insurance Feb 2031").fill("12.50");
+  await expect(page.getByRole("button", { name: "Save budget" })).toBeDisabled();
   await page.getByLabel("Insurance Feb 2031").fill("");
 
   await page.getByRole("button", { name: "Save budget" }).click();
   await expect(page.getByText("Budget for 2031 saved.")).toBeVisible();
-  await expect(page.getByLabel("Donations Jan 2031")).toHaveValue("1,200.50");
+  await expect(page.getByLabel("Donations Jan 2031")).toHaveValue("1,200");
   expect(sql(`select string_agg(c.name || ':' || b.month || ':' || b.amount_pence, ',' order by c.name, b.month) from budget_amounts b join transaction_categories c on c.id = b.category_id where b.year = 2031`)).toBe(
-    "Donations:1:120050,Donations:2:30000,Insurance:1:45000",
+    "Donations:1:120000,Donations:2:30000,Insurance:1:45000",
   );
   await shot(page, "admin-budget");
 

@@ -81,7 +81,7 @@ export function BudgetGrid({ year, categories, canEdit }: { year: number; catego
                     const p = parsePounds(text[c.id][m]);
                     if (p !== null) setText((t) => ({ ...t, [c.id]: t[c.id].map((x, i) => (i === m ? cellText(p) : x)) }));
                   }}
-                  className={`w-[4.75rem] rounded border px-1 py-0.5 text-right tabular-nums ${
+                  className={`w-[3.75rem] rounded border px-1 py-0.5 text-right tabular-nums ${
                     parsePounds(text[c.id][m]) === null ? "border-red-500 bg-red-50" : "border-slate-300"
                   }`}
                 />
@@ -136,7 +136,7 @@ export function BudgetGrid({ year, categories, canEdit }: { year: number; catego
       <div className="flex flex-wrap items-center gap-3">
         <SaveButton {...(bad ? { disabled: true } : {})}>Save budget</SaveButton>
         {bad ? (
-          <span className="text-sm text-red-700">Some figures outlined in red aren&apos;t amounts of money.</span>
+          <span className="text-sm text-red-700">Some figures outlined in red aren&apos;t whole pounds.</span>
         ) : (
           changed && <span className="text-sm text-amber-800">You have changes that aren&apos;t saved yet.</span>
         )}
