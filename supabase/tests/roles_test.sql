@@ -888,4 +888,39 @@ reset role;
   select 1/0;
 \endif
 
+\echo 'Budget: finance enters monthly figures, admins only look, members see nothing'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+do $$ declare
+  ins uuid := (select id from transaction_categories where name = 'Insurance');
+  subs uuid := (select id from transaction_categories where name = 'Subscriptions');
+begin
+  perform save_budget(2027, jsonb_build_array(
+    jsonb_build_object('category_id', ins, 'month', 1, 'amount_pence', 45000),
+    jsonb_build_object('category_id', subs, 'month', 3, 'amount_pence', 1200000)));
+  assert (select count(*) from budget_amounts where year = 2027) = 2, 'two cells saved';
+  assert (select updated_by from budget_amounts where category_id = ins and year = 2027) = '20000000-0000-0000-0000-00000000000c', 'who saved it';
+  -- Changing one figure and clearing another.
+  perform save_budget(2027, jsonb_build_array(
+    jsonb_build_object('category_id', ins, 'month', 1, 'amount_pence', 50000),
+    jsonb_build_object('category_id', subs, 'month', 3, 'amount_pence', null)));
+  assert (select amount_pence from budget_amounts where year = 2027) = 50000, 'figure changed, cleared cell removed';
+end $$;
+select pg_temp.expect_error($q$select save_budget(2027, jsonb_build_array(jsonb_build_object('category_id', (select id from transaction_categories where name = 'Insurance'), 'month', 13, 'amount_pence', 100)))$q$, 'budget_amounts_month_check');
+select pg_temp.expect_error($q$select save_budget(2027, jsonb_build_array(jsonb_build_object('category_id', (select id from transaction_categories where name = 'Insurance'), 'month', 2, 'amount_pence', -100)))$q$, 'budget_amounts_amount_pence_check');
+-- Dave (superadmin) can do anything, so use a plain admin for "look but don't change".
+reset role;
+insert into user_roles (person_id, role) values ('20000000-0000-0000-0000-00000000000e', 'admin');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
+do $$ begin assert (select count(*) from budget_amounts) = 1, 'admins can see the budget'; end $$;
+select pg_temp.expect_error($q$select save_budget(2027, '[]')$q$, 'Only finance');
+update budget_amounts set amount_pence = 1;
+do $$ begin assert (select amount_pence from budget_amounts) = 50000, 'admins cannot change the budget'; end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ begin assert (select count(*) from budget_amounts) = 0, 'members see no budget'; end $$;
+reset role;
+reset request.jwt.claim.sub;
+delete from user_roles where person_id = '20000000-0000-0000-0000-00000000000e' and role = 'admin';
+
 \echo 'All database tests passed'
