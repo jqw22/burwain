@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LiveSearch } from "@/components/live-search";
 import { AdminNav, NotAllowed } from "@/components/admin";
-import { ageOn, meWithRole, pounds } from "@/lib/me";
+import { ageOn, meWithRole } from "@/lib/me";
 import { ukToday } from "@/lib/quote";
 
 type Row = {
@@ -66,24 +66,41 @@ function summarise(ms: Membership[], today: string): Summary {
 }
 
 // Only these have filter buttons. Future and No membership people still appear under All.
-const FILTERS = ["active", "lapsed"] as const;
+// "New" is people whose only membership (running now or starting later) is their first one.
+const FILTERS = ["active", "lapsed", "new"] as const;
 type Filter = (typeof FILTERS)[number];
+const FILTER_LABEL: Record<Filter, string> = { active: "Active", lapsed: "Lapsed", new: "New" };
 
-// A lapsed member's renewal shows as Outstanding for this many days after their membership ended.
-const LAPSED_WINDOW_DAYS = 90;
-
-// Renewal status:
-//   Active members:
-//     n/a          - membership ends more than the renewal notice (60 days) from today
-//     Outstanding  - it ends within the notice period, and the next membership isn't paid (or doesn't exist yet)
-//     Paid         - the next membership (starting later) is paid
-//   Lapsed members:
-//     Outstanding  - for 90 days after their membership ended
+// Renewal bands, from the end date of the member's membership (James, 2026-11-14). Gently worded:
+// "Due" covers the first 30 days after the end date. After 90 days it drops off (shows a dash).
+//   n/a           - active, membership ends more than the renewal notice (60 days) from today
+//   Due <60d      - ends in 31 to 60 days
+//   Due <30d      - ends in the next 30 days (including today)
+//   Due           - ended up to 30 days ago
+//   Overdue >30d  - ended 31 to 60 days ago
+//   Overdue >60d  - ended 61 to 90 days ago
+//   Paid          - the next membership (starting later) is paid
 // Everyone else shows a dash.
-const RENEWAL_STATUS = { outstanding: "Outstanding", paid: "Paid", na: "n/a" } as const;
+const LAPSED_WINDOW_DAYS = 90;
+const RENEWAL_STATUS = {
+  due60: "Due <60d",
+  due30: "Due <30d",
+  due: "Due",
+  overdue30: "Overdue >30d",
+  overdue60: "Overdue >60d",
+  paid: "Paid",
+  na: "n/a",
+} as const;
 type RenewalStatus = keyof typeof RENEWAL_STATUS;
+const OUTSTANDING: RenewalStatus[] = ["due60", "due30", "due", "overdue30", "overdue60"];
+// Filter buttons: every band, plus "Outstanding" for all the bands together.
+type RenewalFilter = RenewalStatus | "outstanding";
 const RENEWAL_STYLE: Record<RenewalStatus, string> = {
-  outstanding: "bg-amber-50 text-amber-900",
+  due60: "bg-amber-50 text-amber-900",
+  due30: "bg-amber-100 text-amber-900",
+  due: "bg-orange-100 text-orange-900",
+  overdue30: "bg-red-100 text-red-900",
+  overdue60: "bg-red-200 text-red-950",
   paid: "bg-emerald-50 text-emerald-900",
   na: "text-slate-500",
 };
@@ -91,14 +108,28 @@ function renewalOf(s: Summary, today: string, noticeDays: number): RenewalStatus
   if (!s.shown?.membership_types) return null;
   const ends = new Date(`${s.shown.membership_types.ends_on}T00:00:00Z`).getTime();
   const daysLeft = Math.round((ends - new Date(`${today}T00:00:00Z`).getTime()) / 86_400_000);
-  if (s.status === "lapsed") return daysLeft >= -LAPSED_WINDOW_DAYS ? "outstanding" : null;
+  if (s.status === "lapsed") {
+    const late = -daysLeft; // days since the membership ended
+    if (late > LAPSED_WINDOW_DAYS) return null;
+    // (Marked lapsed before its end date counts as Due too.)
+    return late <= 30 ? "due" : late <= 60 ? "overdue30" : "overdue60";
+  }
   if (s.status !== "active") return null;
   if (s.next?.status === "active") return "paid";
-  return daysLeft > noticeDays ? "na" : "outstanding";
+  if (daysLeft > noticeDays) return "na";
+  return daysLeft > 30 ? "due60" : "due30";
 }
+const isOutstanding = (r: RenewalStatus | null) => r !== null && OUTSTANDING.includes(r);
 
 // "9 Nov" style date for when a reminder was sent.
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Europe/London" });
+
+// Money with pence and commas, e.g. "£1,234.00".
+const money = (pence: number) => `£${(pence / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// "31 Dec 2026" style date.
+const longDate = (d: string | undefined) =>
+  d ? new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "";
 
 // "Jan 2027" style label for when a membership starts.
 const month = (d: string | undefined) =>
@@ -113,9 +144,9 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
   const q = (typeof params.q === "string" ? params.q : "").replace(/[^\p{L}\p{N} @.\-']/gu, "").trim();
   const filter = (FILTERS.includes(params.status as Filter) ? params.status : "all") as Filter | "all";
   const sort = params.sort === "type" ? "type" : "name";
-  const renewalFilter = (typeof params.renewal === "string" && params.renewal in RENEWAL_STATUS ? params.renewal : "all") as
-    | RenewalStatus
-    | "all";
+  const renewalFilter = (
+    typeof params.renewal === "string" && (params.renewal in RENEWAL_STATUS || params.renewal === "outstanding") ? params.renewal : "all"
+  ) as RenewalFilter | "all";
 
   let query = supabase
     .from("people")
@@ -127,7 +158,16 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
   if (q) query = query.or(`first_name.ilike.*${q}*,last_name.ilike.*${q}*,email.ilike.*${q}*`);
 
   const today = ukToday();
-  const [{ data: people }, { data: held }, { data: notice }, { data: types }, { data: dueData }, { data: boatData }] = await Promise.all([
+  const [
+    { data: people },
+    { data: held },
+    { data: notice },
+    { data: types },
+    { data: dueData },
+    { data: boatData },
+    { data: paidData },
+    { data: boatRate },
+  ] = await Promise.all([
     query,
     supabase
       .from("membership_people")
@@ -137,11 +177,24 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     supabase.from("membership_types").select("code, annual_price_pence, starts_on").eq("is_open", true),
     // Main contacts with a renewal outstanding: the people a renewal reminder can be sent to.
     supabase.rpc("renewal_reminder_recipients"),
-    // Boats stored now or later, counted against whoever they're stored for.
-    supabase.from("boat_storages").select("person_id").neq("status", "cancelled").gte("ends_on", today),
+    // Boats stored for each membership (to work out boat storage expected at renewal).
+    supabase.from("boat_storages").select("membership_id, person_id, household_id, ends_on").neq("status", "cancelled").not("ends_on", "is", null),
+    // Money received from members: each line of a paid receipt, for a membership or a boat.
+    supabase
+      .from("member_receipt_lines")
+      .select("amount_pence, membership_id, boat_storages(membership_id), member_receipts!inner(status)")
+      .eq("member_receipts.status", "paid"),
+    supabase.rpc("boat_storage_price", { p_members: true }),
   ]);
-  const boatCount = new Map<string, number>();
-  for (const b of (boatData ?? []) as { person_id: string }[]) boatCount.set(b.person_id, (boatCount.get(b.person_id) ?? 0) + 1);
+  type Boat = { membership_id: string | null; person_id: string; household_id: string | null; ends_on: string };
+  const boats = (boatData ?? []) as Boat[];
+  const boatPrice = typeof boatRate === "number" ? boatRate : 0;
+  // Paid per membership: its own fee plus boat storage booked with it.
+  const paidFor = new Map<string, number>();
+  for (const l of (paidData ?? []) as unknown as { amount_pence: number; membership_id: string | null; boat_storages: { membership_id: string | null } | null }[]) {
+    const mid = l.membership_id ?? l.boat_storages?.membership_id;
+    if (mid) paidFor.set(mid, (paidFor.get(mid) ?? 0) + l.amount_pence);
+  }
   const remindable = new Map(
     ((dueData ?? []) as { person_id: string; last_reminded_at: string | null }[]).map((d) => [d.person_id, d.last_reminded_at]),
   );
@@ -167,15 +220,22 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       ...summary,
       status: (summary.status === "none" && p.is_contact ? "contact" : summary.status) as MembershipStatus,
       renewal: renewalOf(summary, today, noticeDays),
+      // New: their only membership is their first one, and it's running now or starts later.
+      isNew: (byPerson.get(p.id) ?? []).length === 1 && (summary.status === "active" || summary.status === "future"),
     };
   });
   // Contacts (email list only, no membership) aren't members, so they aren't listed here.
   const all = everyone.filter((r) => r.status !== "contact");
-  const counts = Object.fromEntries(FILTERS.map((s) => [s, all.filter((r) => r.status === s).length])) as Record<Filter, number>;
-  const renewalCounts = Object.fromEntries(
-    (Object.keys(RENEWAL_STATUS) as RenewalStatus[]).map((s) => [s, all.filter((r) => r.renewal === s).length]),
-  ) as Record<RenewalStatus, number>;
-  const rows = all.filter((r) => (filter === "all" || r.status === filter) && (renewalFilter === "all" || r.renewal === renewalFilter));
+  const inFilter = (r: (typeof all)[number], f: Filter | "all") => f === "all" || (f === "new" ? r.isNew : r.status === f);
+  const inRenewal = (r: (typeof all)[number], f: RenewalFilter | "all") =>
+    f === "all" || (f === "outstanding" ? isOutstanding(r.renewal) : r.renewal === f);
+  const counts = Object.fromEntries(FILTERS.map((s) => [s, all.filter((r) => inFilter(r, s)).length])) as Record<Filter, number>;
+  const RENEWAL_FILTERS: RenewalFilter[] = ["outstanding", ...(Object.keys(RENEWAL_STATUS) as RenewalStatus[])];
+  const renewalCounts = Object.fromEntries(RENEWAL_FILTERS.map((s) => [s, all.filter((r) => inRenewal(r, s)).length])) as Record<
+    RenewalFilter,
+    number
+  >;
+  const rows = all.filter((r) => inFilter(r, filter) && inRenewal(r, renewalFilter));
   // Sorted by name, families stay together: the main contact first, then the rest of the family indented under them.
   const grouped = new Set<string>();
   if (sort === "name") {
@@ -194,12 +254,33 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     ordered.sort((a, b) => a[0].last_name.localeCompare(b[0].last_name) || a[0].first_name.localeCompare(b[0].first_name));
     rows.splice(0, rows.length, ...ordered.flat());
   }
-  const feeShown = new Set<string>();
-  const expectedFor = (p: (typeof rows)[number]) => {
-    if (p.renewal !== "outstanding" || !p.shown) return null;
-    if (feeShown.has(p.shown.id)) return null;
-    feeShown.add(p.shown.id);
-    return expectedFee(p.shown);
+  // Boats booked with a membership: linked to it, or (for older bookings) stored for the same
+  // person or family up to the same end date.
+  const boatsFor = (p: (typeof rows)[number], m: Membership) =>
+    boats.filter(
+      (b) =>
+        b.membership_id === m.id ||
+        (b.membership_id === null &&
+          b.ends_on === m.membership_types?.ends_on &&
+          (b.person_id === p.id || (p.household_id !== null && b.household_id === p.household_id))),
+    ).length;
+  // Money columns, worked out once per membership so a family isn't counted several times.
+  // They appear on the first row for that membership (the main contact's, when sorted by name).
+  //   Expected - the fee if an outstanding membership is renewed as it is
+  //   Boats    - boat storage expected at renewal: boats stored with it x the members rate
+  //   Paid     - received for their latest membership (next period's if renewed), boats included
+  const moneyShown = new Set<string>();
+  const moneyFor = (p: (typeof rows)[number]) => {
+    const latest = p.next ?? p.shown;
+    if (!latest || moneyShown.has(latest.id)) return null;
+    moneyShown.add(latest.id);
+    if (p.shown) moneyShown.add(p.shown.id);
+    const due = isOutstanding(p.renewal) && p.shown;
+    return {
+      expected: due ? expectedFee(p.shown) : null,
+      boats: due ? boatsFor(p, p.shown!) * boatPrice || null : null,
+      paid: paidFor.get(latest.id) ?? null,
+    };
   };
   if (sort === "type") {
     // By membership type, then name. People without a membership go last.
@@ -209,6 +290,10 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       return ta.localeCompare(tb) || a.last_name.localeCompare(b.last_name) || a.first_name.localeCompare(b.first_name);
     });
   }
+
+  const cashFor = new Map(rows.map((r) => [r.id, moneyFor(r)]));
+  const totalOf = (k: "expected" | "boats" | "paid") => [...cashFor.values()].reduce((t, c) => t + (c?.[k] ?? 0), 0);
+  const totals = { expected: totalOf("expected"), boats: totalOf("boats"), paid: totalOf("paid") };
 
   // Links that keep the current search and filter while changing one thing.
   const href = (change: Record<string, string>) => {
@@ -259,12 +344,26 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
             <h2 className="font-medium text-slate-900">Renewal</h2>
             <ul className="mt-1 list-disc space-y-1 pl-5">
               <li><strong>n/a</strong>: active, and their membership ends more than {noticeDays} days from today.</li>
-              <li>
-                <strong>Outstanding</strong>: active and ending within {noticeDays} days with next year not yet paid, or lapsed within the
-                last {LAPSED_WINDOW_DAYS} days.
-              </li>
+              <li><strong>Due &lt;60d</strong>: membership ends in 31 to {noticeDays} days.</li>
+              <li><strong>Due &lt;30d</strong>: membership ends in the next 30 days.</li>
+              <li><strong>Due</strong>: membership ended up to 30 days ago.</li>
+              <li><strong>Overdue &gt;30d</strong>: ended 31 to 60 days ago.</li>
+              <li><strong>Overdue &gt;60d</strong>: ended 61 to {LAPSED_WINDOW_DAYS} days ago.</li>
               <li><strong>Paid</strong>: their next membership is paid.</li>
               <li><strong>–</strong>: none of these (e.g. lapsed more than {LAPSED_WINDOW_DAYS} days ago).</li>
+            </ul>
+            <p className="mt-2">&ldquo;Outstanding (all)&rdquo; shows every Due and Overdue renewal together.</p>
+          </div>
+          <div className="sm:col-span-2">
+            <h2 className="font-medium text-slate-900">Money columns</h2>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              <li><strong>Expected</strong>: the membership fee if an outstanding renewal is renewed as it is.</li>
+              <li><strong>Boats</strong>: boat storage expected at renewal (boats stored now at the members&apos; rate).</li>
+              <li><strong>Paid</strong>: received for their latest membership (next period&apos;s if they&apos;ve renewed), boat storage included.</li>
+              <li>
+                Each is shown once per membership, on the main contact&apos;s row. The totals at the bottom follow the filters, e.g. Outstanding
+                (all) gives the money still to come and Renewal Paid gives renewal income received. <strong>New</strong> shows new members.
+              </li>
             </ul>
           </div>
         </div>
@@ -283,13 +382,13 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                 : "rounded-full border border-slate-300 bg-white px-3 py-1 text-slate-700 hover:border-sky-800"
             }
           >
-            {s === "all" ? "All" : MEMBERSHIP_STATUS[s]} ({s === "all" ? all.length : counts[s]})
+            {s === "all" ? "All" : FILTER_LABEL[s]} ({s === "all" ? all.length : counts[s]})
           </Link>
         ))}
       </nav>
       <nav aria-label="Filter by renewal status" className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-slate-600">Renewal:</span>
-        {(["all", ...Object.keys(RENEWAL_STATUS)] as (RenewalStatus | "all")[]).map((s) => (
+        {(["all", ...RENEWAL_FILTERS] as (RenewalFilter | "all")[]).map((s) => (
           <Link
             key={s}
             href={href({ renewal: s })}
@@ -300,7 +399,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                 : "rounded-full border border-slate-300 bg-white px-3 py-1 text-slate-700 hover:border-sky-800"
             }
           >
-            {s === "all" ? "Any" : RENEWAL_STATUS[s]}
+            {s === "all" ? "Any" : s === "outstanding" ? "Outstanding (all)" : RENEWAL_STATUS[s]}
             {s !== "all" && ` (${renewalCounts[s]})`}
           </Link>
         ))}
@@ -323,11 +422,14 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
               {sortHeader("type", "Type")}
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Renewal</th>
-              <th className="px-3 py-2 font-medium" title="The fee if an outstanding membership is renewed as it is. Shown once per membership.">
+              <th className="px-3 py-2 text-right font-medium" title="The fee if an outstanding membership is renewed as it is. Shown once per membership.">
                 Expected
               </th>
-              <th className="px-3 py-2 font-medium" title="Boats stored now or booked for later.">
+              <th className="px-3 py-2 text-right font-medium" title="Boat storage expected at renewal: boats stored now at the members' rate.">
                 Boats
+              </th>
+              <th className="px-3 py-2 text-right font-medium" title="Received for their latest membership, boat storage included. Shown once per membership.">
+                Paid
               </th>
               <th className="px-3 py-2 font-medium" title="Main contacts with a renewal outstanding. Tick to send a renewal reminder.">
                 Remind
@@ -338,7 +440,8 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
             {rows.map((p) => {
               const age = ageOn(p.date_of_birth);
               const m = p.shown;
-              const expected = expectedFor(p);
+              const cash = cashFor.get(p.id);
+              const isMain = !grouped.has(p.id) && (!p.household_id || p.households?.lead_person_id === p.id || p.households?.lead_person_id == null);
               return (
                 <tr key={p.id} className={grouped.has(p.id) ? "border-t-0 bg-slate-50/60" : undefined}>
                   <td className={grouped.has(p.id) ? "py-2 pl-8 pr-3" : "px-3 py-2"}>
@@ -356,7 +459,16 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                     {m ? (
                       <>
                         {m.membership_types?.name}
-                        {p.status !== "active" && <span className="text-xs text-slate-500"> ({p.status === "future" ? "from" : "ended"} {month(p.status === "future" ? m.membership_types?.starts_on : m.membership_types?.ends_on)})</span>}
+                        {isMain && (
+                          <span className="text-xs text-slate-400">
+                            {" "}
+                            {p.status === "active"
+                              ? `to ${longDate(m.membership_types?.ends_on)}`
+                              : p.status === "future"
+                                ? `from ${longDate(m.membership_types?.starts_on)}`
+                                : `ended ${month(m.membership_types?.ends_on)}`}
+                          </span>
+                        )}
                       </>
                     ) : (
                       <span className="text-slate-400">None</span>
@@ -364,6 +476,8 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                   </td>
                   <td className="px-3 py-2">
                     <span className={`whitespace-nowrap rounded px-2 py-0.5 ${STATUS_STYLE[p.status]}`}>{MEMBERSHIP_STATUS[p.status]}</span>
+                    {p.isNew && " "}
+                    {p.isNew && <span className="whitespace-nowrap rounded bg-violet-50 px-2 py-0.5 text-violet-900">New</span>}
                   </td>
                   <td className="px-3 py-2">
                     {p.renewal ? (
@@ -377,8 +491,9 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
                       <span className="text-slate-400">–</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">{expected !== null ? pounds(expected) : ""}</td>
-                  <td className="px-3 py-2">{boatCount.get(p.id) ?? ""}</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">{cash?.expected != null ? money(cash.expected) : ""}</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">{cash?.boats != null ? money(cash.boats) : ""}</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">{cash?.paid != null ? money(cash.paid) : ""}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {remindable.has(p.id) && (
                       <label className="flex items-center gap-2">
@@ -391,6 +506,17 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
               );
             })}
           </tbody>
+          <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-slate-900">
+            <tr>
+              <td className="px-3 py-2" colSpan={4}>
+                Total ({rows.length} {rows.length === 1 ? "person" : "people"} shown)
+              </td>
+              <td className="px-3 py-2 text-right whitespace-nowrap">{money(totals.expected)}</td>
+              <td className="px-3 py-2 text-right whitespace-nowrap">{money(totals.boats)}</td>
+              <td className="px-3 py-2 text-right whitespace-nowrap">{money(totals.paid)}</td>
+              <td />
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>

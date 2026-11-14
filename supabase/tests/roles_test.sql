@@ -103,8 +103,10 @@ do $$ begin
   select '30000000-0000-0000-0000-000000000001', m.id, 'Membership ' || t.code, m.price_pence
     from memberships m join membership_types t on t.id = m.membership_type_id where t.code in ('IS', 'J1');
   update member_receipts set status = 'paid' where id = '30000000-0000-0000-0000-000000000001';
-  assert (select sum(total_pence) from income_statement() where direction = 'in') = 28000, 'income posted';
-  assert (select sum(total_pence) from income_statement() where direction = 'out') = 150, 'provider fee posted as a cost';
+  assert (select count(*) from memberships m join membership_types t on t.id = m.membership_type_id
+           where t.code in ('IS', 'J1') and m.status = 'active') = 2, 'paid memberships marked active';
+  -- Member payments don't post to the finance ledger: finance enters the bank lines by hand.
+  assert (select count(*) from income_statement()) = 0, 'no transactions posted from member receipts';
 end $$;
 select pg_temp.expect_error($q$select * from get_medical_record('20000000-0000-0000-0000-00000000000a')$q$, 'Not allowed');
 
@@ -123,7 +125,8 @@ end $$;
 \echo 'Member (Alice): history linked to income'
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 do $$ begin
-  assert (select count(*) from membership_history() where transaction_id is not null) = 2, 'both memberships linked to income';
+  assert (select count(*) from membership_history() where paid_on is not null) = 2, 'both memberships linked to their payment';
+  assert (select count(*) from membership_history() where transaction_id is not null) = 0, 'member payments don''t create finance transactions';
 end $$;
 
 \echo 'Signed out: no access'
@@ -258,7 +261,7 @@ begin
   assert (select people from club_memberships((select id from club_years where label = '2026')) where id = m) = 'Eve Other', 'finance sees names in the list';
   perform record_manual_payment(array[m], 'cheque', current_date);
   assert (select status::text from memberships where id = m) = 'active', 'marked paid';
-  assert (select coalesce(sum(total_pence), 0) from income_statement() where direction = 'in') = before + 1500, 'income posted';
+  assert (select coalesce(sum(total_pence), 0) from income_statement() where direction = 'in') = before, 'no finance transaction posted (finance enters bank lines by hand)';
   assert (select method::text from club_memberships((select id from club_years where label = '2026')) where id = m) = 'cheque', 'payment method shown';
 end $$;
 reset role;
@@ -521,8 +524,8 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
 do $$ declare ann uuid; hh uuid; begin
   assert (select count(*) from pending_applications()) = 3, 'three waiting';
   assert (select paid_method::text from pending_applications() where contact_name = 'Pia Paid') = 'direct_debit', 'paid shown to admins';
-  assert (select count(*) from transactions where party = 'Pia Paid' and direction = 'in' and receipt_line_id is null) = 1,
-    'paying on the join form records the transaction straight away';
+  assert (select count(*) from transactions where party = 'Pia Paid') = 0,
+    'paying on the join form doesn''t create a finance transaction (finance enters bank lines by hand)';
   assert (select paid_at is null from pending_applications() where contact_name = 'Ann Apply'), 'Ann hasn''t paid';
   assert (select has_medical from pending_applications() where contact_name = 'Ann Apply'), 'medical flagged, not shown';
   ann := accept_application((select id from pending_applications() where contact_name = 'Ann Apply'));
@@ -538,11 +541,11 @@ do $$ declare ann uuid; hh uuid; begin
     pia := accept_application((select id from pending_applications() where contact_name = 'Pia Paid'));
     assert (select m.status::text from memberships m join membership_people mp on mp.membership_id = m.id where mp.person_id = pia) = 'active',
       'paid application: membership marked paid on acceptance';
-    assert (select count(*) from transactions tx join member_receipt_lines rl on rl.id = tx.receipt_line_id
+    assert (select count(*) from member_receipts r join member_receipt_lines rl on rl.receipt_id = r.id
               join memberships m on m.id = rl.membership_id join membership_people mp on mp.membership_id = m.id
-             where mp.person_id = pia and tx.method = 'direct_debit') = 1,
-      'paid application: income posted';
-    assert (select count(*) from transactions where party = 'Pia Paid') = 1, 'accepting links the same transaction, no second one';
+             where mp.person_id = pia and r.method = 'direct_debit' and r.status = 'paid') = 1,
+      'paid application: member receipt recorded';
+    assert (select count(*) from transactions where party = 'Pia Paid') = 0, 'accepting creates no finance transaction';
   end;
   perform decline_application((select id from pending_applications() where contact_name = 'Spam Bot'), 'Spam');
   assert (select data is null and status = 'declined' from membership_applications where contact_name = 'Spam Bot'), 'declined details deleted';
@@ -742,8 +745,7 @@ select pg_temp.expect_error($q$select pay_my_memberships_test(array[current_sett
 reset role;
 do $$ begin
   assert (select count(*) from transactions tx join member_receipt_lines rl on rl.id = tx.receipt_line_id
-           where rl.membership_id = current_setting('test.alice_m')::uuid and tx.direction = 'in'
-            ) = 1, 'income posted for the test payment';
+           where rl.membership_id = current_setting('test.alice_m')::uuid) = 0, 'no finance transaction for the test payment';
 end $$;
 reset request.jwt.claim.sub;
 
@@ -779,10 +781,11 @@ begin
 end $$;
 reset role;
 do $$ begin
-  assert (select count(*) from transactions tx join transaction_categories c on c.id = tx.category_id
-            join member_receipt_lines rl on rl.id = tx.receipt_line_id join boat_storages bs on bs.id = rl.boat_storage_id
-           where c.name = 'Boat storage' and bs.membership_id = current_setting('test.eve_m')::uuid and tx.description like 'Boat storage %: Laser 123456') = 1,
-    'boat storage income posted under Boat storage';
+  assert (select count(*) from member_receipt_lines rl join boat_storages bs on bs.id = rl.boat_storage_id
+           where bs.membership_id = current_setting('test.eve_m')::uuid and rl.description like 'Boat storage %: Laser 123456') = 1,
+    'boat storage on the member receipt';
+  assert (select count(*) from transactions tx join member_receipt_lines rl on rl.id = tx.receipt_line_id) = 0,
+    'no finance transactions from member payments';
 end $$;
 -- Admin: a non-members rate charge for someone who left their boat, paid in cash; and an unpaid one removed.
 set role authenticated;
@@ -811,7 +814,7 @@ do $$ begin assert boat_storage_price(true) = 3500, 'members can''t change the p
 reset role;
 reset request.jwt.claim.sub;
 
--- Join form with boats: paid when applying, one Boat storage transaction per boat, stored on acceptance.
+-- Join form with boats: paid when applying (no finance transactions), stored on acceptance.
 set role anon;
 select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
   'address_line1', '6 Dam Rd', 'postcode', 'bb3 3cc',
@@ -820,8 +823,7 @@ select submit_application(jsonb_build_object('type_id', (select type_id from joi
 select pay_application_test(:'bo_submit_application', 'card') as bo_paid \gset
 reset role;
 do $$ begin
-  assert (select count(*) from transactions tx join transaction_categories c on c.id = tx.category_id
-           where tx.party = 'Bo Ater' and c.name = 'Boat storage' and tx.amount_pence = 3500) = 2, 'a transaction per boat on paying';
+  assert (select count(*) from transactions where party = 'Bo Ater') = 0, 'no finance transactions on paying';
 end $$;
 select :bo_paid = (select price_pence + 7000 from membership_applications where contact_name = 'Bo Ater') as ok \gset
 \if :ok
@@ -835,8 +837,10 @@ do $$ declare bo uuid; begin
   assert (select boats from pending_applications() where contact_name = 'Bo Ater') = 'Laser 200001, RS Aero 3', 'admins see the boats';
   bo := accept_application((select id from pending_applications() where contact_name = 'Bo Ater'));
   assert (select count(*) from boat_storages where person_id = bo and status = 'active') = 2, 'boats stored and paid on acceptance';
-  assert (select count(*) from transactions where party = 'Bo Ater') = 3, 'no extra transactions on acceptance';
-  assert (select count(*) from transactions where party = 'Bo Ater' and receipt_line_id is not null) = 3, 'all linked to the receipt';
+  assert (select count(*) from transactions where party = 'Bo Ater') = 0, 'no finance transactions on acceptance';
+  assert (select r.amount_pence = a.paid_pence + 7000 and r.status = 'paid'
+            from member_receipts r, membership_applications a
+           where r.payer_person_id = bo and a.person_id = bo), 'receipt recorded for the membership and both boats';
 end $$;
 reset role;
 reset request.jwt.claim.sub;
