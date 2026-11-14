@@ -396,7 +396,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Send email", "Add contact", "Templates", "Email log"]);
-  expect(await links("Finance admin")).toEqual(["Transactions", "Income", "Categories", "Budget", "Actual"]);
+  expect(await links("Finance admin")).toEqual(["Transactions", "Income", "Actual", "Budget", "Categories"]);
 
   // The Members bar no longer has Add new member, Income or Email templates.
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
@@ -636,7 +636,7 @@ test("finance sees this month's transactions with who paid, a running balance, s
   const page = await adminPage(browser);
   await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Transactions", "Income", "Categories", "Budget", "Actual"]);
+  await expect(page.getByRole("navigation", { name: "Finance admin" }).getByRole("link")).toHaveText(["Transactions", "Income", "Actual", "Budget", "Categories"]);
 
   // This month by default: last month's grant isn't shown.
   const month = sql(`select to_char(date_trunc('month', current_date), 'YYYY-MM-DD') || '|' || to_char(date_trunc('month', current_date) + interval '1 month' - interval '1 day', 'YYYY-MM-DD')`).split("|");
@@ -853,9 +853,24 @@ test("the Actual sheet shows the budget until finance marks a month complete, th
   await expect(page.getByRole("row", { name: /^Expenditure sub-total/ }).getByRole("cell").first()).toHaveText("£480");
   expect(sql(`select count(*) from budget_months_complete where year = 2032 and month = 1`)).toBe("1");
   await expect(page.getByRole("row", { name: /^Cumulative balance/ })).toBeVisible();
+  // Moving to another year and back keeps the tick and the label in step.
+  await page.getByRole("link", { name: "Actual for 2033" }).click();
+  await expect(page.getByRole("heading", { name: "Actual for 2033" })).toBeVisible();
+  // The cumulative balance carries forward: 2032 ended £480 down.
+  await expect(page.getByRole("rowheader", { name: /^Cumulative balance/ })).toHaveText("Cumulative balance (b/f −£480)");
+  await expect(page.getByRole("row", { name: /^Cumulative balance/ }).getByRole("cell").first()).toHaveText("−£480");
+  await page.getByRole("link", { name: "Actual for 2032" }).click();
+  await expect(page.getByRole("checkbox", { name: "Jan 2032 complete" })).toBeChecked();
+  await expect(page.getByRole("columnheader", { name: /Jan '32/ })).toContainText("Actual");
   // Unticking goes back to the budget.
   await page.getByRole("checkbox", { name: "Jan 2032 complete" }).uncheck();
   await expect(insurance.getByRole("cell").first()).toHaveText("450");
+  await expect(page.getByRole("checkbox", { name: "Jan 2032 complete" })).not.toBeChecked();
+  // Nothing before 2026.
+  await page.goto("/admin/actual?year=2026");
+  await expect(page.getByRole("link", { name: "Actual for 2025" })).toHaveCount(0);
+  await page.goto("/admin/budget?year=2025");
+  await expect(page.getByRole("heading", { name: "Budget for 2025" })).toHaveCount(0);
   sql(`delete from budget_amounts where year = 2032; delete from budget_months_complete where year = 2032`);
 });
 

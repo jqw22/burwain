@@ -37,9 +37,9 @@ const LINKS = [
   { key: "log", href: "/admin/emails/log", label: "Email log" },
   { key: "transactions", href: "/admin/transactions", label: "Transactions" },
   { key: "memberships", href: "/admin/memberships", label: "Income" },
-  { key: "categories", href: "/admin/categories", label: "Categories" },
-  { key: "budget", href: "/admin/budget", label: "Budget" },
   { key: "actual", href: "/admin/actual", label: "Actual" },
+  { key: "budget", href: "/admin/budget", label: "Budget" },
+  { key: "categories", href: "/admin/categories", label: "Categories" },
 ] as const;
 const SECTION_NAME = { membership: "Membership admin", comms: "Communications admin", finance: "Finance admin" };
 

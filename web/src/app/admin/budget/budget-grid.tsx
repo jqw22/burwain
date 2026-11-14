@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { SaveButton } from "@/components/save-button";
-import { MONTHS, cellText, money, parsePounds } from "@/lib/budget";
+import { FIRST_BUDGET_YEAR, MONTHS, cellText, money, parsePounds } from "@/lib/budget";
 import { saveBudget } from "./actions";
 
 export type BudgetCategory = { id: string; name: string; direction: "in" | "out"; is_active: boolean; pence: number[] };
@@ -11,7 +11,17 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
 // The budget table: 12 month columns plus Total; Income and Expenditure rows with sub-totals,
 // and a bottom row of income minus expenditure. Totals update as figures are typed.
-export function BudgetGrid({ year, categories, canEdit }: { year: number; categories: BudgetCategory[]; canEdit: boolean }) {
+export function BudgetGrid({
+  year,
+  categories,
+  canEdit,
+  broughtForward = 0,
+}: {
+  year: number;
+  categories: BudgetCategory[];
+  canEdit: boolean;
+  broughtForward?: number;
+}) {
   const [text, setText] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(categories.map((c) => [c.id, c.pence.map(cellText)])),
   );
@@ -25,8 +35,9 @@ export function BudgetGrid({ year, categories, canEdit }: { year: number; catego
   const income = subTotals("in");
   const spend = subTotals("out");
   const net = MONTHS.map((_, m) => income[m] - spend[m]);
-  // Cumulative balance: the running total of income minus expenditure, month by month from January.
-  const cumulative = net.map((_, m) => sum(net.slice(0, m + 1)));
+  // Cumulative balance: the running total of income minus expenditure, month by month from January,
+  // starting from the balance brought forward from earlier years (from 2026).
+  const cumulative = net.map((_, m) => broughtForward + sum(net.slice(0, m + 1)));
   const bad = categories.some((c) => text[c.id].some((t) => parsePounds(t) === null));
 
   const yy = String(year).slice(2);
@@ -123,7 +134,7 @@ export function BudgetGrid({ year, categories, canEdit }: { year: number; catego
           {section("in", "Income")}
           {section("out", "Expenditure")}
           {totalsRow("Total", net, true)}
-          {totalsRow("Cumulative balance", cumulative, false, cumulative[11])}
+          {totalsRow(year > FIRST_BUDGET_YEAR ? `Cumulative balance (b/f ${money(broughtForward)})` : "Cumulative balance", cumulative, false, cumulative[11])}
         </tbody>
       </table>
     </div>
