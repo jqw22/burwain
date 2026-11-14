@@ -616,11 +616,11 @@ test("finance sees this month's transactions with who paid, a running balance, s
        select date_trunc('month', current_date)::date, 'Boat insurance ${run}', 'out'::txn_direction, 45000, id, 'bank_transfer'::payment_method from transaction_categories where name = 'Insurance'
        union all
        select (date_trunc('month', current_date) - interval '1 day')::date, 'Old grant ${run}', 'in'::txn_direction, 99900, id, 'bank_transfer'::payment_method from transaction_categories where name = 'Other income'`);
-  sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method)
-       select current_date, 'Raffle donation ${run}', 'in'::txn_direction, 2550, id, 'cash'::payment_method from transaction_categories where name = 'Donations'`);
   // Member payments no longer create transactions: finance enters the bank line by hand, naming who paid.
   sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method, party)
-       select current_date, 'Associate Membership subscription', 'in'::txn_direction, 3000, id, 'cheque'::payment_method, 'Alex Tester${run}' from transaction_categories where name = 'Subscriptions'`);
+       select date_trunc('month', current_date)::date, 'Associate Membership subscription', 'in'::txn_direction, 3000, id, 'cheque'::payment_method, 'Alex Tester${run}' from transaction_categories where name = 'Subscriptions'`);
+  sql(`insert into transactions (occurred_on, description, direction, amount_pence, category_id, method)
+       select current_date, 'Raffle donation ${run}', 'in'::txn_direction, 2550, id, 'cash'::payment_method from transaction_categories where name = 'Donations'`);
   const page = await adminPage(browser);
   await page.getByRole("main").getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
