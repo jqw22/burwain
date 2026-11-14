@@ -2,7 +2,6 @@
 
 import { redirect } from "next/navigation";
 import { meWithRole, text } from "@/lib/me";
-import { yearLater } from "@/lib/quote";
 
 function back(key: "saved" | "error", value: string, edit?: string): never {
   redirect(`/admin/types?${key}=${value}${edit ? `&edit=${encodeURIComponent(edit)}#edit` : ""}`);
@@ -81,29 +80,6 @@ export async function copyType(form: FormData) {
   const { data, error } = await supabase.rpc("copy_membership_type", { p_type_id: String(form.get("id")) });
   if (error || !data) back("error", "copy");
   back("saved", "copied", String(data));
-}
-
-// Copy every active type with these dates (that hasn't been copied yet) to a year later.
-export async function copyPeriod(form: FormData) {
-  const { supabase, allowed } = await meWithRole("admin");
-  if (!allowed) back("error", "admin");
-  const startsOn = String(form.get("starts_on"));
-  const { data: list } = await supabase
-    .from("membership_types")
-    .select("id, code")
-    .eq("is_open", true)
-    .eq("starts_on", startsOn)
-    .eq("ends_on", String(form.get("ends_on")));
-  const { data: later } = await supabase.from("membership_types").select("code").eq("starts_on", yearLater(startsOn));
-  const done = new Set((later ?? []).map((t) => t.code as string));
-  let count = 0;
-  for (const t of list ?? []) {
-    if (done.has(t.code as string)) continue;
-    const { error } = await supabase.rpc("copy_membership_type", { p_type_id: t.id });
-    if (error) back("error", "copy");
-    count++;
-  }
-  redirect(`/admin/types?saved=copiedall&count=${count}`);
 }
 
 // Boat storage prices (members and non-members rate). Boats already added keep their price.

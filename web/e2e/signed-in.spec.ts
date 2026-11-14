@@ -1203,7 +1203,7 @@ test("an admin adds a membership type, changes its price and makes it inactive",
   await expect(page.getByLabel("Membership type").locator("option", { hasText: name })).toHaveCount(0);
 });
 
-test("an admin copies membership types to a year later, changes a price on the copy, and adds a June to March type", async ({ browser }) => {
+test("an admin copies a membership type to a year later, changes the price on the copy, and adds a June to March type", async ({ browser }) => {
   const latest = Number(sql(`select max(extract(year from starts_on))::int from membership_types where code = 'F'`));
   const next = latest + 1;
   const dates = (y: number) => `1 Jan ${y} to 31 Dec ${y}`;
@@ -1213,12 +1213,16 @@ test("an admin copies membership types to a year later, changes a price on the c
   await expect(page.getByRole("checkbox", { name: /approval/i })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: dates(latest) })).toBeVisible();
   await shot(page, "admin-types");
-  await page.getByRole("button", { name: `Copy the types for ${dates(latest)} to a year later` }).click();
-  await expect(page.getByText("Membership types copied with the dates a year later.")).toBeVisible();
+  // Types are copied one at a time: there's no button to copy them all.
+  await expect(page.getByRole("button", { name: /^Copy the types for/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Copy these types" })).toHaveCount(0);
+  const current = page.getByRole("table", { name: `Types for ${dates(latest)}` });
+  await current.getByRole("button", { name: "Copy Family to a year later" }).click();
+  await expect(page.getByText("Copied with the dates a year later.")).toBeVisible();
   const copies = page.getByRole("table", { name: `Types for ${dates(next)}` });
   await expect(copies.getByRole("row", { name: "Family", exact: true })).toContainText("£255");
+  await expect(copies.getByRole("row")).toHaveCount(2); // the heading row and Family only
 
-  await copies.getByRole("link", { name: "Edit Family" }).click();
   await page.getByRole("region", { name: `Edit Family (${dates(next)})` }).getByLabel("Price for the whole period (£)").fill("270");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Membership type saved.")).toBeVisible();
