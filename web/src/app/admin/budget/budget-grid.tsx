@@ -119,7 +119,7 @@ export function BudgetGrid({ year, categories, canEdit }: { year: number; catego
         <tbody>
           {section("in", "Income")}
           {section("out", "Expenditure")}
-          {totalsRow("Total (income − expenditure)", net, true)}
+          {totalsRow("Total", net, true)}
         </tbody>
       </table>
     </div>

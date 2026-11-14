@@ -724,8 +724,8 @@ test("finance fills in a monthly budget in whole pounds with income and expendit
   expect((await cells("Income sub-total")).slice(0, 2)).toEqual(["£1,200", "£300"]);
   expect((await cells("Income sub-total")).at(-1)).toBe("£1,500");
   expect((await cells("Expenditure sub-total"))[0]).toBe("£450");
-  expect((await cells("Total \\(income")).slice(0, 2)).toEqual(["£750", "£300"]);
-  expect((await cells("Total \\(income")).at(-1)).toBe("£1,050");
+  expect((await cells("Total ")).slice(0, 2)).toEqual(["£750", "£300"]);
+  expect((await cells("Total ")).at(-1)).toBe("£1,050");
   await expect(page.getByText("You have changes that aren't saved yet.")).toBeVisible();
 
   // Something that isn't money is outlined and can't be saved.
