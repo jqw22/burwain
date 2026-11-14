@@ -28,7 +28,7 @@ export async function renameCategory(form: FormData) {
   const name = text(form, "name");
   if (!name) back("error", "name");
   const { error } = await supabase.from("transaction_categories").update({ name }).eq("id", id);
-  if (error) back("error", error.code === "23505" ? "duplicate" : error.message.includes("used automatically") ? "locked" : "save");
+  if (error) back("error", error.code === "23505" ? "duplicate" : error.message.includes("fixed category") ? "locked" : "save");
   back("saved", "renamed");
 }
 
@@ -38,6 +38,6 @@ export async function setCategoryActive(form: FormData) {
   const id = String(form.get("id") ?? "");
   const active = form.get("active") === "true";
   const { error } = await supabase.from("transaction_categories").update({ is_active: active }).eq("id", id);
-  if (error) back("error", error.message.includes("used automatically") ? "locked" : "save");
+  if (error) back("error", error.message.includes("fixed category") ? "locked" : "save");
   back("saved", active ? "activated" : "deactivated");
 }

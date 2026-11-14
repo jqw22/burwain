@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { PrintButton } from "@/components/print-button";
-import { FIRST_BUDGET_YEAR, MONTHS, budgetYear, money } from "@/lib/budget";
+import { FIRST_BUDGET_YEAR, FIXED_CATEGORIES, MONTHS, TRANSFER, budgetYear, money } from "@/lib/budget";
 import { createClient } from "@/lib/supabase/server";
 import { requireMe } from "@/lib/me";
 import { MonthToggle } from "./month-toggle";
@@ -11,8 +11,6 @@ const ERRORS: Record<string, string> = {
   save: "We couldn't save that. Please try again.",
 };
 
-// Same order as the Budget and Categories screens: the fixed member-payment categories go last.
-const LOCKED = new Set(["Subscriptions", "Boat storage", "Payment fees"]);
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 // Whole pounds like the Budget; blank for nothing; minus sign when below zero.
@@ -82,13 +80,16 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
   // Inactive categories only appear if they have figures this year.
   const categories = ((cats ?? []) as Category[])
     .filter((c) => c.is_active || budget[c.id] || actual[c.id])
-    .sort((a, b) => Number(LOCKED.has(a.name)) - Number(LOCKED.has(b.name)) || a.name.localeCompare(b.name));
-  const group = (dir: "in" | "out") => categories.filter((c) => c.direction === dir);
+    .sort((a, b) => Number(FIXED_CATEGORIES.has(a.name)) - Number(FIXED_CATEGORIES.has(b.name)) || a.name.localeCompare(b.name));
+  // "Transfer from Saving" isn't income: it has its own row between Total and Cumulative balance.
+  const transfer = categories.find((c) => c.name === TRANSFER);
+  const group = (dir: "in" | "out") => categories.filter((c) => c.direction === dir && c !== transfer);
   const subTotals = (dir: "in" | "out") => MONTHS.map((_, m) => sum(group(dir).map((c) => shown(c.id)[m])));
   const income = subTotals("in");
   const spend = subTotals("out");
   const net = MONTHS.map((_, m) => income[m] - spend[m]);
-  const cumulative = net.map((_, m) => broughtForward + sum(net.slice(0, m + 1)));
+  const transfers = transfer ? shown(transfer.id) : Array<number>(12).fill(0);
+  const cumulative = net.map((_, m) => broughtForward + sum(net.slice(0, m + 1)) + sum(transfers.slice(0, m + 1)));
 
   const yy = String(year).slice(2);
   const num = "whitespace-nowrap px-1 py-1 text-right tabular-nums";
@@ -108,6 +109,23 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
       <td className={`${num} pr-2 ${last < 0 ? "text-red-700" : ""}`}>{money(last)}</td>
     </tr>
   );
+  const categoryRow = (c: Category) => {
+    const values = shown(c.id);
+    return (
+      <tr key={c.id} className="border-t border-slate-100 bg-white">
+        <th scope="row" className={`${nameCell} font-normal`}>
+          {c.name}
+          {!c.is_active && <span className="ml-1 text-xs text-slate-500">(inactive)</span>}
+        </th>
+        {values.map((v, m) => (
+          <td key={m} className={`${num} ${done(m)} ${complete.has(m) ? "" : "text-slate-500"}`}>
+            {cell(v)}
+          </td>
+        ))}
+        <td className={`${num} pr-2 font-medium`}>{money(sum(values))}</td>
+      </tr>
+    );
+  };
   const section = (dir: "in" | "out", title: string) => (
     <>
       <tr className="bg-white">
@@ -115,23 +133,7 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
           {title}
         </th>
       </tr>
-      {group(dir).map((c) => {
-        const values = shown(c.id);
-        return (
-          <tr key={c.id} className="border-t border-slate-100 bg-white">
-            <th scope="row" className={`${nameCell} font-normal`}>
-              {c.name}
-              {!c.is_active && <span className="ml-1 text-xs text-slate-500">(inactive)</span>}
-            </th>
-            {values.map((v, m) => (
-              <td key={m} className={`${num} ${done(m)} ${complete.has(m) ? "" : "text-slate-500"}`}>
-                {cell(v)}
-              </td>
-            ))}
-            <td className={`${num} pr-2 font-medium`}>{money(sum(values))}</td>
-          </tr>
-        );
-      })}
+      {group(dir).map((c) => categoryRow(c))}
       {totalsRow(dir === "in" ? "Income sub-total" : "Expenditure sub-total", dir === "in" ? income : spend)}
     </>
   );
@@ -194,6 +196,7 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
             {section("in", "Income")}
             {section("out", "Expenditure")}
             {totalsRow("Total", net, true)}
+            {transfer && categoryRow(transfer)}
             {totalsRow(year > FIRST_BUDGET_YEAR ? `Cumulative balance (b/f ${money(broughtForward)})` : "Cumulative balance", cumulative, false, cumulative[11])}
           </tbody>
         </table>

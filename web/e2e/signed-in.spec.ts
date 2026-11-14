@@ -605,6 +605,13 @@ test("finance records a cheque for an Associate membership, which no longer need
   await expect(row).toContainText("Cheque");
   await expect(row).toContainText("£30.00");
   await expect(page.getByRole("checkbox", { name: `Mark Associate Membership for Alex Tester${run} as paid` })).toHaveCount(0);
+  // Finance ticks Reconciled once the cheque is in the bank and entered as a transaction.
+  await row.getByRole("checkbox", { name: /^Reconciled:/ }).check();
+  await expect(row.getByRole("checkbox", { name: /^Reconciled:/ })).toBeChecked();
+  expect(
+    sql(`select count(*) from member_receipt_lines rl join memberships m on m.id = rl.membership_id join membership_people mp on mp.membership_id = m.id
+          join people p on p.id = mp.person_id where p.email = 'alex-${run}@example.test' and rl.reconciled_at is not null`),
+  ).toBe("1");
   // Search, like Transactions.
   await page.getByLabel("Search income").fill(`Alex Tester${run} cheque`);
   await expect(page).toHaveURL(/q=/);
@@ -746,7 +753,8 @@ test("finance adds, renames and makes inactive a transaction category", async ({
   const names = async (title: string) =>
     (await page.getByRole("region", { name: title }).getByRole("row").allTextContents()).slice(1).map((t) => t.trim());
   expect((await names("Money out categories")).at(-1)).toContain("Payment fees");
-  expect((await names("Money in categories")).slice(-2).map((t) => t.split(" ")[0])).toEqual(["Boat", "Subscriptions"]);
+  expect((await names("Money in categories")).slice(-3).map((t) => t.split(" ")[0])).toEqual(["Boat", "Subscriptions", "Transfer"]);
+  await expect(page.getByRole("button", { name: "Make inactive: Transfer from Saving" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Make inactive: Subscriptions" })).toHaveCount(0);
 
   await page.getByLabel("Category name").fill(`Coaching ${run}`);
@@ -798,6 +806,17 @@ test("finance fills in a monthly budget in whole pounds with income and expendit
   // Cumulative balance: the running total month by month (750, then 750 + 300), ending on the year's total.
   expect((await cells("Cumulative balance")).slice(0, 3)).toEqual(["£750", "£1,050", "£1,050"]);
   expect((await cells("Cumulative balance")).at(-1)).toBe("£1,050");
+  // Transfer from Saving has its own row after Total: it isn't income, but it adds to the cumulative balance.
+  const rowNames = (await page.getByRole("rowheader").allTextContents()).map((t) => t.trim());
+  expect(rowNames.slice(rowNames.indexOf("Total"), rowNames.indexOf("Total") + 3).map((t) => t.replace(/ \(b\/f.*$/, ""))).toEqual([
+    "Total",
+    "Transfer from Saving",
+    "Cumulative balance",
+  ]);
+  await page.getByLabel("Transfer from Saving Feb 2031").fill("100");
+  expect((await cells("Income sub-total")).at(-1)).toBe("£1,500");
+  expect((await cells("Cumulative balance")).slice(0, 3)).toEqual(["£750", "£1,150", "£1,150"]);
+  await page.getByLabel("Transfer from Saving Feb 2031").fill("");
   await expect(page.getByText("You have changes that aren't saved yet.")).toBeVisible();
 
   // Something that isn't money is outlined and can't be saved.

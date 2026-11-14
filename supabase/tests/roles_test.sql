@@ -266,9 +266,15 @@ begin
   assert (select count(*) from member_income(current_date, current_date) where payer_name = 'Eve Other' and kind = 'Membership'
             and method = 'cheque' and amount_pence = 1500 and covers like '%Eve%') = 1, 'Income list shows the payment, who paid and who it covers';
   assert (select count(*) from member_income('2001-01-01', '2001-01-31')) = 0, 'Income list follows the dates';
+  -- Reconciling: finance ticks a line once the money is in the bank and entered as a transaction.
+  perform set_receipt_line_reconciled((select id from member_income(current_date, current_date) where payer_name = 'Eve Other' limit 1), true);
+  assert (select reconciled_at is not null from member_income(current_date, current_date) where payer_name = 'Eve Other' limit 1), 'reconciled';
+  perform set_receipt_line_reconciled((select id from member_income(current_date, current_date) where payer_name = 'Eve Other' limit 1), false);
+  assert (select reconciled_at is null from member_income(current_date, current_date) where payer_name = 'Eve Other' limit 1), 'unticked';
 end $$;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 do $$ begin assert (select count(*) from member_income(null, null)) = 0, 'members see no income list'; end $$;
+select pg_temp.expect_error($q$select set_receipt_line_reconciled((select id from member_receipt_lines limit 1), true)$q$, 'Only finance');
 reset role;
 
 \echo 'Family: the main contact manages every family member''s medical info and qualifications'
@@ -719,8 +725,10 @@ reset request.jwt.claim.sub;
 -- Categories: member payments' categories are locked; others can be renamed and made inactive.
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
-select pg_temp.expect_error($q$update transaction_categories set name = 'Subs' where name = 'Subscriptions'$q$, 'used automatically');
-select pg_temp.expect_error($q$update transaction_categories set is_active = false where name = 'Payment fees'$q$, 'used automatically');
+select pg_temp.expect_error($q$update transaction_categories set name = 'Subs' where name = 'Subscriptions'$q$, 'fixed category');
+select pg_temp.expect_error($q$update transaction_categories set is_active = false where name = 'Payment fees'$q$, 'fixed category');
+select pg_temp.expect_error($q$update transaction_categories set name = 'Savings' where name = 'Transfer from Saving'$q$, 'fixed category');
+do $$ begin assert (select direction::text from transaction_categories where name = 'Transfer from Saving') = 'in', 'Transfer from Saving is money in'; end $$;
 update transaction_categories set is_active = false where name = 'Venue';
 do $$ begin assert not (select is_active from transaction_categories where name = 'Venue'), 'venue inactive'; end $$;
 reset role;
@@ -960,6 +968,12 @@ insert into user_roles (person_id, role) values ('20000000-0000-0000-0000-000000
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
 do $$ begin assert (select count(*) from budget_amounts) = 1, 'admins can see the budget'; end $$;
+update transaction_categories set name = 'Renamed by admin' where name = 'Venue';
+update transaction_categories set is_active = true where name = 'Venue';
+do $$ begin
+  assert (select count(*) from transaction_categories where name = 'Renamed by admin') = 0, 'admins can''t rename categories';
+  assert not (select is_active from transaction_categories where name = 'Venue'), 'admins can''t change whether a category is active';
+end $$;
 select pg_temp.expect_error($q$select save_budget(2027, '[]')$q$, 'Only finance');
 update budget_amounts set amount_pence = 1;
 do $$ begin assert (select amount_pence from budget_amounts) = 50000, 'admins cannot change the budget'; end $$;

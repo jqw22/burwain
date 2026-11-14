@@ -19,3 +19,16 @@ export async function recordPayment(form: FormData) {
   });
   back(error ? "error" : "saved", error ? "payment" : "paid");
 }
+
+// The Reconciled tick on a payment line: finance confirms the money is in the bank and entered as a transaction.
+export async function setReconciled(form: FormData) {
+  const query = String(form.get("back") ?? "");
+  const again = (extra: string): never => redirect(`/admin/memberships?${query}${query && extra ? "&" : ""}${extra}`);
+  const { supabase, allowed } = await meWithRole("finance");
+  if (!allowed) again("error=finance");
+  const { error } = await supabase.rpc("set_receipt_line_reconciled", {
+    p_line: String(form.get("line") ?? ""),
+    p_reconciled: form.get("reconciled") === "1",
+  });
+  again(error ? "error=reconcile" : "");
+}
