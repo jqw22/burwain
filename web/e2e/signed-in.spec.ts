@@ -164,7 +164,9 @@ test("a member signs in with an email link and sees their membership", async ({ 
   await page.getByRole("banner").getByRole("link", { name: "Volunteer" }).click();
   await expect(page).toHaveURL(/\/volunteer$/);
   await expect(page.getByRole("heading", { name: "Volunteering", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Jobs that need doing..." })).toContainText("Simply click the + icon");
+  // The intro is plain text under the heading (like the Directory), not a box that looks like a job.
+  await expect(page.getByRole("main").getByText("Simply click the + icon to indicate you are available.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Jobs that need doing..." })).toHaveCount(0);
   // The Admin page sends members back to Home.
   await page.goto("/admin");
   await expect(page).toHaveURL(/localhost:3100\/$/);

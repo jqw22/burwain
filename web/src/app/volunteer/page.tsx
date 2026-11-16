@@ -68,15 +68,12 @@ export default async function VolunteerPage({ searchParams }: PageProps<"/volunt
           </Link>
         )}
       </div>
+      <p className="text-slate-700">
+        If you are able to contribute to any of the jobs below, no matter how small, your support would be appreciated by
+        all. Simply click the + icon to indicate you are available.
+      </p>
       <Notice message={notice ? NOTICES[notice] : undefined} />
       <VolunteerError error={params.error} />
-      <Card title="Jobs that need doing...">
-        <p className="text-slate-700">
-          All clubs need jobs doing in order to improve and maintain the assets and equipment that all members use. If
-          you are able to contribute to any of the jobs below, no matter how small, your support would be appreciated
-          by all. Simply click the + icon to indicate where you are available.
-        </p>
-      </Card>
 
       {open.length === 0 && (
         <p className="text-slate-600">There are no jobs listed at the moment. Please check back later.</p>
