@@ -12,7 +12,9 @@ type DoneSignup = { job_id: string; person: { first_name: string; last_name: str
 
 function jobDate(iso: string | null) {
   if (!iso) return "Any time";
-  return new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  const d = new Date(`${iso}T12:00:00`);
+  // "Sat 6 Mar 2027"
+  return `${d.toLocaleDateString("en-GB", { weekday: "short" })} ${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
 }
 
 // "Sam Smith, Alex Smith and 2 others"
