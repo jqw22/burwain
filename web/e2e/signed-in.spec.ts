@@ -154,7 +154,7 @@ test("a member signs in with an email link and sees their membership", async ({ 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Welcome to Burwain, Sam", exact: true })).toBeVisible();
   const bar = page.getByRole("banner").getByRole("link");
-  await expect(bar).toHaveText(["Home", "Member", "Directory", "Calendar", "Volunteer", "Handbook"]);
+  await expect(bar).toHaveText(["Home", "Directory", "Calendar", "Volunteer", "Handbook", "My Details"]);
   await expect(page.getByRole("banner").getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   await page.getByRole("banner").getByRole("link", { name: "Calendar" }).click();
   await expect(page).toHaveURL(/\/calendar$/);
@@ -168,13 +168,13 @@ test("a member signs in with an email link and sees their membership", async ({ 
   // The Admin page sends members back to Home.
   await page.goto("/admin");
   await expect(page).toHaveURL(/localhost:3100\/$/);
-  await page.getByRole("banner").getByRole("link", { name: "Member" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "My Details" }).click();
   await expect(page).toHaveURL(/\/profile$/);
   await expect(page.getByRole("heading", { name: "Welcome Sam", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Your current membership" })).toContainText(/Family for Sam, Alex, Robin: £255\s*Paid/);
   // Sign out is in the top bar, and the page you're on is marked there. Members don't see Admin.
   await expect(page.getByRole("banner").getByRole("button", { name: "Sign out" })).toBeVisible();
-  await expect(page.getByRole("banner").getByRole("link", { name: "Member" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("banner").getByRole("link", { name: "My Details" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveCount(0);
   await expect(page.getByRole("main").getByRole("button", { name: "Sign out" })).toHaveCount(0);
   // The login is now linked to Sam's member record.
@@ -339,7 +339,7 @@ test("the family's main contact renews for next year from Your details", async (
   await expect(page.getByText("Your payment of £290 by Direct Debit is confirmed.")).toBeVisible();
   await shot(page, "checkout-confirmed");
   await expect(page.getByText("Your membership is now paid.")).toBeVisible();
-  await page.getByRole("link", { name: "Back to Member" }).click();
+  await page.getByRole("link", { name: "Back to My Details" }).click();
   // The test payment is recorded: the membership is paid and the income is posted.
   await expect(page.getByRole("region", { name: "Your current membership" }).getByText(new RegExp(`Family for Sam, Alex, Robin: £255\\s*Paid\\s*1 Jan ${next}`))).toBeVisible();
   await expect(page.getByRole("link", { name: "Pay now" })).toHaveCount(0);
@@ -400,7 +400,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   const section = (name: string) => page.getByRole("main").locator("section", { has: page.getByRole("heading", { name, exact: true }) });
   const links = async (name: string) => (await section(name).getByRole("link").allTextContents()).map((t) => t.trim());
   await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible();
-  await expect(page.getByRole("banner").getByRole("link")).toHaveText(["Home", "Member", "Directory", "Calendar", "Volunteer", "Handbook", "Admin"]);
+  await expect(page.getByRole("banner").getByRole("link")).toHaveText(["Home", "Directory", "Calendar", "Volunteer", "Handbook", "My Details", "Admin"]);
   await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
   expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Club titles", "Import", "Public join form"]);
@@ -930,7 +930,7 @@ test("the Actual sheet shows the budget until finance marks a month complete, th
 test("an admin adds new members: joining a family, a new family paying cash, and a whole family", async ({ browser }) => {
   const page = await adminPage(browser);
   // Members not in a family can't set one up themselves any more.
-  await page.getByRole("link", { name: "Member", exact: true }).click();
+  await page.getByRole("link", { name: "My Details", exact: true }).click();
   await expect(page.getByRole("button", { name: "Set up my family" })).toHaveCount(0);
   await expect(page.getByText("You're not in a family group.")).toBeVisible();
 
@@ -1143,7 +1143,7 @@ test("members see a directory of adult members, without payment status", async (
   await expect(page.getByRole("link", { name: new RegExp(`Tester${run}, Sam`) })).toHaveCount(0);
   await expect(page.getByText("Paid", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("banner").getByRole("link", { name: "Directory" })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("banner").getByRole("link", { name: "Member" })).not.toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("banner").getByRole("link", { name: "My Details" })).not.toHaveAttribute("aria-current", "page");
   await shot(page, "directory");
 
   // Search by name.
