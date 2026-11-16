@@ -1834,6 +1834,59 @@ test("an admin adds, pins, edits and deletes club news with a picture; members r
   expect(sql(`select count(*) from news_posts where title = 'AGM moved ${run}'`)).toBe("0");
 });
 
+test("an admin adds a volunteering job; the main contact puts themselves and their junior down with +", async ({ browser }) => {
+  const page = await adminPage(browser);
+  await page.goto("/volunteer");
+  await page.getByRole("link", { name: "+ Add job" }).click();
+  await expect(page).toHaveURL(/\/volunteer\/new$/);
+  await page.getByLabel("Job", { exact: true }).fill(`Paint the boathouse ${run}`);
+  await page.getByLabel(/What.s involved/).fill("Bring old clothes.\nPaint and brushes provided.");
+  await page.getByLabel("Date (optional)").fill("2027-03-06");
+  await page.getByLabel("Helpers needed (optional)").fill("2");
+  await page.getByRole("button", { name: "Add job" }).click();
+  await expect(page.getByRole("status")).toContainText("Job saved.");
+  const job = page.getByRole("region", { name: `Paint the boathouse ${run}` });
+  await expect(job).toContainText("Sat 6 Mar 2027 · 0 of 2 helpers");
+  await expect(job).toContainText("Paint and brushes provided.");
+
+  // Sam is the family's main contact: + buttons for Sam, Alex and junior Robin.
+  const member = await leadPage(browser);
+  await member.goto("/volunteer");
+  const memberJob = member.getByRole("region", { name: `Paint the boathouse ${run}` });
+  // (Other tests may have added more people to Sam's family, so check these three rather than the full list.)
+  const buttons = memberJob.getByRole("group", { name: `Volunteer for Paint the boathouse ${run}` }).getByRole("button");
+  await expect(buttons.first()).toHaveText("+ Sam (you)");
+  for (const name of ["Alex", "Robin"]) await expect(buttons.filter({ hasText: `+ ${name}` })).toHaveCount(1);
+  await expect(memberJob.getByRole("link", { name: /^Edit/ })).toHaveCount(0);
+  await memberJob.getByRole("button", { name: `Put Sam down for Paint the boathouse ${run}` }).click();
+  await expect(memberJob.getByRole("button", { name: `Take Sam off Paint the boathouse ${run}` })).toHaveText("✓ Sam (you)");
+  await memberJob.getByRole("button", { name: `Put Robin down for Paint the boathouse ${run}` }).click();
+  await expect(memberJob).toContainText("2 of 2 helpers (full)");
+  await expect(memberJob).toContainText(`Helping: Sam Tester${run} and Robin Tester${run}`);
+  // Full: nobody else can be added until someone comes off.
+  await expect(memberJob.getByRole("button", { name: `Put Alex down for Paint the boathouse ${run}` })).toBeDisabled();
+  await shot(member, "volunteering");
+  await memberJob.getByRole("button", { name: `Take Robin off Paint the boathouse ${run}` }).click();
+  await expect(memberJob).toContainText("1 of 2 helpers");
+  await expect(memberJob.getByRole("button", { name: `Put Alex down for Paint the boathouse ${run}` })).toBeEnabled();
+  await member.goto("/volunteer/new");
+  await expect(member.getByRole("heading", { name: "Admins only" })).toBeVisible();
+
+  // The admin sees who is helping, then marks the job done: it moves to Finished jobs, helpers kept.
+  await page.goto("/volunteer");
+  await expect(job).toContainText(`Helping: Sam Tester${run}`);
+  await job.getByRole("link", { name: `Edit Paint the boathouse ${run}` }).click();
+  await expect(page.getByRole("button", { name: "Delete this job" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Mark as done" }).click();
+  await expect(page.getByRole("status")).toContainText("Job marked as done.");
+  await expect(job).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Finished jobs" })).toContainText(`Paint the boathouse ${run}`);
+  await expect(page.getByRole("region", { name: "Finished jobs" })).toContainText(`Sam Tester${run}`);
+  await member.goto("/volunteer");
+  await expect(member.getByRole("region", { name: `Paint the boathouse ${run}` })).toHaveCount(0);
+  await expect(member.getByRole("region", { name: "Finished jobs" })).toHaveCount(0);
+});
+
 test("a member can't open the group email page or the email log", async ({ browser }) => {
   const page = await leadPage(browser);
   await page.goto("/admin/emails/send");
