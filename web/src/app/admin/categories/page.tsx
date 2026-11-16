@@ -2,13 +2,14 @@ import { AdminNav, NotAllowed } from "@/components/admin";
 import { Card, Notice, SaveButton } from "@/components/fields";
 import { FIXED_CATEGORIES as LOCKED, TRANSFER } from "@/lib/budget";
 import { meWithRole } from "@/lib/me";
-import { addCategory, renameCategory, setCategoryActive } from "./actions";
+import { addCategory, moveCategory, renameCategory, setCategoryActive } from "./actions";
 
 type Category = {
   id: string;
   name: string;
   direction: "in" | "out";
   is_active: boolean;
+  sort_order: number;
 };
 
 const SAVED: Record<string, string> = {
@@ -24,6 +25,7 @@ const ERRORS: Record<string, string> = {
   direction: "Please choose Money in or Money out.",
   duplicate: "There's already a category with that name.",
   locked: "That is a fixed category, so it can't be changed.",
+  first: "Subscriptions and Boat storage always come first in Money in.",
   save: "We couldn't save that. Please try again.",
 };
 
@@ -46,8 +48,8 @@ export default async function CategoriesPage({
   const [{ data }, { data: used }] = await Promise.all([
     supabase
       .from("transaction_categories")
-      .select("id, name, direction, is_active")
-      .order("name"),
+      .select("id, name, direction, is_active, sort_order")
+      .order("sort_order"),
     supabase
       .from("transactions")
       .select("category_id")
@@ -65,13 +67,35 @@ export default async function CategoriesPage({
   const list = (dir: "in" | "out", title: string) => {
     const rows = categories
       .filter((c) => c.direction === dir)
+      // In the order they appear on Budget and Actual. Transfer from Saving has its own row there,
+      // so it sits at the bottom here without a number.
       .sort(
-        // The fixed categories (used for member payments) go at the bottom.
         (a, b) =>
-          Number(LOCKED.has(a.name)) - Number(LOCKED.has(b.name)) ||
-          Number(b.is_active) - Number(a.is_active) ||
+          Number(a.name === TRANSFER) - Number(b.name === TRANSFER) ||
+          a.sort_order - b.sort_order ||
           a.name.localeCompare(b.name),
       );
+    const ordered = rows.filter((c) => c.name !== TRANSFER);
+    const pinned = (c: Category) => c.name === "Subscriptions" || c.name === "Boat storage";
+    const movable = ordered.filter((c) => !pinned(c));
+    const moveButton = (c: Category, step: "up" | "down") => {
+      const i = movable.indexOf(c);
+      const blocked = step === "up" ? i <= 0 : i === movable.length - 1;
+      return (
+        <form action={moveCategory}>
+          <input type="hidden" name="id" value={c.id} />
+          <input type="hidden" name="step" value={step} />
+          <button
+            type="submit"
+            disabled={blocked}
+            aria-label={`Move ${c.name} ${step}`}
+            className="rounded border border-slate-300 bg-white px-1.5 leading-6 text-slate-700 hover:border-sky-800 hover:text-sky-900 disabled:cursor-default disabled:opacity-30"
+          >
+            {step === "up" ? "↑" : "↓"}
+          </button>
+        </form>
+      );
+    };
     return (
       <Card title={title}>
         {rows.length === 0 ? (
@@ -80,6 +104,12 @@ export default async function CategoriesPage({
           <table className="w-full text-left text-sm">
             <thead className="text-slate-600">
               <tr>
+                <th className="py-2 pr-2 text-right">No.</th>
+                {isFinance && (
+                  <th className="py-2 pr-3">
+                    <span className="sr-only">Order</span>
+                  </th>
+                )}
                 <th className="py-2 pr-4">Name</th>
                 <th className="py-2 pr-4 text-right">Transactions</th>
                 <th className="py-2 pr-4">Status</th>
@@ -92,8 +122,22 @@ export default async function CategoriesPage({
               {rows.map((c) => (
                 <tr
                   key={c.id}
+                  id={`cat-${c.id}`}
                   className="border-t border-slate-100 align-middle"
                 >
+                  <td className="py-2 pr-2 text-right tabular-nums text-slate-600">
+                    {c.name === TRANSFER ? "" : ordered.indexOf(c) + 1}
+                  </td>
+                  {isFinance && (
+                    <td className="py-2 pr-3">
+                      {c.name !== TRANSFER && !pinned(c) && (
+                        <div className="flex gap-1">
+                          {moveButton(c, "up")}
+                          {moveButton(c, "down")}
+                        </div>
+                      )}
+                    </td>
+                  )}
                   <td className="py-2 pr-4">
                     {LOCKED.has(c.name) ? (
                       <span>
@@ -101,7 +145,9 @@ export default async function CategoriesPage({
                         <span className="ml-1 text-xs text-slate-500">
                           {c.name === TRANSFER
                             ? "(fixed: own row on Budget and Actual)"
-                            : "(used automatically for member payments)"}
+                            : c.name === "Payment fees"
+                              ? "(fixed: card and Direct Debit provider fees)"
+                              : "(fixed)"}
                         </span>
                       </span>
                     ) : !isFinance ? (
@@ -178,7 +224,10 @@ export default async function CategoriesPage({
       <p className="text-sm text-slate-600">
         Categories group transactions for the accounts. They can&apos;t be
         deleted, so old transactions keep theirs. Make a category inactive to
-        stop it being picked for new transactions.
+        stop it being picked for new transactions. The numbers are the order
+        categories appear in on the Budget and Actual sheets
+        {isFinance && <>: use the arrows to move them</>}. Subscriptions and
+        Boat storage are always 1 and 2.
       </p>
 
       {!isFinance && (

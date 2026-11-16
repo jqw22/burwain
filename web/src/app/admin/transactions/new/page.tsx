@@ -33,7 +33,7 @@ export default async function NewTransactionPage({ searchParams }: PageProps<"/a
   const { supabase, allowed } = await meWithRole("finance");
   if (!allowed) return <NotAllowed who="finance logins" />;
 
-  const { data } = await supabase.from("transaction_categories").select("id, name, direction").eq("is_active", true).order("name");
+  const { data } = await supabase.from("transaction_categories").select("id, name, direction").eq("is_active", true).order("sort_order").order("name");
   const categories = (data ?? []) as Category[];
   const v = (k: string) => (typeof params[k] === "string" ? (params[k] as string) : "");
   const error = ERRORS[v("error")];

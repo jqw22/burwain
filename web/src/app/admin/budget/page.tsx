@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { Notice } from "@/components/fields";
 import { PrintButton } from "@/components/print-button";
-import { FIRST_BUDGET_YEAR, FIXED_CATEGORIES, budgetYear } from "@/lib/budget";
+import { FIRST_BUDGET_YEAR, budgetYear } from "@/lib/budget";
 import { createClient } from "@/lib/supabase/server";
 import { requireMe } from "@/lib/me";
 import { BudgetGrid, type BudgetCategory } from "./budget-grid";
@@ -29,7 +29,7 @@ export default async function BudgetPage({ searchParams }: PageProps<"/admin/bud
   const year = budgetYear(params.year);
 
   const [{ data: cats }, { data: amounts }, { data: earlier }] = await Promise.all([
-    supabase.from("transaction_categories").select("id, name, direction, is_active"),
+    supabase.from("transaction_categories").select("id, name, direction, is_active, sort_order"),
     supabase.from("budget_amounts").select("category_id, month, amount_pence").eq("year", year),
     // Earlier years' budgets (from 2026), for the cumulative balance brought forward.
     supabase.from("budget_amounts").select("category_id, amount_pence").gte("year", FIRST_BUDGET_YEAR).lt("year", year),
@@ -45,9 +45,10 @@ export default async function BudgetPage({ searchParams }: PageProps<"/admin/bud
     figures[a.category_id][a.month - 1] = a.amount_pence;
   }
   // Inactive categories only appear if they already have figures for this year.
-  const categories: BudgetCategory[] = ((cats ?? []) as { id: string; name: string; direction: "in" | "out"; is_active: boolean }[])
+  const categories: BudgetCategory[] = ((cats ?? []) as { id: string; name: string; direction: "in" | "out"; is_active: boolean; sort_order: number }[])
     .filter((c) => c.is_active || figures[c.id])
-    .sort((a, b) => Number(FIXED_CATEGORIES.has(a.name)) - Number(FIXED_CATEGORIES.has(b.name)) || a.name.localeCompare(b.name))
+    // In the order finance set on the Categories screen.
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
     .map((c) => ({ ...c, pence: figures[c.id] ?? Array(12).fill(0) }));
 
   const error = typeof params.error === "string" ? ERRORS[params.error] : undefined;

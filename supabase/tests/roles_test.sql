@@ -753,6 +753,31 @@ select pg_temp.expect_error($q$update transaction_categories set name = 'Savings
 do $$ begin assert (select direction::text from transaction_categories where name = 'Transfer from Saving') = 'in', 'Transfer from Saving is money in'; end $$;
 update transaction_categories set is_active = false where name = 'Venue';
 do $$ begin assert not (select is_active from transaction_categories where name = 'Venue'), 'venue inactive'; end $$;
+-- Category order: Subscriptions and Boat storage are 1 and 2 in Money in; finance moves the others.
+do $$ declare
+  pos int;
+begin
+  assert (select array_agg(name order by sort_order) from (select name, sort_order from transaction_categories where direction = 'in' order by sort_order limit 2) x)
+         = array['Subscriptions', 'Boat storage'], 'Subscriptions then Boat storage';
+  pos := (select sort_order from transaction_categories where name = 'Events');
+  perform move_category((select id from transaction_categories where name = 'Events'), 1);
+  assert (select sort_order from transaction_categories where name = 'Events') = pos + 1, 'moved down one';
+  perform move_category((select id from transaction_categories where name = 'Events'), -1);
+  assert (select sort_order from transaction_categories where name = 'Events') = pos, 'moved back up';
+  -- The first movable category can't jump above Boat storage.
+  perform move_category((select id from transaction_categories where direction = 'in' and sort_order = 3), -1);
+  assert (select sort_order from transaction_categories where name = 'Boat storage') = 2, 'Boat storage stays second';
+  insert into transaction_categories (name, direction) values ('Test order cost', 'out');
+  assert (select sort_order from transaction_categories where name = 'Test order cost')
+       = (select max(sort_order) from transaction_categories where direction = 'out'), 'new categories go last';
+end $$;
+select pg_temp.expect_error($q$select move_category((select id from transaction_categories where name = 'Subscriptions'), 1)$q$, 'always comes first');
+reset role;
+reset request.jwt.claim.sub;
+
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select move_category((select id from transaction_categories limit 1), 1)$q$, 'Only finance');
 reset role;
 reset request.jwt.claim.sub;
 

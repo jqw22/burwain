@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminNav, NotAllowed } from "@/components/admin";
 import { PrintButton } from "@/components/print-button";
-import { FIRST_BUDGET_YEAR, FIXED_CATEGORIES, MONTHS, TRANSFER, budgetYear, money } from "@/lib/budget";
+import { FIRST_BUDGET_YEAR, MONTHS, TRANSFER, budgetYear, money } from "@/lib/budget";
 import { createClient } from "@/lib/supabase/server";
 import { requireMe } from "@/lib/me";
 import { MonthToggle } from "./month-toggle";
@@ -19,7 +19,7 @@ const cell = (pence: number) => {
   return pounds === 0 ? "" : `${pounds < 0 ? "−" : ""}${Math.abs(pounds).toLocaleString("en-GB")}`;
 };
 
-type Category = { id: string; name: string; direction: "in" | "out"; is_active: boolean };
+type Category = { id: string; name: string; direction: "in" | "out"; is_active: boolean; sort_order: number };
 
 // Finance admin > Actual: the Budget sheet, but months finance has marked complete show the actual
 // figures from Transactions instead of the budget. Months not yet complete show the budget, so the
@@ -39,7 +39,7 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
 
   const [{ data: cats }, { data: budgetData }, { data: actualData }, { data: completeData }, earlierBudgets, earlierComplete, ...earlierActuals] =
     await Promise.all([
-      supabase.from("transaction_categories").select("id, name, direction, is_active"),
+      supabase.from("transaction_categories").select("id, name, direction, is_active, sort_order"),
       supabase.from("budget_amounts").select("category_id, month, amount_pence").eq("year", year),
       supabase.rpc("budget_actuals", { p_year: year }),
       supabase.from("budget_months_complete").select("month").eq("year", year),
@@ -80,7 +80,8 @@ export default async function ActualPage({ searchParams }: PageProps<"/admin/act
   // Inactive categories only appear if they have figures this year.
   const categories = ((cats ?? []) as Category[])
     .filter((c) => c.is_active || budget[c.id] || actual[c.id])
-    .sort((a, b) => Number(FIXED_CATEGORIES.has(a.name)) - Number(FIXED_CATEGORIES.has(b.name)) || a.name.localeCompare(b.name));
+    // In the order finance set on the Categories screen.
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
   // "Transfer from Saving" isn't income: it has its own row between Total and Cumulative balance.
   const transfer = categories.find((c) => c.name === TRANSFER);
   const group = (dir: "in" | "out") => categories.filter((c) => c.direction === dir && c !== transfer);
