@@ -41,3 +41,14 @@ export async function setCategoryActive(form: FormData) {
   if (error) back("error", error.message.includes("fixed category") ? "locked" : "save");
   back("saved", active ? "activated" : "deactivated");
 }
+
+// Move a category one place up or down its list (the order used on Budget and Actual).
+export async function moveCategory(form: FormData) {
+  const { supabase, allowed } = await meWithRole("finance");
+  if (!allowed) back("error", "finance");
+  const id = String(form.get("id") ?? "");
+  const step = form.get("step") === "up" ? -1 : 1;
+  const { error } = await supabase.rpc("move_category", { p_id: id, p_step: step });
+  if (error) back("error", error.message.includes("always comes first") ? "first" : "save");
+  redirect(`/admin/categories#cat-${id}`);
+}

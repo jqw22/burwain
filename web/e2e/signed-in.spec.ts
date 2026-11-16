@@ -753,13 +753,16 @@ test("finance adds, renames and makes inactive a transaction category", async ({
   await expect(page.getByRole("heading", { name: "Finance", exact: true })).toBeVisible();
   // Equipment was used by the sail repairs added earlier.
   await expect(page.getByRole("row", { name: /Equipment/ })).toContainText("1");
-  // Subscriptions is used for member payments, so it can't be renamed or made inactive.
-  await expect(page.getByRole("row", { name: /Subscriptions/ })).toContainText("used automatically for member payments");
-  // The fixed categories sit at the bottom of each list.
+  // Subscriptions is a fixed category, so it can't be renamed, made inactive or moved.
+  await expect(page.getByRole("row", { name: /Subscriptions/ })).toContainText("(fixed)");
+  await expect(page.getByRole("button", { name: "Move Subscriptions down" })).toHaveCount(0);
+  // Money in starts with Subscriptions (1) and Boat storage (2); Transfer from Saving sits at the bottom, unnumbered.
   const names = async (title: string) =>
     (await page.getByRole("region", { name: title }).getByRole("row").allTextContents()).slice(1).map((t) => t.trim());
-  expect((await names("Money out categories")).at(-1)).toContain("Payment fees");
-  expect((await names("Money in categories")).slice(-3).map((t) => t.split(" ")[0])).toEqual(["Boat", "Subscriptions", "Transfer"]);
+  const moneyIn = await names("Money in categories");
+  expect(moneyIn[0]).toMatch(/^1\s*Subscriptions/);
+  expect(moneyIn[1]).toMatch(/^2\s*Boat storage/);
+  expect(moneyIn.at(-1)).toMatch(/^Transfer from Saving/);
   await expect(page.getByRole("button", { name: "Make inactive: Transfer from Saving" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Make inactive: Subscriptions" })).toHaveCount(0);
 
@@ -771,6 +774,20 @@ test("finance adds, renames and makes inactive a transaction category", async ({
   await page.getByRole("button", { name: `Rename Coaching ${run}` }).click();
   await expect(page.getByText("Category renamed.")).toBeVisible();
   expect(sql(`select direction || '|' || is_active from transaction_categories where name = 'Coaching fees ${run}'`)).toBe("out|true");
+
+  // New categories go to the bottom; finance moves them up with the arrows, and Budget follows the order.
+  const order = () => Number(sql(`select sort_order from transaction_categories where name = 'Coaching fees ${run}'`));
+  const before = order();
+  expect(before).toBe(Number(sql(`select max(sort_order) from transaction_categories where direction = 'out'`)));
+  await expect(page.getByRole("button", { name: `Move Coaching fees ${run} down` })).toBeDisabled();
+  await page.getByRole("button", { name: `Move Coaching fees ${run} up` }).click();
+  await expect.poll(order).toBe(before - 1);
+  await page.goto("/admin/budget");
+  const rowNames = (await page.getByRole("rowheader").allTextContents()).map((t) => t.trim());
+  expect(rowNames.slice(0, 2)).toEqual(["Subscriptions", "Boat storage"]);
+  const spend = rowNames.slice(rowNames.indexOf("Income sub-total") + 1, rowNames.indexOf("Expenditure sub-total"));
+  expect(spend.at(-2)).toBe(`Coaching fees ${run}`);
+  await page.goto("/admin/categories");
 
   // An inactive category isn't offered for new transactions.
   await page.getByRole("button", { name: `Make inactive: Coaching fees ${run}` }).click();
