@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { ImageButton, insertAtCursor } from "@/components/image-button";
 import { SaveButton } from "@/components/save-button";
-import { PLACEHOLDERS, PURPOSES, fillPlaceholders, imageMarker, textToHtml, unknownPlaceholders, withLogo } from "@/lib/email";
+import { PURPOSES, PURPOSE_HINTS, fillPlaceholders, imageMarker, placeholdersFor, textToHtml, unknownPlaceholders, withLogo } from "@/lib/email";
 import { saveTemplate } from "./actions";
 
 type Template = { id: string; name: string; purpose: string; subject: string; body: string };
@@ -15,7 +15,8 @@ const input = "mt-1 block w-full rounded border border-slate-300 bg-white px-3 p
 export function TemplateForm({ template, examples, logoUrl }: { template: Template | null; examples: Record<string, string>; logoUrl: string | null }) {
   const [subject, setSubject] = useState(template?.subject ?? "");
   const [body, setBody] = useState(template?.body ?? "");
-  const unknown = unknownPlaceholders(`${subject} ${body}`);
+  const [purpose, setPurpose] = useState(template?.purpose ?? "general");
+  const unknown = unknownPlaceholders(`${subject} ${body}`, purpose);
   const textarea = useRef<HTMLTextAreaElement>(null);
 
   return (
@@ -29,12 +30,12 @@ export function TemplateForm({ template, examples, logoUrl }: { template: Templa
         </label>
         <label className="block">
           <span className="text-sm font-medium">Used for</span>
-          <select name="purpose" defaultValue={template?.purpose ?? "general"} className={input}>
+          <select name="purpose" value={purpose} onChange={(e) => setPurpose(e.target.value)} className={input}>
             {Object.entries(PURPOSES).map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
             ))}
           </select>
-          <span className="mt-1 block text-xs text-slate-500">Renewal reminders are sent from the Members list. You can have several, e.g. a first and a final reminder.</span>
+          <span className="mt-1 block text-xs text-slate-500">{PURPOSE_HINTS[purpose]}</span>
         </label>
         <label className="block">
           <span className="text-sm font-medium">Subject</span>
@@ -67,7 +68,7 @@ export function TemplateForm({ template, examples, logoUrl }: { template: Templa
           <summary className="cursor-pointer font-medium">Placeholders you can use</summary>
           <p className="mt-2 text-slate-600">Type these, including the curly brackets. Each is replaced with that member&apos;s details.</p>
           <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-            {PLACEHOLDERS.map((p) => (
+            {placeholdersFor(purpose).map((p) => (
               <div key={p.key} className="contents">
                 <dt className="font-mono">{`{${p.key}}`}</dt>
                 <dd className="text-slate-700">{p.label}</dd>

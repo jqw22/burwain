@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendCardPaymentEmail } from "@/lib/payment-emails";
 
 // Card payments through Stripe Checkout (Stripe's own secure payment page). The app never sees card
 // details. Talks to Stripe's API directly, so there's no extra package to keep up to date.
@@ -96,11 +97,19 @@ export async function recordCheckout(session: CheckoutSession): Promise<PaymentF
   if (session.payment_status !== "paid") return null;
   const admin = createAdminClient();
   const args = { p_ref: session.payment_intent ?? session.id, p_amount: session.amount_total ?? 0 };
-  const { error } =
+  const { data: newlyPaid, error } =
     kind === "receipt"
       ? await admin.rpc("confirm_card_receipt", { p_receipt: id, ...args })
       : await admin.rpc("confirm_application_card", { p_id: id, ...args });
   if (error) throw new Error(error.message);
+  // One confirmation email per payment: only the first time it's recorded.
+  if (newlyPaid === true) {
+    try {
+      await sendCardPaymentEmail(kind, id);
+    } catch (e) {
+      console.error("Confirmation email", kind, id, e);
+    }
+  }
   return { kind, id };
 }
 

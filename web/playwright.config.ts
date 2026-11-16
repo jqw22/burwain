@@ -29,6 +29,7 @@ export default defineConfig({
             reuseExistingServer: !process.env.CI,
             env: {
               ...EMAIL_ENV,
+              RESEND_API_URL: "http://127.0.0.1:3996", // its own pretend email service, in card-payments.spec.ts
               STRIPE_SECRET_KEY: "sk_test_e2e",
               STRIPE_WEBHOOK_SECRET: "whsec_e2e",
               STRIPE_API_URL: "http://127.0.0.1:3997",

@@ -38,6 +38,11 @@ type Session = {
 };
 const sessions = new Map<string, Session>();
 let stripe: Server | undefined;
+
+// Pretend email service (Resend) for this copy of the app: keeps what it's asked to send.
+type SentEmail = { to: string[]; subject: string; text: string };
+const mailbox: SentEmail[] = [];
+let mail: Server | undefined;
 test.beforeAll(async () => {
   if (!DB_URL) return;
   stripe = createServer((req, res) => {
@@ -92,6 +97,17 @@ test.beforeAll(async () => {
     });
   });
   await new Promise<void>((resolve) => stripe!.listen(3997, "127.0.0.1", resolve));
+  mail = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      const emails = JSON.parse(body || "[]") as SentEmail[];
+      mailbox.push(...emails);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ data: emails.map((_, i) => ({ id: `email-${mailbox.length + i}` })) }));
+    });
+  });
+  await new Promise<void>((resolve) => mail!.listen(3996, "127.0.0.1", resolve));
 
   // A member with a membership waiting for payment.
   sql(`
@@ -105,7 +121,10 @@ test.beforeAll(async () => {
   `);
   sql(`update households h set lead_person_id = p.id from people p where p.household_id = h.id and p.email = '${memberEmail}'`);
 });
-test.afterAll(() => stripe?.close());
+test.afterAll(() => {
+  stripe?.close();
+  mail?.close();
+});
 
 async function latestCode(email: string) {
   for (let i = 0; i < 30; i++) {
@@ -173,12 +192,23 @@ test("a member pays by card on Stripe's page, leaves once, then pays and comes b
   expect(sql(`select string_agg(m.status::text, ',') from memberships m join people p on p.id = m.payer_person_id where p.email = '${memberEmail}'`)).toBe("active");
   expect(sql(`select string_agg(b.status::text, ',') from boat_storages b join people p on p.id = b.person_id where p.email = '${memberEmail}'`)).toBe("active");
 
-  // Stripe's webhook for the same payment afterwards changes nothing.
+  // One confirmation email from the Payment confirmation template, kept in the Email log.
+  const confirmations = mailbox.filter((e) => e.to.includes(memberEmail));
+  expect(confirmations).toHaveLength(1);
+  expect(confirmations[0].subject).toBe("Your Burwain membership payment");
+  expect(confirmations[0].text).toContain("Hello Cara,");
+  expect(confirmations[0].text).toMatch(/card payment of £220 for Individual Sailing \(1 Jan \d{4} to 31 Dec \d{4}\)/);
+  expect(
+    sql(`select c.purpose || ' ' || r.status from email_recipients r join email_campaigns c on c.id = r.campaign_id where r.email = '${memberEmail}'`),
+  ).toBe("payment_confirmation sent");
+
+  // Stripe's webhook for the same payment afterwards changes nothing, and sends no second email.
   const session = [...sessions.values()].at(-1)!;
   const { payload, signature } = signedEvent("checkout.session.completed", session);
   const res = await fetch(`${APP}/api/stripe/webhook`, { method: "POST", body: payload, headers: { "stripe-signature": signature } });
   expect(res.status).toBe(200);
   expect(sql(`select count(*) from member_receipts r join people p on p.id = r.payer_person_id where p.email = '${memberEmail}' and r.status = 'paid'`)).toBe("1");
+  expect(mailbox.filter((e) => e.to.includes(memberEmail))).toHaveLength(1);
 });
 
 test("Stripe's webhook records a payment even if the member never comes back, and refuses a bad signature", async () => {
@@ -244,6 +274,12 @@ test("a visitor applies on Join, leaves Stripe's page, pays from the try-again p
   expect(
     sql(`select paid_method || ' ' || (provider_ref like 'pi_cs_test_%') from membership_applications where contact_email = 'jo-${run}@example.test'`),
   ).toBe("card true");
+
+  // The Join confirmation email, once.
+  const thanks = mailbox.filter((e) => e.to.includes(`jo-${run}@example.test`));
+  expect(thanks).toHaveLength(1);
+  expect(thanks[0].subject).toBe("Thank you for applying to join Burwain");
+  expect(thanks[0].text).toMatch(/Hello Jo,[\s\S]*payment of £[\d.]+ for Club Membership/);
 
   // The try-again link no longer offers to take payment.
   const id = sql(`select id from membership_applications where contact_email = 'jo-${run}@example.test'`);
