@@ -1645,9 +1645,14 @@ test("an admin sends a group email with a logo and a picture, and a contact unsu
   expect(mailbox.find((e) => e.to[0] === adminEmail && e.subject === `[Test] Club news ${run}`)?.text).toContain("Hello Gail,");
 
   const send = page.getByRole("region", { name: "4. Send" });
+  await send.getByRole("checkbox", { name: /Also post this on Club news/ }).check();
   await send.getByRole("button", { name: "Send to 2 people" }).click();
   await send.getByRole("button", { name: "Yes, send now" }).click();
-  await expect(send.getByText("Sent your email to 2 people.")).toBeVisible();
+  await expect(send.getByText("Sent your email to 2 people. It's also on Club news.")).toBeVisible();
+  // The Club news copy speaks to everyone and keeps the picture.
+  const posted = sql(`select body from news_posts where title = 'Club news ${run}'`);
+  expect(posted).toContain("<p>Hello members,</p>");
+  expect(posted).toMatch(/<img src="http[^"]+\/email-images\/[0-9a-f-]+"/);
   const toGail = mailbox.find((e) => e.to[0] === `gail-${run}@example.test`) as SentEmail & { headers?: Record<string, string> };
   expect(toGail.subject).toBe(`Club news ${run}`);
   expect(toGail.html).toContain('alt="Burwain"');
@@ -1746,6 +1751,72 @@ test("an admin edits a handbook section with the Edit button", async ({ browser 
   expect(saved).toContain("<h3>Club keys</h3>");
   expect(saved).not.toMatch(/script|javascript|style=/);
   expect(sql(`select p.email from handbook_sections h join people p on p.id = h.updated_by where slug = 'general-information'`)).toBe(adminEmail);
+});
+
+test("an admin adds, pins, edits and deletes club news with a picture; members read it on Home", async ({ browser }) => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+  sql(`insert into news_posts (title, body, created_at) values ('Older news ${run}', '<p>Last month.</p>', now() - interval '30 days')`);
+  const page = await adminPage(browser);
+  await page.goto("/");
+  const news = page.getByRole("region", { name: "Club news" });
+  const coming = page.getByRole("region", { name: "Coming up" });
+  await expect(coming).toBeVisible();
+  // Club news is twice as wide as the Coming up box on a computer.
+  expect((await news.boundingBox())!.width).toBeGreaterThan((await coming.boundingBox())!.width * 1.8);
+
+  await news.getByRole("link", { name: "Add post" }).click();
+  await expect(page).toHaveURL(/\/news\/new$/);
+  await page.getByLabel("Title").fill(`AGM ${run}`);
+  const box = page.getByRole("textbox", { name: "News text" });
+  await box.click();
+  await page.keyboard.type("The AGM is on 5 December.");
+  await page.getByLabel("Add image").setInputFiles({ name: "photo.png", mimeType: "image/png", buffer: png });
+  await expect(box.locator("img")).toHaveCount(1);
+  // Pictures from elsewhere and anything unsafe are removed when saved.
+  await box.evaluate((el) =>
+    el.insertAdjacentHTML("beforeend", '<p>Bring <a href="javascript:alert(1)">cake</a>.</p><img src="https://example.com/x.png"><script>alert(1)</script>'),
+  );
+  await page.getByLabel(/Pin to top/).check();
+  await page.getByRole("button", { name: "Add post" }).click();
+  await expect(page).toHaveURL(/\/\?news=saved#post-/);
+  await expect(page.getByRole("status")).toHaveText("News post saved.");
+  const saved = sql(`select body from news_posts where title = 'AGM ${run}'`);
+  expect(saved).toContain("The AGM is on 5 December.");
+  expect(saved).toMatch(/<img src="[^"]*\/email-images\/[0-9a-f-]+"/);
+  expect(saved).not.toMatch(/script|javascript|example\.com/);
+  const agm = news.getByRole("article", { name: `AGM ${run}` });
+  await expect(agm).toContainText("Pinned");
+  await expect(agm.locator("img")).toHaveCount(1);
+  await shot(page, "home-news");
+
+  // Edit it: change the title and unpin.
+  await agm.getByRole("link", { name: `Edit AGM ${run}` }).click();
+  await expect(page.getByRole("heading", { name: "Edit news post" })).toBeVisible();
+  await page.getByLabel("Title").fill(`AGM moved ${run}`);
+  await page.getByLabel(/Pin to top/).uncheck();
+  await page.getByRole("button", { name: "Save post" }).click();
+  await expect(page.getByRole("status")).toHaveText("News post saved.");
+  expect(sql(`select pinned from news_posts where title = 'AGM moved ${run}'`)).toBe("f");
+
+  // Members read it on Home but can't add or edit posts.
+  const member = await leadPage(browser);
+  await member.goto("/");
+  const memberNews = member.getByRole("region", { name: "Club news" });
+  await expect(memberNews.getByRole("article", { name: `AGM moved ${run}` })).toContainText("The AGM is on 5 December.");
+  await expect(memberNews.getByRole("link", { name: "Add post" })).toHaveCount(0);
+  await expect(memberNews.getByRole("link", { name: /^Edit / })).toHaveCount(0);
+  await member.goto("/news/new");
+  await expect(member.getByRole("heading", { name: "Admins only" })).toBeVisible();
+  await member.goto("/news");
+  await expect(member.getByRole("article", { name: `Older news ${run}` })).toBeVisible();
+
+  // Delete it.
+  await page.goto("/");
+  await news.getByRole("link", { name: `Edit AGM moved ${run}` }).click();
+  await page.getByRole("button", { name: "Delete this post" }).click();
+  await page.getByRole("button", { name: "Yes, delete" }).click();
+  await expect(page.getByRole("status")).toHaveText("News post deleted.");
+  expect(sql(`select count(*) from news_posts where title = 'AGM moved ${run}'`)).toBe("0");
 });
 
 test("a member can't open the group email page or the email log", async ({ browser }) => {

@@ -22,3 +22,4 @@ body {
 .handbook-text th, .handbook-text td { border: 1px solid #cbd5e1; padding: 0.3rem 0.6rem; text-align: left; vertical-align: top; }
 .handbook-text th { background: #f1f5f9; font-weight: 600; }
 .handbook-text blockquote { border-left: 3px solid #cbd5e1; padding-left: 0.75rem; }
+.handbook-text img { display: block; max-width: 100%; height: auto; margin: 0.75rem 0; border-radius: 0.375rem; }
