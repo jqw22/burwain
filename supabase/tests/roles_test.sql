@@ -1332,4 +1332,65 @@ reset role;
 reset request.jwt.claim.sub;
 do $$ begin assert (select count(*) from volunteer_signups) = 3, 'sign-ups kept on finished jobs'; end $$;
 
+\echo 'Calendar: duties for sailing and training, attendance like volunteering'
+insert into calendar_events (id, event_type, title, event_date, start_time) values
+  ('40000000-0000-0000-0000-0000000000e1', 'sailing', 'Sunday racing', club_today() + 7, '10:00'),
+  ('40000000-0000-0000-0000-0000000000e2', 'training', 'Safety boat course', club_today() + 14, '09:30'),
+  ('40000000-0000-0000-0000-0000000000e3', 'meeting', 'Committee meeting', club_today() - 7, '19:30');
+
+set role authenticated;
+select pg_temp.expect_error($q$insert into calendar_events (event_type, title, event_date, start_time) values ('other', 'Sneaky', club_today(), '10:00')$q$, 'row-level security');
+-- Val takes the empty Officer duty for herself and says she's going.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c2';
+do $$ begin
+  perform calendar_set_duty('40000000-0000-0000-0000-0000000000e1', 'officer', '20000000-0000-0000-0000-0000000000c2');
+  perform calendar_attend('40000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000c2', true);
+  perform calendar_attend('40000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000c2', true);  -- twice is fine
+  assert (select count(*) from calendar_attendance) = 0, 'members cannot read attendance directly';
+  assert (select count(*) from calendar_duty_people()) = 0, 'only admins get the duty list';
+end $$;
+select pg_temp.expect_error($q$select calendar_set_duty('40000000-0000-0000-0000-0000000000e1', 'assistant', '20000000-0000-0000-0000-0000000000c1')$q$, 'adult members');
+select pg_temp.expect_error($q$select calendar_set_duty('40000000-0000-0000-0000-0000000000e1', 'trainer', '20000000-0000-0000-0000-0000000000c2')$q$, 'does not have that duty');
+select pg_temp.expect_error($q$select calendar_set_duty('40000000-0000-0000-0000-0000000000e3', 'officer', '20000000-0000-0000-0000-0000000000c2')$q$, 'does not have that duty');
+select pg_temp.expect_error($q$select calendar_attend('40000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000c3', true)$q$, 'own family');
+select pg_temp.expect_error($q$select calendar_attend('40000000-0000-0000-0000-0000000000e3', '20000000-0000-0000-0000-0000000000c2', true)$q$, 'already happened');
+
+-- Vin (junior) can't take a duty; Vic (main contact) can't take Val's duty but can put Vin down as going.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c3';
+select pg_temp.expect_error($q$select calendar_set_duty('40000000-0000-0000-0000-0000000000e2', 'trainer', '20000000-0000-0000-0000-0000000000c3')$q$, 'adult members');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c1';
+select pg_temp.expect_error($q$select calendar_set_duty('40000000-0000-0000-0000-0000000000e1', 'officer', '20000000-0000-0000-0000-0000000000c1')$q$, 'already taken');
+select pg_temp.expect_error($q$select calendar_set_duty('40000000-0000-0000-0000-0000000000e1', 'officer', null)$q$, 'own duty');
+do $$ begin perform calendar_attend('40000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000c3', true); end $$;
+
+-- Ola (out of the Directory) goes too; others see her counted but not named, and junior Vin isn't named to her.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c4';
+do $$ begin
+  perform calendar_attend('40000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000c4', true);
+  assert (select count(*) from calendar_people(club_today(), club_today() + 30) where kind = 'attending') = 3, 'three going';
+  assert (select array_agg(first_name order by first_name) from calendar_people(club_today(), club_today() + 30) where first_name is not null) = '{Ola,Val,Val}', 'Ola sees Val (officer and going) and herself';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c2';
+do $$ begin
+  assert (select array_agg(first_name order by first_name) from calendar_people(club_today(), club_today() + 30) where kind = 'attending' and first_name is not null) = '{Val,Vin}', 'Ola hidden, family shown';
+  perform calendar_set_duty('40000000-0000-0000-0000-0000000000e1', 'officer', null);  -- Val gives up the duty
+  perform calendar_attend('40000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000c2', false);
+end $$;
+
+-- Dave (superadmin) fills duties for anyone; changing the type drops duties the new type doesn't have.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+do $$ begin
+  assert (select count(*) from calendar_duty_people() where first_name = 'Vin') = 0, 'juniors not offered for duties';
+  perform calendar_set_duty('40000000-0000-0000-0000-0000000000e1', 'officer', '20000000-0000-0000-0000-0000000000c1');
+  perform calendar_set_duty('40000000-0000-0000-0000-0000000000e1', 'assistant', '20000000-0000-0000-0000-0000000000c4');
+  perform calendar_set_duty('40000000-0000-0000-0000-0000000000e2', 'trainer', '20000000-0000-0000-0000-0000000000c2');
+  assert (select count(*) from calendar_duties) = 3, 'admins read duties';
+  update calendar_events set event_type = 'training' where id = '40000000-0000-0000-0000-0000000000e1';
+  assert (select count(*) from calendar_duties where event_id = '40000000-0000-0000-0000-0000000000e1') = 0, 'sailing duties dropped';
+  delete from calendar_events where id = '40000000-0000-0000-0000-0000000000e1';
+  assert (select count(*) from calendar_attendance) = 0, 'attendance goes with the event';
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'All database tests passed'
