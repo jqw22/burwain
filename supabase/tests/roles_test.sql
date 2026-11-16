@@ -243,6 +243,28 @@ begin
 end $$;
 reset role;
 
+\echo 'Import places a kept login (no family, no membership) into their family'
+insert into people (first_name, last_name, email) values ('Pat', 'Kept', 'pat.kept@example.com');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+do $$ declare
+  rows jsonb := '[
+    {"household_key":"bb33cc|1 kept row","first_name":"Pat","last_name":"Kept","date_of_birth":"1970-03-03","email":"Pat.Kept@example.com","postcode":"bb3 3cc","member_class":"F"},
+    {"household_key":"bb33cc|1 kept row","first_name":"Sam","last_name":"Kept","date_of_birth":"2014-03-03","member_class":"F"}
+  ]';
+  res jsonb;
+begin
+  res := import_members(rows, (select id from club_years where label = '2026'));
+  assert res = '{"households": 1, "people": 2, "skipped": 0, "memberships": 1}', 'kept login imported: ' || res;
+  assert (select count(*) from people where first_name = 'Pat' and last_name = 'Kept') = 1, 'no duplicate person';
+  assert (select count(*) from people p join households h on h.id = p.household_id
+           where p.last_name = 'Kept' and h.postcode = 'BB3 3CC') = 2, 'both in the family';
+  assert (select count(*) from membership_people mp join people p on p.id = mp.person_id where p.last_name = 'Kept') = 2, 'both covered by the Family membership';
+  res := import_members(rows, (select id from club_years where label = '2026'));
+  assert res = '{"households": 0, "people": 0, "skipped": 2, "memberships": 0}', 're-run is harmless: ' || res;
+end $$;
+reset role;
+
 \echo 'Manual payments (finance) and the memberships list'
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
