@@ -1831,7 +1831,7 @@ test("an admin adds a volunteering job; the main contact puts themselves and the
   await page.goto("/volunteer");
   await page.getByRole("link", { name: "+ Add job" }).click();
   await expect(page).toHaveURL(/\/volunteer\/new$/);
-  await page.getByLabel("Job").fill(`Paint the boathouse ${run}`);
+  await page.getByLabel("Job", { exact: true }).fill(`Paint the boathouse ${run}`);
   await page.getByLabel(/What.s involved/).fill("Bring old clothes.\nPaint and brushes provided.");
   await page.getByLabel("Date (optional)").fill("2027-03-06");
   await page.getByLabel("Helpers needed (optional)").fill("2");
