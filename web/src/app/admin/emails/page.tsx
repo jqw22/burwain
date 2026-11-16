@@ -46,7 +46,12 @@ export default async function EmailTemplatesPage({ searchParams }: PageProps<"/a
     boat_storage_price: pounds(each),
     boat_storage_total: pounds(each * 2),
     renewal_year: year?.label ?? String(new Date().getFullYear() + 1),
-    ...(host ? { renewal_link: `${host.startsWith("localhost") ? "http" : "https"}://${host}/profile#renew` } : {}),
+    ...(host
+      ? {
+          renewal_link: `${host.startsWith("localhost") ? "http" : "https"}://${host}/profile#renew`,
+          member_link: `${host.startsWith("localhost") ? "http" : "https"}://${host}/profile`,
+        }
+      : {}),
   });
 
   const edit = typeof params.edit === "string" ? params.edit : "";

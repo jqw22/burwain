@@ -22,7 +22,7 @@ export async function saveTemplate(form: FormData) {
   if (!subject) back("error", "subject", edit);
   if (!body) back("error", "body", edit);
   if (!(purpose in PURPOSES)) back("error", "save", edit);
-  if (unknownPlaceholders(`${subject} ${body}`).length > 0) back("error", "placeholder", edit);
+  if (unknownPlaceholders(`${subject} ${body}`, purpose).length > 0) back("error", "placeholder", edit);
 
   const row = { name, subject, body, purpose, updated_by: personId };
   const { error } = id

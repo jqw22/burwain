@@ -575,6 +575,10 @@ set role service_role;
 select amount_pence as cal_amount from application_to_pay(:'cal_submit_application') \gset
 select pg_temp.expect_error(format('select confirm_application_card(%L, %L, %s)', :'cal_submit_application', 'cs_test_2', :cal_amount + 1), 'doesn''t match');
 select confirm_application_card(:'cal_submit_application', 'cs_test_2', :cal_amount) as ok \gset
+do $$ begin
+  assert (select first_name || ' ' || last_name || ' ' || email || ' ' || (person_id is null) from card_payment_email('application',
+            (select id from membership_applications where contact_email = 'cal@example.com'))) = 'Cal Card cal@example.com true', 'join email details';
+end $$;
 reset role;
 do $$ begin
   assert (select paid_method::text = 'card' and provider_ref = 'cs_test_2' from membership_applications where contact_email = 'cal@example.com'), 'card payment held on application';
@@ -665,7 +669,7 @@ do $$ begin
   assert (select purpose from email_templates where name = 'Renewal reminder') = 'renewal_reminder', 'starter template';
   update email_templates set subject = 'Renew now, {first_name}' where name = 'Renewal reminder';
   insert into email_templates (name, subject, body) values ('Open day', 'Come along', 'Hello {first_name}');
-  assert (select count(*) from email_templates) = 2, 'admin adds templates';
+  assert (select count(*) from email_templates) = 4, 'admin adds templates (with the two starter confirmations)';
 end $$;
 reset role;
 reset request.jwt.claim.sub;
@@ -880,8 +884,15 @@ end $$;
 reset role;
 set role service_role;
 select pg_temp.expect_error($q$select confirm_card_receipt(current_setting('test.card_r')::uuid, 'cs_test_1', 999)$q$, 'doesn''t match');
-select confirm_card_receipt(current_setting('test.card_r')::uuid, 'cs_test_1', 4200) as ok \gset
-select confirm_card_receipt(current_setting('test.card_r')::uuid, 'cs_test_1', 4200) as ok \gset
+do $$ begin
+  assert confirm_card_receipt(current_setting('test.card_r')::uuid, 'cs_test_1', 4200), 'newly paid the first time';
+  assert not confirm_card_receipt(current_setting('test.card_r')::uuid, 'cs_test_1', 4200), 'already paid the second time (no second email)';
+  assert (select first_name || ' ' || email || ' ' || amount_pence || ' ' || membership_type from card_payment_email('receipt', current_setting('test.card_r')::uuid))
+         = 'Alice a@example.com 4200 ' || (select name from membership_types where code = 'IS' limit 1), 'confirmation email details';
+end $$;
+reset role;
+set role authenticated;
+select pg_temp.expect_error($q$select card_payment_email('receipt', current_setting('test.card_r')::uuid)$q$, 'permission denied');
 reset role;
 do $$ begin
   assert (select status = 'paid' and provider_ref = 'cs_test_1' and paid_on is not null from member_receipts

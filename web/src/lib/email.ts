@@ -13,11 +13,39 @@ export const PLACEHOLDERS = [
   { key: "renewal_total", label: "Renewal plus storing the same boats again", example: "£325" },
 ] as const;
 
+// Placeholders for the confirmation emails sent automatically after a card payment.
+export const CONFIRMATION_PLACEHOLDERS = [
+  { key: "first_name", label: "Their first name", example: "Sam" },
+  { key: "last_name", label: "Their last name", example: "Example" },
+  { key: "membership_type", label: "The membership they paid for", example: "Family" },
+  { key: "membership_dates", label: "The dates it runs for", example: "1 Jan 2027 to 31 Dec 2027" },
+  { key: "amount_paid", label: "How much they paid (including boat storage)", example: "£290" },
+  { key: "boats", label: "Boats they paid storage for (class and sail number)", example: "Laser 123456" },
+  { key: "member_link", label: "Link to log in and see their membership", example: "https://burwain.netlify.app/profile" },
+] as const;
+
 export const PURPOSES = {
   renewal_reminder: "Renewal reminder",
   general: "General",
+  join_confirmation: "Join confirmation (sent automatically)",
+  payment_confirmation: "Payment confirmation (sent automatically)",
 } as const;
 export type Purpose = keyof typeof PURPOSES;
+
+// Which placeholders a template can use, by what it's used for.
+export function placeholdersFor(purpose: string) {
+  return purpose === "join_confirmation" || purpose === "payment_confirmation" ? CONFIRMATION_PLACEHOLDERS : PLACEHOLDERS;
+}
+
+// What each kind of template is for, shown under "Used for".
+export const PURPOSE_HINTS: Record<string, string> = {
+  renewal_reminder: "Renewal reminders are sent from the Members list. You can have several, e.g. a first and a final reminder.",
+  general: "General templates can be used as a starting point on Send email.",
+  join_confirmation:
+    "Sent automatically to someone who applies on the Join page, once their card payment goes through. If there are several, the one changed most recently is used. Delete it to stop sending.",
+  payment_confirmation:
+    "Sent automatically to a member who pays by card at checkout (renewals, boat storage). If there are several, the one changed most recently is used. Delete it to stop sending.",
+};
 
 const PATTERN = /\{([a-z_]+)\}/g;
 
@@ -27,13 +55,16 @@ export function fillPlaceholders(text: string, values: Record<string, string>) {
 }
 
 // Placeholders in the text that the app doesn't know, e.g. a typo like {firstname}.
-export function unknownPlaceholders(text: string) {
-  const known = new Set<string>(PLACEHOLDERS.map((p) => p.key));
+export function unknownPlaceholders(text: string, purpose = "renewal_reminder") {
+  const known = new Set<string>(placeholdersFor(purpose).map((p) => p.key));
   return [...new Set([...text.matchAll(PATTERN)].map((m) => m[1]))].filter((k) => !known.has(k));
 }
 
 export function exampleValues(overrides: Partial<Record<string, string>> = {}) {
-  return { ...Object.fromEntries(PLACEHOLDERS.map((p) => [p.key, p.example])), ...overrides } as Record<string, string>;
+  return {
+    ...Object.fromEntries([...CONFIRMATION_PLACEHOLDERS, ...PLACEHOLDERS].map((p) => [p.key, p.example])),
+    ...overrides,
+  } as Record<string, string>;
 }
 
 export function escapeHtml(s: string) {
