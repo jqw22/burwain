@@ -85,23 +85,6 @@ export async function saveAddress(form: FormData) {
   redirect(error ? "/profile?edit=address&error=address#address" : "/profile?saved=address#address");
 }
 
-export async function addFamilyMember(form: FormData) {
-  const { supabase } = await requireMe();
-  const first = text(form, "first_name");
-  const last = text(form, "last_name");
-  if (!first || !last) redirect("/profile?edit=family&error=add#family");
-  const { error } = await supabase.from("people").insert({
-    household_id: String(form.get("household_id")),
-    first_name: first,
-    last_name: last,
-    date_of_birth: text(form, "date_of_birth"),
-    email: text(form, "email")?.toLowerCase() ?? null,
-    mobile: text(form, "mobile"),
-    whatsapp: form.get("whatsapp") === "on",
-  });
-  redirect(error ? "/profile?edit=family&error=add#family" : "/profile?edit=family&saved=add#family");
-}
-
 export async function saveFamilyMember(form: FormData) {
   const { supabase } = await requireMe();
   const id = String(form.get("id"));
