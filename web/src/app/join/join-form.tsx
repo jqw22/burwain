@@ -34,7 +34,7 @@ function pounds(pence: number) {
   return `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
 }
 
-export function JoinForm({ options, boatPrice }: { options: JoinOption[]; boatPrice: number }) {
+export function JoinForm({ options, boatPrice, card }: { options: JoinOption[]; boatPrice: number; card: boolean }) {
   const [state, action] = useActionState<JoinState, FormData>(submitApplication, {});
   const v = state.values ?? {};
   const [typeId, setTypeId] = useState(v.type_id ?? "");
@@ -162,26 +162,37 @@ export function JoinForm({ options, boatPrice }: { options: JoinOption[]; boatPr
           </p>
           <fieldset className="space-y-2">
             <legend className="font-medium">Payment</legend>
-            <TestNotice />
-            <p className="text-sm text-slate-600">
-              Membership is paid when you apply. If your application isn&apos;t accepted, your payment will be refunded.
-            </p>
-            <label className="flex items-start gap-2 rounded border border-slate-200 bg-white p-3">
-              <input type="radio" name="method" value="card" defaultChecked={v.method !== "direct_debit"} className="mt-1" />
-              <span>
-                <span className="font-medium">Debit or credit card</span>
-                <span className="block text-sm text-slate-600">Pay the full amount now.</span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 rounded border border-slate-200 bg-white p-3">
-              <input type="radio" name="method" value="direct_debit" defaultChecked={v.method === "direct_debit"} className="mt-1" />
-              <span>
-                <span className="font-medium">Direct Debit</span>
-                <span className="block text-sm text-slate-600">Collected from your bank account.</span>
-              </span>
-            </label>
+            {card ? (
+              <p className="text-sm text-slate-600">
+                Membership is paid when you apply, by debit or credit card on Stripe&apos;s secure payment page. If your
+                application isn&apos;t accepted, your payment will be refunded.
+              </p>
+            ) : (
+              <>
+                <TestNotice />
+                <p className="text-sm text-slate-600">
+                  Membership is paid when you apply. If your application isn&apos;t accepted, your payment will be refunded.
+                </p>
+                <label className="flex items-start gap-2 rounded border border-slate-200 bg-white p-3">
+                  <input type="radio" name="method" value="card" defaultChecked={v.method !== "direct_debit"} className="mt-1" />
+                  <span>
+                    <span className="font-medium">Debit or credit card</span>
+                    <span className="block text-sm text-slate-600">Pay the full amount now.</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 rounded border border-slate-200 bg-white p-3">
+                  <input type="radio" name="method" value="direct_debit" defaultChecked={v.method === "direct_debit"} className="mt-1" />
+                  <span>
+                    <span className="font-medium">Direct Debit</span>
+                    <span className="block text-sm text-slate-600">Collected from your bank account.</span>
+                  </span>
+                </label>
+              </>
+            )}
           </fieldset>
-          <SaveButton pendingText="Processing…">Pay {pounds(total)} and send application</SaveButton>
+          <SaveButton pendingText={card ? "Going to payment…" : "Processing…"}>
+            {card ? `Send application and pay ${pounds(total)} by card` : `Pay ${pounds(total)} and send application`}
+          </SaveButton>
         </div>
       )}
     </form>

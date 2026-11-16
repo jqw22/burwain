@@ -4,6 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { text, WHATSAPP_NEEDS_MOBILE } from "@/lib/me";
 import { peopleFromForm } from "@/lib/member-form";
 import { boatsFromForm } from "@/lib/boats";
+import { redirect } from "next/navigation";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { cardPaymentsOn, createCheckout, siteOrigin } from "@/lib/stripe";
 
 export type JoinState = {
   error?: string;
@@ -63,6 +66,12 @@ export async function submitApplication(_prev: JoinState, form: FormData): Promi
     const message = KNOWN.find(([needle]) => error.message.includes(needle))?.[1];
     return { error: message ?? "Something went wrong. Please check your details and try again.", values };
   }
+  // Card payment with Stripe: the application is saved, then they pay on Stripe's secure page.
+  if (cardPaymentsOn()) {
+    const url = await applicationCheckoutUrl(applicationId as string);
+    if (!url) redirect(`/join/pay?application=${applicationId}&error=1`);
+    redirect(url);
+  }
   // Test checkout: no money is taken. The payment is held on the application; when an admin
   // accepts it, the membership is created already paid and the income recorded.
   const { error: payError } = await supabase.rpc("pay_application_test", { p_id: applicationId, p_method: done.method });
@@ -70,3 +79,34 @@ export async function submitApplication(_prev: JoinState, form: FormData): Promi
   return { done };
 }
 
+
+// A Stripe payment page for an application that hasn't been paid for yet (null if it can't be paid).
+async function applicationCheckoutUrl(applicationId: string): Promise<string | null> {
+  const { data: app } = await createAdminClient()
+    .rpc("application_to_pay", { p_id: applicationId })
+    .maybeSingle<{ amount_pence: number; contact_email: string; type_name: string }>();
+  if (!app) return null;
+  const origin = await siteOrigin();
+  try {
+    const session = await createCheckout({
+      for: { kind: "application", id: applicationId },
+      amountPence: app.amount_pence,
+      description: `Burwain membership: ${app.type_name}`,
+      email: app.contact_email,
+      successUrl: `${origin}/join/paid?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${origin}/join/pay?application=${applicationId}`,
+    });
+    return session.url;
+  } catch (e) {
+    console.error("Stripe checkout (join)", e);
+    return null;
+  }
+}
+
+// "Try again" after leaving Stripe's page without paying.
+export async function payApplication(form: FormData) {
+  const id = String(form.get("application_id") ?? "");
+  if (!cardPaymentsOn() || !/^[0-9a-f-]{36}$/i.test(id)) redirect("/join");
+  const url = await applicationCheckoutUrl(id);
+  redirect(url ?? `/join/pay?application=${id}&error=1`);
+}

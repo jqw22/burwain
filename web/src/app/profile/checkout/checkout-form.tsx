@@ -8,9 +8,11 @@ import type { Boat } from "@/lib/boats";
 type Line = { id: string; kind: "membership" | "storage"; title: string; detail: string[]; pence: number };
 
 // The order (memberships and any boats awaiting payment), boats to add at £35 each, and the
-// test Pay button. Last time's boats are filled in to start with; they can be removed.
+// Pay button: card through Stripe, or the test checkout until Stripe is set up.
+// Last time's boats are filled in to start with; they can be removed.
 export function CheckoutForm({
   action,
+  card,
   lines,
   baseTotal,
   boatPrice,
@@ -18,6 +20,7 @@ export function CheckoutForm({
   suggestedBoats,
 }: {
   action: (form: FormData) => void;
+  card: boolean;
   lines: Line[];
   baseTotal: number;
   boatPrice: number;
@@ -69,30 +72,39 @@ export function CheckoutForm({
         )}
       </Card>
       <Card title="Payment">
-        <div className="space-y-4">
-          <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-            <strong>Test checkout.</strong> No money is taken and no card or bank details are asked for, but the payment is
-            recorded and your membership is marked as paid. Online payment by card and Direct Debit will be switched on later.
-          </p>
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">How would you like to pay?</legend>
-            <label className="flex items-start gap-2 rounded border border-slate-200 p-3">
-              <input type="radio" name="method" value="card" defaultChecked className="mt-1" />
-              <span>
-                <span className="font-medium">Debit or credit card</span>
-                <span className="block text-sm text-slate-600">Pay the full amount now.</span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 rounded border border-slate-200 p-3">
-              <input type="radio" name="method" value="direct_debit" className="mt-1" />
-              <span>
-                <span className="font-medium">Direct Debit</span>
-                <span className="block text-sm text-slate-600">Collected from your bank account.</span>
-              </span>
-            </label>
-          </fieldset>
-          <SaveButton pendingText="Processing…">Pay {pounds(total)}</SaveButton>
-        </div>
+        {card ? (
+          <div className="space-y-4">
+            <p className="text-slate-700">
+              Pay by debit or credit card on Stripe&apos;s secure payment page. You&apos;ll come back here once it&apos;s done.
+            </p>
+            <SaveButton pendingText="Going to payment…">Pay {pounds(total)} by card</SaveButton>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <strong>Test checkout.</strong> No money is taken and no card or bank details are asked for, but the payment is
+              recorded and your membership is marked as paid. Online payment by card and Direct Debit will be switched on later.
+            </p>
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">How would you like to pay?</legend>
+              <label className="flex items-start gap-2 rounded border border-slate-200 p-3">
+                <input type="radio" name="method" value="card" defaultChecked className="mt-1" />
+                <span>
+                  <span className="font-medium">Debit or credit card</span>
+                  <span className="block text-sm text-slate-600">Pay the full amount now.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 rounded border border-slate-200 p-3">
+                <input type="radio" name="method" value="direct_debit" className="mt-1" />
+                <span>
+                  <span className="font-medium">Direct Debit</span>
+                  <span className="block text-sm text-slate-600">Collected from your bank account.</span>
+                </span>
+              </label>
+            </fieldset>
+            <SaveButton pendingText="Processing…">Pay {pounds(total)}</SaveButton>
+          </div>
+        )}
       </Card>
     </form>
   );
