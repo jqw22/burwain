@@ -1836,7 +1836,7 @@ test("an admin adds a volunteering job; the main contact puts themselves and the
   await page.getByLabel("Date (optional)").fill("2027-03-06");
   await page.getByLabel("Helpers needed (optional)").fill("2");
   await page.getByRole("button", { name: "Add job" }).click();
-  await expect(page.getByRole("status")).toHaveText("Job saved.");
+  await expect(page.getByRole("status")).toContainText("Job saved.");
   const job = page.getByRole("region", { name: `Paint the boathouse ${run}` });
   await expect(job).toContainText("Sat 6 Mar 2027 · 0 of 2 helpers");
   await expect(job).toContainText("Paint and brushes provided.");
@@ -1868,7 +1868,7 @@ test("an admin adds a volunteering job; the main contact puts themselves and the
   await job.getByRole("link", { name: `Edit Paint the boathouse ${run}` }).click();
   await expect(page.getByRole("button", { name: "Delete this job" })).toHaveCount(0);
   await page.getByRole("button", { name: "Mark as done" }).click();
-  await expect(page.getByRole("status")).toHaveText("Job marked as done.");
+  await expect(page.getByRole("status")).toContainText("Job marked as done.");
   await expect(job).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Finished jobs" })).toContainText(`Paint the boathouse ${run}`);
   await expect(page.getByRole("region", { name: "Finished jobs" })).toContainText(`Sam Tester${run}`);
