@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
-import { PERSON_FIELDS, requireMe, ukDate, type Person } from "@/lib/me";
+import { PERSON_FIELDS, requireMe, ukDate, WHATSAPP_NEEDS_MOBILE, type Person } from "@/lib/me";
 import {
   addFamilyQualification,
   removeFamilyQualification,
@@ -19,6 +19,7 @@ const SAVED: Record<string, string> = {
   preferences: "Preferences saved.",
 };
 const ERRORS: Record<string, string> = {
+  whatsapp: WHATSAPP_NEEDS_MOBILE,
   details: "We couldn't save those changes. Please check them and try again.",
   medical: "We couldn't save the medical information. Please try again.",
   consent: "Please tick the consent box so the club can hold this medical information.",
@@ -154,10 +155,11 @@ export default async function FamilyMemberPage({ params, searchParams }: PagePro
       <Card title="Communication preferences">
         <form action={saveFamilyPreferences} className="space-y-3">
           <input type="hidden" name="id" value={m.id} />
+          <input type="hidden" name="unsubscribed_before" value={m.emails_unsubscribed_at ?? ""} />
           <Checkbox
-            label="Send club news and newsletters by email. They can unsubscribe at any time."
-            name="news_consent"
-            defaultChecked={m.news_consent}
+            label="Send club news by email. They can unsubscribe at any time."
+            name="club_news"
+            defaultChecked={!m.emails_unsubscribed_at}
           />
           <Checkbox
             label="Show their name, phone and email in the member directory (adults only)"

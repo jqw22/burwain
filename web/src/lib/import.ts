@@ -17,6 +17,7 @@ export type ImportRow = {
   address_line4: string | null;
   postcode: string | null;
   member_class: string;
+  first_joined_on: string | null;
 };
 
 const COLUMNS = {
@@ -35,7 +36,11 @@ const COLUMNS = {
   emergency_contact_name: "emergencycontactname",
   emergency_contact_mobile: "emergencycontactmobile",
   member_class: "memberclass",
+  first_joined_on: "firstjoined",
 } as const;
+
+// Other headings people use for the "first joined" column.
+const JOINED_ALIASES = ["firstjoined", "firstjoineddate", "datefirstjoined", "datejoined", "joined", "joineddate", "yearjoined", "membersince"];
 
 const squash = (v: unknown) => String(v ?? "").toLowerCase().replace(/\s+/g, "");
 
@@ -66,6 +71,15 @@ export function parseDob(v: unknown): string | null | undefined {
   return isoDate(d);
 }
 
+// First joined can be a full date or just a year (a year is stored as 1 January).
+export function parseJoined(v: unknown): string | null | undefined {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number" && v >= 1900 && v <= 2100) return `${v}-01-01`;
+  const s = String(v).trim();
+  if (/^(19|20)\d{2}$/.test(s)) return `${s}-01-01`;
+  return parseDob(v);
+}
+
 export function parseMemberSheet(sheet: unknown[][], knownClasses: string[]) {
   const problems: string[] = [];
   const rows: ImportRow[] = [];
@@ -75,6 +89,7 @@ export function parseMemberSheet(sheet: unknown[][], knownClasses: string[]) {
   const index = Object.fromEntries(
     Object.entries(COLUMNS).map(([key, title]) => [key, header.indexOf(title)]),
   ) as Record<keyof typeof COLUMNS, number>;
+  index.first_joined_on = header.findIndex((h) => JOINED_ALIASES.includes(h.replace(/[^a-z]/g, "")));
   const missing = (["first_name", "last_name", "member_class"] as const).filter((k) => index[k] < 0);
   if (missing.length) {
     return { rows, problems: [`Missing column(s): ${missing.map((k) => COLUMNS[k]).join(", ")}. Check the first row has the headings.`] };
@@ -92,6 +107,8 @@ export function parseMemberSheet(sheet: unknown[][], knownClasses: string[]) {
     const dob = parseDob(index.date_of_birth >= 0 ? raw[index.date_of_birth] : null);
     if (!first || !last) problems.push(`Row ${line}: first name and last name are needed.`);
     if (!known.has(cls)) problems.push(`Row ${line}: member class "${cls || "(blank)"}" isn't one of ${[...known].join(", ")}.`);
+    const joined = parseJoined(index.first_joined_on >= 0 ? raw[index.first_joined_on] : null);
+    if (joined === undefined) problems.push(`Row ${line}: can't read the first joined date "${get("first_joined_on")}". Use DD/MM/YYYY or just the year.`);
     if (dob === undefined) problems.push(`Row ${line}: can't read the date of birth "${get("date_of_birth")}". Use DD/MM/YYYY.`);
 
     const postcode = get("postcode")?.toUpperCase().replace(/\s+/g, " ") ?? null;
@@ -107,7 +124,8 @@ export function parseMemberSheet(sheet: unknown[][], knownClasses: string[]) {
       date_of_birth: dob ?? null,
       email: get("email")?.toLowerCase() ?? null,
       mobile: get("mobile"),
-      whatsapp: /^y/i.test(get("whatsapp") ?? ""),
+      // WhatsApp needs a mobile number to be any use.
+      whatsapp: /^y/i.test(get("whatsapp") ?? "") && Boolean(get("mobile")),
       emergency_contact_name: get("emergency_contact_name"),
       emergency_contact_mobile: get("emergency_contact_mobile"),
       address_line1: address1,
@@ -116,6 +134,7 @@ export function parseMemberSheet(sheet: unknown[][], knownClasses: string[]) {
       address_line4: get("address_line4"),
       postcode,
       member_class: cls,
+      first_joined_on: joined ?? null,
     });
   });
 

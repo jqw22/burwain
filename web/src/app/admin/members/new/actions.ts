@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { meWithRole, text } from "@/lib/me";
+import { meWithRole, text, WHATSAPP_NEEDS_MOBILE } from "@/lib/me";
 import { peopleFromForm } from "@/lib/member-form";
 
 // Database messages an admin can act on. Anything else gets a general message.
@@ -65,6 +65,7 @@ export async function adminAddMember(_prev: AddState, form: FormData): Promise<A
   if (!p.type_id) p.payment_method = null;
 
   p.people = peopleFromForm(form);
+  if ((p.people as { whatsapp: boolean; mobile: unknown }[]).some((x) => x.whatsapp && !x.mobile)) return { error: WHATSAPP_NEEDS_MOBILE, values };
 
   const { data, error } = await supabase.rpc("admin_add_member", { p });
   if (error) {

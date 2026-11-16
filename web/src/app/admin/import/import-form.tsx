@@ -18,10 +18,10 @@ export function ImportForm({ years, currentYearId }: { years: Year[]; currentYea
         <p className="rounded bg-emerald-50 p-3 text-emerald-900" role="status">
           Import finished: {s.people} people in {s.households} families added, with {s.memberships} memberships.
           {s.skipped > 0 && ` ${s.skipped} people were already in the database and were left as they were.`}
+          {(s.joined_filled ?? 0) > 0 && ` First joined dates were filled in for ${s.joined_filled} of them.`}
         </p>
         <p className="text-slate-700">
-          Members can now sign in with the email address from the spreadsheet. Next, check family groupings and fill in
-          first joined dates and news consent.
+          Members can now sign in with the email address from the spreadsheet. Next, check family groupings.
         </p>
       </div>
     );
@@ -59,6 +59,7 @@ export function ImportForm({ years, currentYearId }: { years: Year[]; currentYea
                       {r.member_class}
                       {r.date_of_birth ? `, born ${r.date_of_birth.split("-").reverse().join("/")}` : ""}
                       {r.email ? `, ${r.email}` : ""}
+                      {r.first_joined_on ? `, first joined ${r.first_joined_on.split("-").reverse().join("/")}` : ""}
                     </span>
                   </li>
                 ))}
@@ -107,7 +108,9 @@ export function ImportForm({ years, currentYearId }: { years: Year[]; currentYea
         <input type="file" name="file" accept=".xlsx" required className="mt-1 block" />
         <span className="mt-1 block text-xs text-slate-500">
           First row must have the headings: Firstname, Lastname, Title, DOB, Address1 to Address4, Post Code, Email, Mobile,
-          WhatsApp (Y/N), Emergency Contact Name, Emergency Contact Mobile, Member Class.
+          WhatsApp (Y/N), Emergency Contact Name, Emergency Contact Mobile, Member Class. An optional First Joined column
+          (a date or just the year) fills in when each person first joined. Uploading the same spreadsheet again fills in
+          first joined dates that are still blank, without adding anyone twice.
         </span>
       </label>
       <button type="submit" name="intent" value="preview" disabled={pending} className={button}>

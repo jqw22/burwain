@@ -7,7 +7,7 @@ import { parseMemberSheet, type ImportRow } from "@/lib/import";
 export type ImportState =
   | { step: "upload"; error?: string }
   | { step: "preview"; rows: ImportRow[]; problems: string[]; fileName: string }
-  | { step: "done"; summary: { households: number; people: number; skipped: number; memberships: number } };
+  | { step: "done"; summary: { households: number; people: number; skipped: number; memberships: number; joined_filled?: number } };
 
 async function requireAdmin() {
   const me = await requireMe();

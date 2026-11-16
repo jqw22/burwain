@@ -4,7 +4,7 @@ import { NotAllowed, STATUS_LABEL } from "@/components/admin";
 import { WhatsAppLink } from "@/components/whatsapp-link";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { EditLink, FormButtons, Item, LINK } from "@/app/profile/ui";
-import { adminAccess, ageOn, PERSON_FIELDS, pounds, ukDate, type Person } from "@/lib/me";
+import { adminAccess, ageOn, PERSON_FIELDS, pounds, ukDate, WHATSAPP_NEEDS_MOBILE, type Person } from "@/lib/me";
 import { RenewForm, type RenewPerson, type RenewType } from "@/app/profile/renew-form";
 import { quote, typeDates, ukToday } from "@/lib/quote";
 import {
@@ -62,6 +62,7 @@ const SAVED: Record<string, string> = {
   title: "Club titles updated.",
 };
 const ERRORS: Record<string, string> = {
+  whatsapp: WHATSAPP_NEEDS_MOBILE,
   details: "We couldn't save those details. Please check them and try again.",
   address: "We couldn't save the address. Please try again.",
   lead: "We couldn't change the main contact. Please try again.",
@@ -82,6 +83,7 @@ const ERRORS: Record<string, string> = {
 };
 const SECTION: Record<string, string> = {
   details: "contact",
+  whatsapp: "contact",
   address: "address",
   lead: "family",
   medical: "medical",
@@ -119,9 +121,9 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
 
   const { data: m } = await supabase
     .from("people")
-    .select(`${PERSON_FIELDS}, emails_unsubscribed_at`)
+    .select(PERSON_FIELDS)
     .eq("id", id)
-    .maybeSingle<Person & { emails_unsubscribed_at: string | null }>();
+    .maybeSingle<Person>();
   if (!m) notFound();
 
   const [{ data: household }, { data: family }, { data: history }, { data: quals }, { data: roles }, { data: titleData }, { data: allTitles }] = await Promise.all([
@@ -206,6 +208,9 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
   const today = new Date().toISOString().slice(0, 10);
   const myHistory = ((history ?? []) as History[]).filter((h) => h.person_id === id);
   const relatives = (family ?? []) as Relative[];
+  // Everyone has a family group behind the scenes (it holds their address). Show it as a family for a
+  // Family or Dual membership, or when others are already in the group.
+  const inFamily = Boolean(household) && (relatives.length > 1 || canAddToFamily);
   const qualifications = (quals ?? []) as Qual[];
   const addressLines = household
     ? [household.address_line1, household.address_line2, household.address_line3, household.address_line4, household.postcode].filter(Boolean)
@@ -382,9 +387,9 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
         )}
       </Card>
 
-      <Card id="family" title="Family" action={household && edit("family", "main contact")}>
+      <Card id="family" title="Family" action={inFamily && edit("family", "main contact")}>
         {messages("family")}
-        {!household ? (
+        {!household || !inFamily ? (
           <p className="text-slate-600">Not in a family group.</p>
         ) : (
           <>
@@ -613,15 +618,14 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
           <form action={adminSavePreferences} className="space-y-3">
             <input type="hidden" name="id" value={m.id} />
             <p className="text-sm text-slate-600">Only change these when the member has asked you to.</p>
-            <Checkbox label="Club news and newsletters by email" name="news_consent" defaultChecked={m.news_consent} />
-            <Checkbox label="Group emails from Communications admin" name="group_emails" defaultChecked={!m.emails_unsubscribed_at} />
+            <input type="hidden" name="unsubscribed_before" value={m.emails_unsubscribed_at ?? ""} />
+            <Checkbox label="Club news by email" name="club_news" defaultChecked={!m.emails_unsubscribed_at} />
             <Checkbox label="Listed in the member directory (name, phone and email)" name="directory_listed" defaultChecked={!m.directory_opt_out} />
             <FormButtons base={base} section="preferences">Save preferences</FormButtons>
           </form>
         ) : (
           <ul className="space-y-1 text-slate-800">
-            <li>Club news by email: {m.news_consent ? "yes" : "no"}</li>
-            <li>Group emails: {m.emails_unsubscribed_at ? `no, unsubscribed ${ukDate(m.emails_unsubscribed_at)}` : "yes"}</li>
+            <li>Club news by email: {m.emails_unsubscribed_at ? `no, unsubscribed ${ukDate(m.emails_unsubscribed_at)}` : "yes"}</li>
             <li>Listed in the member directory: {m.directory_opt_out ? "no" : "yes"}</li>
           </ul>
         )}

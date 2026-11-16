@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { text } from "@/lib/me";
+import { text, WHATSAPP_NEEDS_MOBILE } from "@/lib/me";
 import { peopleFromForm } from "@/lib/member-form";
 import { boatsFromForm } from "@/lib/boats";
 
@@ -45,6 +45,7 @@ export async function submitApplication(_prev: JoinState, form: FormData): Promi
   };
   // Bots fill in every box, including this hidden one. Pretend it worked and store nothing.
   if (text(form, "website")) return { done };
+  if ((people as { whatsapp: boolean; mobile: unknown }[]).some((x) => x.whatsapp && !x.mobile)) return { error: WHATSAPP_NEEDS_MOBILE, values };
 
   const p = {
     type_id: text(form, "type_id"),

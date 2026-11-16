@@ -72,8 +72,9 @@ end $$;
 select pg_temp.expect_error($q$insert into people (household_id, first_name, last_name, auth_user_id) values ('10000000-0000-0000-0000-000000000001', 'Mal', 'Icious', '00000000-0000-0000-0000-00000000000e')$q$, 'Only an admin');
 select pg_temp.expect_error($q$insert into people (household_id, first_name, last_name) values ('10000000-0000-0000-0000-000000000002', 'Not', 'Mine')$q$, 'row-level security');
 do $$ begin
-  update people set news_consent = true where first_name = 'Alice';
-  assert (select news_consent_at is not null from people where first_name = 'Alice'), 'consent should be time-stamped';
+  update people set emails_unsubscribed_at = now() where first_name = 'Alice';
+  assert (select emails_unsubscribed_at is not null from people where first_name = 'Alice'), 'members can turn off club news';
+  update people set emails_unsubscribed_at = null where first_name = 'Alice';
   insert into medical_records (person_id, details, consent_given_at) values ('20000000-0000-0000-0000-00000000000a', 'Asthma', now());
   assert (select count(*) from audit_log) = 0, 'members cannot read the change log';
 end $$;
@@ -222,7 +223,7 @@ select pg_temp.expect_error($q$select import_members('[{"household_key":"x","fir
 do $$ declare
   rows jsonb := '[
     {"household_key":"bb11aa|3 shore lane","first_name":"Jo","last_name":"Import","date_of_birth":"1975-04-04","email":"Jo@Example.com","mobile":"0790","whatsapp":true,"address_line1":"3 Shore Lane","postcode":"bb1 1aa","member_class":"F"},
-    {"household_key":"bb11aa|3 shore lane","first_name":"Kit","last_name":"Import","date_of_birth":"2015-06-06","member_class":"F"},
+    {"household_key":"bb11aa|3 shore lane","first_name":"Kit","last_name":"Import","date_of_birth":"2015-06-06","member_class":"F","first_joined_on":"2019-01-01"},
     {"household_key":"bb11aa|3 shore lane","first_name":"Lou","last_name":"Import","date_of_birth":"1977-01-01","member_class":"f"},
     {"household_key":"bb22bb|9 hill","first_name":"Max","last_name":"Solo","date_of_birth":"1960-02-02","email":"max@example.com","member_class":"IS"},
     {"household_key":"bb22bb|9 hill","first_name":"Ned","last_name":"Solo","date_of_birth":"2012-02-02","member_class":"J1"},
@@ -231,7 +232,7 @@ do $$ declare
   res jsonb;
 begin
   res := import_members(rows, (select id from club_years where label = '2026'));
-  assert res = '{"households": 2, "people": 5, "skipped": 1, "memberships": 3}', 'import summary: ' || res;
+  assert res = '{"households": 2, "people": 5, "skipped": 1, "memberships": 3, "joined_filled": 0}', 'import summary: ' || res;
   assert (select count(*) from people where last_name = 'Import' and household_id is not null) = 3, 'family grouped';
   assert (select p.first_name from households h join people p on p.id = h.lead_person_id where h.postcode = 'BB1 1AA') = 'Jo', 'oldest adult is main contact';
   assert (select count(*) from membership_people mp join memberships m on m.id = mp.membership_id
@@ -239,7 +240,17 @@ begin
            and m.club_year_id = (select id from club_years where label = '2026')) = 3, 'one Family membership covers all three';
   assert (select email from people where first_name = 'Jo') = 'jo@example.com', 'email lower-cased for login';
   res := import_members(rows, (select id from club_years where label = '2026'));
-  assert res = '{"households": 0, "people": 0, "skipped": 6, "memberships": 0}', 're-run is harmless: ' || res;
+  assert res = '{"households": 0, "people": 0, "skipped": 6, "memberships": 0, "joined_filled": 0}', 're-run is harmless: ' || res;
+  assert (select first_joined_on from people where first_name = 'Kit') = '2019-01-01', 'first joined imported';
+  assert (select emails_unsubscribed_at is null from people where first_name = 'Kit'), 'club news starts as yes';
+  -- Uploading again with a first joined date fills in a blank one, but leaves existing dates alone.
+  res := import_members('[
+    {"household_key":"bb11aa|3 shore lane","first_name":"Jo","last_name":"Import","date_of_birth":"1975-04-04","member_class":"F","first_joined_on":"2001-05-01"},
+    {"household_key":"bb11aa|3 shore lane","first_name":"Kit","last_name":"Import","date_of_birth":"2015-06-06","member_class":"F","first_joined_on":"2020-01-01"}
+  ]', (select id from club_years where label = '2026'));
+  assert res = '{"households": 0, "people": 0, "skipped": 2, "memberships": 0, "joined_filled": 1}', 'first joined back-filled: ' || res;
+  assert (select first_joined_on from people where first_name = 'Jo') = '2001-05-01', 'blank first joined filled in';
+  assert (select first_joined_on from people where first_name = 'Kit') = '2019-01-01', 'existing first joined kept';
 end $$;
 reset role;
 
@@ -255,13 +266,13 @@ do $$ declare
   res jsonb;
 begin
   res := import_members(rows, (select id from club_years where label = '2026'));
-  assert res = '{"households": 1, "people": 2, "skipped": 0, "memberships": 1}', 'kept login imported: ' || res;
+  assert res = '{"households": 1, "people": 2, "skipped": 0, "memberships": 1, "joined_filled": 0}', 'kept login imported: ' || res;
   assert (select count(*) from people where first_name = 'Pat' and last_name = 'Kept') = 1, 'no duplicate person';
   assert (select count(*) from people p join households h on h.id = p.household_id
            where p.last_name = 'Kept' and h.postcode = 'BB3 3CC') = 2, 'both in the family';
   assert (select count(*) from membership_people mp join people p on p.id = mp.person_id where p.last_name = 'Kept') = 2, 'both covered by the Family membership';
   res := import_members(rows, (select id from club_years where label = '2026'));
-  assert res = '{"households": 0, "people": 0, "skipped": 2, "memberships": 0}', 're-run is harmless: ' || res;
+  assert res = '{"households": 0, "people": 0, "skipped": 2, "memberships": 0, "joined_filled": 0}', 're-run is harmless: ' || res;
 end $$;
 reset role;
 
@@ -390,7 +401,7 @@ do $$ declare ivy uuid; jo uuid; hh uuid; m uuid; begin
   assert (select postcode from households where id = hh) = 'BB5 5AA', 'postcode tidied';
   assert (select email from people where id = ivy) = 'ivy@example.com', 'email lower case';
   assert (select first_joined_on from people where id = ivy) = club_today(), 'first joined today';
-  assert (select news_consent and news_consent_at is not null from people where id = ivy), 'news consent recorded';
+  assert (select emails_unsubscribed_at is null from people where id = ivy), 'club news on';
   assert (select details from get_medical_record(ivy)) = 'Asthma', 'medical saved';
   assert (select name from qualifications where person_id = ivy) = 'RYA Level 2', 'qualification saved';
   select m.id into m from memberships m join membership_people mp on mp.membership_id = m.id where mp.person_id = ivy;
@@ -721,7 +732,7 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
 select pg_temp.expect_error($q$select admin_add_contact('{"first_name":"Cy","last_name":"Contact"}')$q$, 'email address is needed');
 do $$ declare c uuid; begin
   c := admin_add_contact('{"first_name":"Cy","last_name":"Contact","email":"Cy@Example.com","news_consent":true}');
-  assert (select is_contact and news_consent and household_id is null and email = 'cy@example.com' from people where id = c), 'contact added';
+  assert (select is_contact and emails_unsubscribed_at is null and household_id is null and email = 'cy@example.com' from people where id = c), 'contact added';
   assert not exists (select 1 from membership_people where person_id = c), 'no membership';
 end $$;
 reset role;
@@ -930,7 +941,7 @@ reset role;
   select 1/0;
 \endif
 do $$ begin
-  assert (select emails_unsubscribed_at is not null and not news_consent from people where email = 'cy@example.com'), 'unsubscribed';
+  assert (select emails_unsubscribed_at is not null from people where email = 'cy@example.com'), 'unsubscribed';
 end $$;
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
@@ -1102,5 +1113,14 @@ reset role;
 reset request.jwt.claim.sub;
 do $$ begin assert (select count(*) from person_titles) = 2, 'members cannot remove titles'; end $$;
 delete from user_roles where person_id = '20000000-0000-0000-0000-00000000000a';
+
+\echo 'WhatsApp needs a mobile number'
+insert into people (first_name, last_name, mobile, whatsapp) values ('Wanda', 'Nomobile', null, true), ('Will', 'Mobile', '07700 900000', true);
+do $$ begin
+  assert not (select whatsapp from people where first_name = 'Wanda'), 'no WhatsApp without a mobile';
+  assert (select whatsapp from people where first_name = 'Will'), 'WhatsApp kept with a mobile';
+  update people set mobile = '' where first_name = 'Will';
+  assert not (select whatsapp from people where first_name = 'Will'), 'removing the mobile turns WhatsApp off';
+end $$;
 
 \echo 'All database tests passed'

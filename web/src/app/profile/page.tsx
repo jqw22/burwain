@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
-import { PERSON_FIELDS, ageOn, requireMe, ukDate, type Person } from "@/lib/me";
+import { PERSON_FIELDS, ageOn, requireMe, ukDate, WHATSAPP_NEEDS_MOBILE, type Person } from "@/lib/me";
 import {
   addQualification,
   removeQualification,
@@ -11,6 +11,7 @@ import {
 } from "./actions";
 import { EditLink, FormButtons, Item, LINK } from "./ui";
 import { RenewalCard } from "./renewal";
+import { ukToday } from "@/lib/quote";
 
 const SAVED: Record<string, string> = {
   details: "Your details have been saved.",
@@ -23,6 +24,7 @@ const SAVED: Record<string, string> = {
   renewed: "Renewed. It's shown below with the amount to pay. You can renew the others now, or pay first.",
 };
 const ERRORS: Record<string, string> = {
+  whatsapp: WHATSAPP_NEEDS_MOBILE,
   details: "We couldn't save your details. Please check them and try again.",
   preferences: "We couldn't save your preferences. Please try again.",
   medical: "We couldn't save your medical information. Please try again.",
@@ -48,6 +50,7 @@ const ERRORS: Record<string, string> = {
 
 const SECTION: Record<string, string> = {
   details: "contact",
+  whatsapp: "contact",
   add: "family",
   household: "family",
   address: "address",
@@ -94,7 +97,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
   ]);
   if (!me) return null;
 
-  const [{ data: household }, { data: familyData }] = await Promise.all([
+  const [{ data: household }, { data: familyData }, { data: sharedData }] = await Promise.all([
     me.household_id
       ? supabase.from("households").select("*").eq("id", me.household_id).single<Household>()
       : Promise.resolve({ data: null }),
@@ -106,8 +109,21 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
           .is("archived_at", null)
           .order("date_of_birth")
       : Promise.resolve({ data: [] }),
+    // A Family or Dual membership (current or next) that covers more than one person.
+    me.household_id
+      ? supabase
+          .from("memberships")
+          .select("id, membership_types!inner(cover, ends_on)")
+          .eq("household_id", me.household_id)
+          .neq("status", "cancelled")
+          .in("membership_types.cover", ["family", "dual"])
+          .gte("membership_types.ends_on", ukToday())
+          .limit(1)
+      : Promise.resolve({ data: [] }),
   ]);
   const family = ((familyData ?? []) as Member[]).filter((m) => m.id !== personId);
+  // Show the family box for a Family or Dual membership, or when others are already in the family group.
+  const showFamily = !household || family.length > 0 || (sharedData ?? []).length > 0;
   const isLead = household?.lead_person_id === personId;
 
   const saved = typeof params.saved === "string" ? SAVED[params.saved] : undefined;
@@ -194,6 +210,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
         )}
       </Card>
 
+      {showFamily && (
       <Card
         id="family"
         title="Your family"
@@ -245,6 +262,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
           </>
         )}
       </Card>
+      )}
 
       {household && (
         <Card
@@ -367,10 +385,11 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
         {messages("preferences")}
         {editing === "preferences" ? (
           <form action={savePreferences} className="space-y-3">
+            <input type="hidden" name="unsubscribed_before" value={me.emails_unsubscribed_at ?? ""} />
             <Checkbox
-              label="Send me club news and newsletters by email. You can unsubscribe at any time."
-              name="news_consent"
-              defaultChecked={me.news_consent}
+              label="Send me club news by email. You can unsubscribe at any time."
+              name="club_news"
+              defaultChecked={!me.emails_unsubscribed_at}
             />
             <Checkbox
               label="Show my name, phone and email in the member directory"
@@ -381,7 +400,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
           </form>
         ) : (
           <ul className="space-y-1 text-slate-800">
-            <li>Club news by email: {me.news_consent ? "yes" : "no"}</li>
+            <li>Club news by email: {me.emails_unsubscribed_at ? "no" : "yes"}</li>
             <li>Listed in the member directory: {me.directory_opt_out ? "no" : "yes"}</li>
           </ul>
         )}

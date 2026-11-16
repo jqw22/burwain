@@ -1,10 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireMe, text } from "@/lib/me";
+import { requireMe, text, unsubscribedAt, whatsappWithoutMobile } from "@/lib/me";
 
 export async function saveDetails(form: FormData) {
   const { supabase, personId } = await requireMe();
+  if (whatsappWithoutMobile(form)) redirect("/profile?edit=contact&error=whatsapp#contact");
   const { error } = await supabase
     .from("people")
     .update({
@@ -27,7 +28,7 @@ export async function savePreferences(form: FormData) {
   const { error } = await supabase
     .from("people")
     .update({
-      news_consent: form.get("news_consent") === "on",
+      emails_unsubscribed_at: unsubscribedAt(form),
       directory_opt_out: form.get("directory_listed") !== "on",
     })
     .eq("id", personId);
@@ -104,6 +105,7 @@ export async function addFamilyMember(form: FormData) {
 export async function saveFamilyMember(form: FormData) {
   const { supabase } = await requireMe();
   const id = String(form.get("id"));
+  if (whatsappWithoutMobile(form)) redirect(`/profile/member/${id}?error=whatsapp`);
   const { error } = await supabase
     .from("people")
     .update({
@@ -160,7 +162,7 @@ export async function saveFamilyPreferences(form: FormData) {
   const { error } = await supabase
     .from("people")
     .update({
-      news_consent: form.get("news_consent") === "on",
+      emails_unsubscribed_at: unsubscribedAt(form),
       directory_opt_out: form.get("directory_listed") !== "on",
     })
     .eq("id", id);
