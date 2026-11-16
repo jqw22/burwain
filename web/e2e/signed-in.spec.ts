@@ -1368,6 +1368,10 @@ test("an admin changes boat storage prices, and adds and removes boats on a memb
           where r.method = 'cash' and r.status = 'paid' and rl.amount_pence = 8000 and rl.description like '%Mirror 70001 (non-members rate)'`),
   ).toBe("1");
   expect(sql(`select count(*) from transactions where description like '%Mirror 70001%'`)).toBe("0");
+
+  // The admin's own Member page only shows their own family's boats, not the boat just added for someone else.
+  await page.goto("/profile");
+  await expect(page.getByText("Mirror 70001")).toHaveCount(0);
 });
 
 test("an admin adds a membership type, changes its price and makes it inactive", async ({ browser }) => {
