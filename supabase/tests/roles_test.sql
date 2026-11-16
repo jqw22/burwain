@@ -64,10 +64,14 @@ select pg_temp.expect_error($q$update people set first_joined_on = '2000-01-01' 
 select pg_temp.expect_error($q$insert into memberships (club_year_id, membership_type_id, payer_person_id, price_pence) select (select id from club_years limit 1), (select id from membership_types where code = 'IS'), '20000000-0000-0000-0000-00000000000a', 0$q$, 'row-level security');
 select pg_temp.expect_error($q$select pg_temp.start_membership((select id from membership_types where code = 'IS'), array['20000000-0000-0000-0000-00000000000e'::uuid])$q$, 'own household');
 select pg_temp.expect_error($q$select pg_temp.start_membership((select id from membership_types where code = 'U21'), array['20000000-0000-0000-0000-00000000000a'::uuid])$q$, 'age limit');
+select pg_temp.expect_error($q$insert into people (household_id, first_name, last_name, date_of_birth) values ('10000000-0000-0000-0000-000000000001', 'Cleo', 'Junior', '2016-02-02')$q$, 'row-level security');
+-- Only admins add people; an admin adds Cleo to Alice's family for the tests below.
+reset role;
+insert into people (household_id, first_name, last_name, date_of_birth)
+values ('10000000-0000-0000-0000-000000000001', 'Cleo', 'Junior', '2016-02-02');
+set role authenticated;
 do $$ begin
-  insert into people (household_id, first_name, last_name, date_of_birth)
-  values ('10000000-0000-0000-0000-000000000001', 'Cleo', 'Junior', '2016-02-02');
-  assert (select count(*) from people) = 3, 'household lead can add a family member';
+  assert (select count(*) from people) = 3, 'Alice sees the family member an admin added';
 end $$;
 select pg_temp.expect_error($q$insert into people (household_id, first_name, last_name, auth_user_id) values ('10000000-0000-0000-0000-000000000001', 'Mal', 'Icious', '00000000-0000-0000-0000-00000000000e')$q$, 'Only an admin');
 select pg_temp.expect_error($q$insert into people (household_id, first_name, last_name) values ('10000000-0000-0000-0000-000000000002', 'Not', 'Mine')$q$, 'row-level security');
@@ -350,17 +354,20 @@ do $$ declare hh uuid; begin
   assert (select household_id from people where first_name = 'Carol') = hh, 'Carol is in her new family';
   assert (select lead_person_id from households where id = hh) = (select id from people where first_name = 'Carol'), 'Carol is the main contact';
   assert (select postcode from households where id = hh) = 'BB9 9ZZ', 'postcode tidied';
-  insert into people (household_id, first_name, last_name) values (hh, 'Kit', 'Finance');
 end $$;
 select pg_temp.expect_error($q$select create_my_household('x', null, null, null, null)$q$, 'already in a family');
 select pg_temp.expect_error($q$update people set household_id = '10000000-0000-0000-0000-000000000001' where first_name = 'Carol'$q$, 'Only an admin');
 reset role;
+-- An admin adds Kit to Carol's new family.
+insert into people (household_id, first_name, last_name)
+select household_id, 'Kit', 'Finance' from people where first_name = 'Carol';
 
 \echo 'Family membership covers people added to the family later'
-set role authenticated;
-set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+-- An admin adds Nia to Alice's family.
 insert into people (household_id, first_name, last_name, date_of_birth)
 values ('10000000-0000-0000-0000-000000000001', 'Nia', 'Newborn', '2026-06-01');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 do $$ begin
   assert (select count(*) from membership_people mp join memberships m on m.id = mp.membership_id
            join membership_types t on t.id = m.membership_type_id join people p on p.id = mp.person_id
@@ -530,7 +537,7 @@ end $$;
 select pg_temp.expect_error($q$select * from membership_applications$q$, 'permission denied');
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'individual' limit 1),
   'address_line1', '1 A', 'postcode', 'BB1',
-  'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'date_of_birth', '1982-02-02', 'email', 'a@example.com'))))$q$, 'already uses that email');
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'date_of_birth', '1982-02-02', 'email', 'a@example.com'))))$q$, 'take a new application with that email');
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where cover = 'dual' limit 1),
   'address_line1', '1 A', 'postcode', 'BB1',
   'people', jsonb_build_array(jsonb_build_object('first_name', 'Ann', 'last_name', 'Apply', 'date_of_birth', '1982-02-02', 'email', 'ann@example.com'))))$q$, 'exactly two');
@@ -549,7 +556,7 @@ select submit_application(jsonb_build_object('type_id', (select type_id from joi
   'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'date_of_birth', '1990-01-01', 'email', 'spam@example.com', 'medical_details', 'x', 'medical_consent', true)))) \gset spam_
 select pg_temp.expect_error($q$select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
   'address_line1', '4 Dam Rd', 'postcode', 'bb3 3cc',
-  'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'date_of_birth', '1990-01-01', 'email', 'spam@example.com'))))$q$, 'already an application');
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Spam', 'last_name', 'Bot', 'date_of_birth', '1990-01-01', 'email', 'spam@example.com'))))$q$, 'take a new application with that email');
 -- Test checkout straight after applying: the payment is held on the application.
 select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
   'address_line1', '5 Dam Rd', 'postcode', 'bb3 3cc',
@@ -599,7 +606,7 @@ do $$ declare ann uuid; hh uuid; begin
   assert (select email from people where id = ann) = 'ann@example.com', 'email saved';
   assert exists (select 1 from member_directory() where id = ann), 'joined for next year, so in the directory now';
   assert not exists (select 1 from member_directory() where first_name = 'Ben' and last_name = 'Apply'), 'child not in directory';
-  assert (select data is null and status = 'accepted' from membership_applications where person_id = ann), 'application closed';
+  assert (select count(*) from membership_applications) = 0, 'admins read applications only through pending_applications()';
   declare pia uuid; begin
     pia := accept_application((select id from pending_applications() where contact_name = 'Pia Paid'));
     assert (select m.status::text from memberships m join membership_people mp on mp.membership_id = m.id where mp.person_id = pia) = 'active',
@@ -611,11 +618,14 @@ do $$ declare ann uuid; hh uuid; begin
     assert (select count(*) from transactions where party = 'Pia Paid') = 0, 'accepting creates no finance transaction';
   end;
   perform decline_application((select id from pending_applications() where contact_name = 'Spam Bot'), 'Spam');
-  assert (select data is null and status = 'declined' from membership_applications where contact_name = 'Spam Bot'), 'declined details deleted';
 end $$;
 select pg_temp.expect_error(format('select accept_application(%L)', :'app_submit_application'), 'already been dealt with');
 reset role;
 reset request.jwt.claim.sub;
+do $$ begin
+  assert (select data is null and status = 'accepted' from membership_applications where contact_name = 'Ann Apply'), 'application closed';
+  assert (select data is null and status = 'declined' from membership_applications where contact_name = 'Spam Bot'), 'declined details deleted';
+end $$;
 
 -- Membership types: club admins add, edit and switch them off; members can't; nobody deletes one in use.
 insert into auth.users values ('00000000-0000-0000-0000-0000000000a7');
@@ -970,12 +980,14 @@ do $$ declare bo uuid; begin
   bo := accept_application((select id from pending_applications() where contact_name = 'Bo Ater'));
   assert (select count(*) from boat_storages where person_id = bo and status = 'active') = 2, 'boats stored and paid on acceptance';
   assert (select count(*) from transactions where party = 'Bo Ater') = 0, 'no finance transactions on acceptance';
-  assert (select r.amount_pence = a.paid_pence + 7000 and r.status = 'paid'
-            from member_receipts r, membership_applications a
-           where r.payer_person_id = bo and a.person_id = bo), 'receipt recorded for the membership and both boats';
 end $$;
 reset role;
 reset request.jwt.claim.sub;
+do $$ begin
+  assert (select r.amount_pence = a.paid_pence + 7000 and r.status = 'paid'
+            from member_receipts r join membership_applications a on a.person_id = r.payer_person_id
+           where a.contact_name = 'Bo Ater'), 'receipt recorded for the membership and both boats';
+end $$;
 
 -- Group emails: members and contacts with an email address, never juniors; unsubscribe by link.
 set role authenticated;
@@ -1060,6 +1072,40 @@ reset role;
   \echo 'the handbook should not be public'
   select 1/0;
 \endif
+
+\echo 'Club news: members read, only admins add, edit and delete'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+do $$ begin
+  insert into news_posts (title, body) values ('Work party', '<p>Saturday 10am.</p>');
+  update news_posts set pinned = true where title = 'Work party';
+  assert (select pinned from news_posts where title = 'Work party'), 'admins can edit news';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ begin
+  assert (select count(*) from news_posts where title = 'Work party') = 1, 'members read news';
+  update news_posts set title = 'changed by a member';
+  delete from news_posts;
+  assert (select count(*) from news_posts where title = 'Work party') = 1, 'members cannot change or delete news';
+  insert into news_posts (title) values ('member post');
+  assert false, 'members cannot add news';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+set role anon;
+select count(*) = 0 as news_hidden from news_posts \gset
+reset role;
+\if :news_hidden
+\else
+  \echo 'club news should not be public'
+  select 1/0;
+\endif
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+delete from news_posts where title = 'Work party';
+reset role;
+reset request.jwt.claim.sub;
 
 \echo 'Budget: finance enters monthly figures, admins only look, members see nothing'
 set role authenticated;

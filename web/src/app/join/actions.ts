@@ -19,8 +19,8 @@ const KNOWN: [string, string][] = [
   ["Date of birth is needed", "Please give a date of birth for everyone."],
   ["in the future", "A date of birth can't be in the future."],
   ["email address is needed", "Please give an email address for the first person. We'll use it to get in touch."],
-  ["already uses that email", "That email already belongs to a member. Please log in instead, or contact the membership secretary."],
-  ["already an application", "We already have an application waiting for that email. We'll be in touch soon."],
+  // Same message for a member's email and an application already waiting, so nobody can use the form to find out who is a member.
+  ["take a new application with that email", "We can't take a new application with that email address. If you've applied before or are already a member, please log in or contact the membership secretary."],
   ["consent", "Medical information needs your agreement: please tick the box under it."],
   ["address line 1", "Please give your address and postcode."],
   ["covers exactly one", "That membership covers one person."],

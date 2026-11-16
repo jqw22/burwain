@@ -36,7 +36,7 @@ export function exampleValues(overrides: Partial<Record<string, string>> = {}) {
   return { ...Object.fromEntries(PLACEHOLDERS.map((p) => [p.key, p.example])), ...overrides } as Record<string, string>;
 }
 
-function escapeHtml(s: string) {
+export function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 

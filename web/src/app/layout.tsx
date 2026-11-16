@@ -41,6 +41,13 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           </nav>
         </header>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 print:max-w-none print:p-0">{children}</main>
+        <footer className="border-t border-slate-200 bg-white print:hidden">
+          <div className="mx-auto max-w-5xl px-4 py-4 text-sm text-slate-500">
+            <Link href="/privacy" className="hover:text-sky-900 hover:underline">
+              Privacy notice
+            </Link>
+          </div>
+        </footer>
       </body>
     </html>
   );

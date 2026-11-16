@@ -303,7 +303,11 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
         {messages("medical")}
         <p className="mb-4 text-sm text-slate-600">
           Anything the club should know in an emergency. Only you, your family&apos;s main contact and club admins can
-          see this, and every time an admin views it is recorded.
+          see this, and every time an admin views it is recorded. See our{" "}
+          <a href="/privacy" className="text-sky-800 underline">
+            privacy notice
+          </a>
+          .
         </p>
         {editing === "medical" ? (
           <form action={saveMedical} className="space-y-3">

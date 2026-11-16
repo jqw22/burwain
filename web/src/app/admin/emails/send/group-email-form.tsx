@@ -269,6 +269,15 @@ export function GroupEmailForm({
           </p>
         ) : (
           <div className="space-y-3">
+            <label className="flex items-start gap-2">
+              <input type="checkbox" name="post_news" className="mt-1" />
+              <span>
+                Also post this on Club news
+                <span className="block text-sm text-slate-600">
+                  It appears on the Home page once the email has gone, with {"{first_name}"} shown as &quot;members&quot;. You can edit it there afterwards.
+                </span>
+              </span>
+            </label>
             <Result state={sendState} />
             {!confirming ? (
               <button
