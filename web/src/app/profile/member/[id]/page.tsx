@@ -155,10 +155,11 @@ export default async function FamilyMemberPage({ params, searchParams }: PagePro
       <Card title="Communication preferences">
         <form action={saveFamilyPreferences} className="space-y-3">
           <input type="hidden" name="id" value={m.id} />
+          <input type="hidden" name="unsubscribed_before" value={m.emails_unsubscribed_at ?? ""} />
           <Checkbox
-            label="Send club news and newsletters by email. They can unsubscribe at any time."
-            name="news_consent"
-            defaultChecked={m.news_consent}
+            label="Send club news by email. They can unsubscribe at any time."
+            name="club_news"
+            defaultChecked={!m.emails_unsubscribed_at}
           />
           <Checkbox
             label="Show their name, phone and email in the member directory (adults only)"

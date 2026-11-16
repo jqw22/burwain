@@ -16,11 +16,11 @@ export type Person = {
   emergency_contact_mobile: string | null;
   first_joined_on: string | null;
   directory_opt_out: boolean;
-  news_consent: boolean;
+  emails_unsubscribed_at: string | null;
 };
 
 export const PERSON_FIELDS =
-  "id, household_id, title, first_name, last_name, date_of_birth, email, mobile, whatsapp, emergency_contact_name, emergency_contact_mobile, first_joined_on, directory_opt_out, news_consent";
+  "id, household_id, title, first_name, last_name, date_of_birth, email, mobile, whatsapp, emergency_contact_name, emergency_contact_mobile, first_joined_on, directory_opt_out, emails_unsubscribed_at";
 
 // The signed-in member's id, or a redirect home (which explains an unmatched login).
 export async function requireMe() {
@@ -39,6 +39,13 @@ export function text(form: FormData, name: string): string | null {
 // WhatsApp ticked but no mobile number given (prefix is for the p0_, p1_... fields on Join and Add new member).
 export function whatsappWithoutMobile(form: FormData, prefix = ""): boolean {
   return form.get(`${prefix}whatsapp`) === "on" && !text(form, `${prefix}mobile`);
+}
+
+// "Club news by email" is stored as the date they unsubscribed (blank = they get club news).
+// Unticking keeps the original date if they had already unsubscribed.
+export function unsubscribedAt(form: FormData): string | null {
+  if (form.get("club_news") === "on") return null;
+  return text(form, "unsubscribed_before") ?? new Date().toISOString();
 }
 
 export const WHATSAPP_NEEDS_MOBILE = "To tick WhatsApp, please add a mobile number too.";

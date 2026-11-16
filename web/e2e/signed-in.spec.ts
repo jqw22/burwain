@@ -585,10 +585,12 @@ test("an admin finds a member, edits them and views their medical details", asyn
   await expect(page.getByText("Qualifications updated.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Qualifications" })).toContainText("First Aid");
   await page.getByRole("link", { name: "Edit communication preferences" }).click();
-  await page.getByLabel("Club news and newsletters by email").check();
+  // One "Club news by email" tick: unticking it unsubscribes them.
+  await page.getByLabel("Club news by email").uncheck();
   await page.getByRole("button", { name: "Save preferences" }).click();
   await expect(page.getByText("Preferences saved.")).toBeVisible();
-  expect(sql(`select news_consent, news_consent_at is not null from people where email = '${leadEmail}'`)).toBe("t|t");
+  expect(sql(`select emails_unsubscribed_at is not null from people where email = '${leadEmail}'`)).toBe("t");
+  sql(`update people set emails_unsubscribed_at = null where email = '${leadEmail}'`);
   await shot(page, "admin-member");
 });
 
@@ -951,14 +953,14 @@ test("an admin adds new members: joining a family, a new family paying cash, and
   await details.getByLabel("Postcode").fill("bb11 3dd");
   await details.getByLabel(/^Email/).fill(`nora-${run}@example.test`);
   // Both preferences start ticked.
-  await expect(details.getByLabel("Happy to receive club news by email")).toBeChecked();
+  await expect(details.getByLabel("Club news by email")).toBeChecked();
   await expect(details.getByLabel("Happy to be added to the club directory")).toBeChecked();
   await form.getByLabel("Payment received").selectOption("cash");
   await form.getByLabel("Medical details").fill("Type 1 diabetes.");
   await form.getByLabel("The member agrees to the club holding this information").check();
   await form.getByRole("textbox", { name: /^Qualification/ }).fill("RYA Powerboat Level 2");
   await form.getByLabel("Expires").fill("2029-05-01");
-  await form.getByLabel("Happy to receive club news by email").check();
+  await form.getByLabel("Club news by email").check();
   await shot(page, "admin-add-member");
   await form.getByRole("button", { name: "Add member" }).click();
   await expect(page.getByText("New member added.")).toBeVisible();
@@ -973,7 +975,7 @@ test("an admin adds new members: joining a family, a new family paying cash, and
           join people p on p.id = mp.person_id where p.email = 'nora-${run}@example.test'`),
   ).toBe("active");
   expect(
-    sql(`select r.details, q.name, q.expires_on, p.news_consent, p.directory_opt_out from people p
+    sql(`select r.details, q.name, q.expires_on, p.emails_unsubscribed_at is null, p.directory_opt_out from people p
            join medical_records r on r.person_id = p.id join qualifications q on q.person_id = p.id
           where p.email = 'nora-${run}@example.test'`),
   ).toBe("Type 1 diabetes.|RYA Powerboat Level 2|2029-05-01|t|f");
@@ -1293,7 +1295,7 @@ test("an admin adds a contact for the email list, with no membership", async ({ 
   await expect(page.getByRole("heading", { name: "Contact added" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText(`Cass Contact${run} (cass-${run}@example.test) has been added`);
   await expect(page.getByRole("link", { name: "Add another contact" })).toBeVisible();
-  expect(sql(`select is_contact, news_consent, household_id is null from people where email = 'cass-${run}@example.test'`)).toBe("t|t|t");
+  expect(sql(`select is_contact, emails_unsubscribed_at is null, household_id is null from people where email = 'cass-${run}@example.test'`)).toBe("t|t|t");
   // Contacts aren't members, so they aren't on the Members list.
   await page.goto(`/admin/members?q=Contact${run}`);
   await expect(page.getByText(/0 people matching/)).toBeVisible();

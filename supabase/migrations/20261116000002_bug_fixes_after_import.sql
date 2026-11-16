@@ -4,15 +4,15 @@
 --    Uploading the same spreadsheet again fills in first joined dates that are still
 --    blank for people already in the app, without adding anyone twice.
 -- 2. WhatsApp can't be "yes" without a mobile number. Existing rows are tidied up.
--- 3. Club news by email now starts as "yes" for new people.
+-- 3. One email setting, "Club news by email": the date someone unsubscribed
+--    (emails_unsubscribed_at; blank = they get club news). The old news_consent
+--    tick, which nothing used, is removed. Club news starts as yes for new people.
 
--- 2. WhatsApp needs a mobile number. (Also time-stamps club news consent on new
---    people, now that it starts as yes.)
+-- 2. WhatsApp needs a mobile number.
 create or replace function people_whatsapp_needs_mobile()
 returns trigger language plpgsql as $$
 begin
   if nullif(btrim(coalesce(new.mobile, '')), '') is null then new.whatsapp := false; end if;
-  if tg_op = 'INSERT' and new.news_consent and new.news_consent_at is null then new.news_consent_at := now(); end if;
   return new;
 end $$;
 
@@ -22,8 +22,6 @@ create trigger people_whatsapp_needs_mobile before insert or update of mobile, w
 
 update people set whatsapp = false where whatsapp and nullif(btrim(coalesce(mobile, '')), '') is null;
 
--- 3. Club news defaults to yes.
-alter table people alter column news_consent set default true;
 
 -- 1. Import reads first joined.
 create or replace function import_members(p_rows jsonb, p_club_year_id uuid, p_mark_paid boolean default true)
@@ -105,10 +103,10 @@ begin
     end if;
 
     insert into people (household_id, title, first_name, last_name, date_of_birth, email, mobile, whatsapp,
-                        emergency_contact_name, emergency_contact_mobile, first_joined_on, news_consent, news_consent_at)
+                        emergency_contact_name, emergency_contact_mobile, first_joined_on)
     values (hh_id, nullif(r->>'title', ''), r->>'first_name', r->>'last_name', (r->>'date_of_birth')::date,
             nullif(lower(r->>'email'), ''), nullif(r->>'mobile', ''), coalesce((r->>'whatsapp')::boolean, false),
-            nullif(r->>'emergency_contact_name', ''), nullif(r->>'emergency_contact_mobile', ''), joined, true, now())
+            nullif(r->>'emergency_contact_name', ''), nullif(r->>'emergency_contact_mobile', ''), joined)
     returning id into person;
     people_made := people_made + 1;
     insert into import_people values (hh_key, person, upper(r->>'member_class'), true);
@@ -157,3 +155,117 @@ begin
                             'skipped', people_skipped, 'memberships', memberships_made,
                             'joined_filled', joined_filled);
 end $$;
+
+
+-- 3. One "Club news by email" setting. Functions that wrote the old tick now set the unsubscribe date
+--    instead (the forms still send "news_consent": true/false).
+create or replace function people_guard_admin_fields() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or has_role('admin') then
+    return new;   -- service role / migrations / admins
+  end if;
+  if current_setting('app.linking_account', true) = 'on'
+     and old.auth_user_id is null and new.auth_user_id = auth.uid() then
+    return new;   -- link_my_account()
+  end if;
+  if current_setting('app.creating_household', true) = 'on'
+     and old.household_id is null and new.id = current_person_id()
+     and new.auth_user_id is not distinct from old.auth_user_id
+     and new.first_joined_on is not distinct from old.first_joined_on
+     and new.archived_at is not distinct from old.archived_at
+     and exists (select 1 from households h where h.id = new.household_id and h.lead_person_id = new.id) then
+    return new;   -- create_my_household()
+  end if;
+  if new.auth_user_id    is distinct from old.auth_user_id
+  or new.first_joined_on is distinct from old.first_joined_on
+  or new.archived_at     is distinct from old.archived_at
+  or new.household_id    is distinct from old.household_id then
+    raise exception 'Only an admin can change login, first joined date, household or archive status';
+  end if;
+  return new;
+end $$;
+
+create or replace function admin_insert_person(hh uuid, x jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  new_id uuid;
+  q      jsonb;
+begin
+  if coalesce(trim(x->>'first_name'), '') = '' or coalesce(trim(x->>'last_name'), '') = '' then
+    raise exception 'First and last name are needed for everyone';
+  end if;
+  if nullif(x->>'date_of_birth', '') is null then
+    raise exception 'Date of birth is needed for everyone';
+  end if;
+  if (x->>'date_of_birth')::date > current_date then
+    raise exception 'Date of birth can''t be in the future';
+  end if;
+  if nullif(trim(x->>'email'), '') is not null and exists (
+       select 1 from people where lower(email) = lower(trim(x->>'email')) and archived_at is null) then
+    raise exception 'Someone already uses that email (%)', lower(trim(x->>'email'));
+  end if;
+  if nullif(trim(x->>'medical_details'), '') is not null and not coalesce((x->>'medical_consent')::boolean, false) then
+    raise exception 'Medical information needs the member''s consent';
+  end if;
+
+  insert into people (household_id, title, first_name, last_name, date_of_birth, email, mobile, whatsapp,
+                      emergency_contact_name, emergency_contact_mobile, first_joined_on,
+                      emails_unsubscribed_at, directory_opt_out)
+  values (hh, nullif(trim(x->>'title'), ''), trim(x->>'first_name'), trim(x->>'last_name'),
+          nullif(x->>'date_of_birth', '')::date, lower(nullif(trim(x->>'email'), '')),
+          nullif(trim(x->>'mobile'), ''), coalesce((x->>'whatsapp')::boolean, false),
+          nullif(trim(x->>'emergency_contact_name'), ''), nullif(trim(x->>'emergency_contact_mobile'), ''),
+          club_today(),
+          case when coalesce((x->>'news_consent')::boolean, true) then null else now() end,
+          coalesce((x->>'directory_opt_out')::boolean, false))
+  returning id into new_id;
+
+  if nullif(trim(x->>'medical_details'), '') is not null then
+    insert into medical_records (person_id, details, consent_given_at, updated_by)
+    values (new_id, trim(x->>'medical_details'), now(), current_person_id());
+  end if;
+
+  for q in select * from jsonb_array_elements(coalesce(x->'qualifications', '[]'::jsonb)) loop
+    if nullif(trim(q->>'name'), '') is not null then
+      insert into qualifications (person_id, name, awarded_on, expires_on)
+      values (new_id, trim(q->>'name'), nullif(q->>'awarded_on', '')::date, nullif(q->>'expires_on', '')::date);
+    end if;
+  end loop;
+  return new_id;
+end $$;
+
+create or replace function admin_add_contact(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_email text := lower(nullif(trim(p->>'email'), ''));
+  new_id  uuid;
+begin
+  if not has_role('admin') then raise exception 'Only an admin can add contacts'; end if;
+  if coalesce(trim(p->>'first_name'), '') = '' or coalesce(trim(p->>'last_name'), '') = '' then
+    raise exception 'First and last name are needed';
+  end if;
+  if v_email is null then raise exception 'An email address is needed for a contact'; end if;
+  if exists (select 1 from people where lower(email) = v_email and archived_at is null) then
+    raise exception 'Someone already uses that email (%)', v_email;
+  end if;
+  insert into people (first_name, last_name, email, mobile, is_contact, emails_unsubscribed_at, directory_opt_out)
+  values (trim(p->>'first_name'), trim(p->>'last_name'), v_email, nullif(trim(p->>'mobile'), ''), true,
+          case when coalesce((p->>'news_consent')::boolean, true) then null else now() end, true)
+  returning id into new_id;
+  return new_id;
+end $$;
+
+create or replace function unsubscribe_by_token(p_token uuid)
+returns text language plpgsql security definer set search_path = public as $$
+declare name text;
+begin
+  update people
+     set emails_unsubscribed_at = coalesce(emails_unsubscribed_at, now())
+   where unsubscribe_token = p_token
+  returning first_name into name;
+  return name;
+end $$;
+
+alter table people drop column news_consent, drop column news_consent_at;
+comment on column people.emails_unsubscribed_at is 'Club news by email: when they unsubscribed (null = they get club news and group emails).';

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { meWithRole, text, whatsappWithoutMobile } from "@/lib/me";
+import { meWithRole, text, unsubscribedAt, whatsappWithoutMobile } from "@/lib/me";
 
 // Each save goes back to the box it came from, with a message inside it.
 function back(id: string, key: "saved" | "error", section: string, anchor: string, editAgain = false): never {
@@ -93,22 +93,11 @@ export async function adminSavePreferences(form: FormData) {
   const { supabase, allowed } = await meWithRole("admin");
   const id = String(form.get("id"));
   if (!allowed) back(id, "error", "preferences", "preferences", true);
-  const consent = form.get("news_consent") === "on";
-  const groupEmails = form.get("group_emails") === "on";
-  const { data: before } = await supabase
-    .from("people")
-    .select("news_consent, emails_unsubscribed_at")
-    .eq("id", id)
-    .single<{ news_consent: boolean; emails_unsubscribed_at: string | null }>();
   const { error } = await supabase
     .from("people")
     .update({
-      news_consent: consent,
-      // Record when consent was given (admins bypass the trigger that normally does this).
-      ...(before?.news_consent !== consent ? { news_consent_at: consent ? new Date().toISOString() : null } : {}),
       directory_opt_out: form.get("directory_listed") !== "on",
-      // Unsubscribed from group emails (keeps the original date if they were already).
-      emails_unsubscribed_at: groupEmails ? null : (before?.emails_unsubscribed_at ?? new Date().toISOString()),
+      emails_unsubscribed_at: unsubscribedAt(form),
     })
     .eq("id", id);
   back(id, error ? "error" : "saved", "preferences", "preferences", Boolean(error));

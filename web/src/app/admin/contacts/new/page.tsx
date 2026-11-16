@@ -38,7 +38,7 @@ export default async function AddContactPage({ searchParams }: PageProps<"/admin
           <Field label="Email" name="email" type="email" required />
           <Field label="Mobile" name="mobile" />
           <div className="sm:col-span-2">
-            <Checkbox label="They've agreed to receive club news by email" name="news_consent" defaultChecked />
+            <Checkbox label="Club news by email" name="news_consent" defaultChecked />
           </div>
           <div className="flex items-center gap-4 sm:col-span-2">
             <SaveButton>Add contact</SaveButton>

@@ -121,9 +121,9 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
 
   const { data: m } = await supabase
     .from("people")
-    .select(`${PERSON_FIELDS}, emails_unsubscribed_at`)
+    .select(PERSON_FIELDS)
     .eq("id", id)
-    .maybeSingle<Person & { emails_unsubscribed_at: string | null }>();
+    .maybeSingle<Person>();
   if (!m) notFound();
 
   const [{ data: household }, { data: family }, { data: history }, { data: quals }, { data: roles }, { data: titleData }, { data: allTitles }] = await Promise.all([
@@ -208,8 +208,9 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
   const today = new Date().toISOString().slice(0, 10);
   const myHistory = ((history ?? []) as History[]).filter((h) => h.person_id === id);
   const relatives = (family ?? []) as Relative[];
-  // Everyone has a family group behind the scenes (it holds their address), so only show a family when there's more than one person in it.
-  const inFamily = Boolean(household) && relatives.length > 1;
+  // Everyone has a family group behind the scenes (it holds their address). Show it as a family for a
+  // Family or Dual membership, or when others are already in the group.
+  const inFamily = Boolean(household) && (relatives.length > 1 || canAddToFamily);
   const qualifications = (quals ?? []) as Qual[];
   const addressLines = household
     ? [household.address_line1, household.address_line2, household.address_line3, household.address_line4, household.postcode].filter(Boolean)
@@ -389,14 +390,7 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
       <Card id="family" title="Family" action={inFamily && edit("family", "main contact")}>
         {messages("family")}
         {!household || !inFamily ? (
-          <>
-            <p className="text-slate-600">Not in a family group.</p>
-            {household && isAdmin && canAddToFamily && (
-              <Link href={`/admin/members/new?household=${household.id}`} className={`mt-3 inline-block ${LINK}`}>
-                Add a new member to this family
-              </Link>
-            )}
-          </>
+          <p className="text-slate-600">Not in a family group.</p>
         ) : (
           <>
             <ul className="divide-y divide-slate-100">
@@ -624,15 +618,14 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
           <form action={adminSavePreferences} className="space-y-3">
             <input type="hidden" name="id" value={m.id} />
             <p className="text-sm text-slate-600">Only change these when the member has asked you to.</p>
-            <Checkbox label="Club news and newsletters by email" name="news_consent" defaultChecked={m.news_consent} />
-            <Checkbox label="Group emails from Communications admin" name="group_emails" defaultChecked={!m.emails_unsubscribed_at} />
+            <input type="hidden" name="unsubscribed_before" value={m.emails_unsubscribed_at ?? ""} />
+            <Checkbox label="Club news by email" name="club_news" defaultChecked={!m.emails_unsubscribed_at} />
             <Checkbox label="Listed in the member directory (name, phone and email)" name="directory_listed" defaultChecked={!m.directory_opt_out} />
             <FormButtons base={base} section="preferences">Save preferences</FormButtons>
           </form>
         ) : (
           <ul className="space-y-1 text-slate-800">
-            <li>Club news by email: {m.news_consent ? "yes" : "no"}</li>
-            <li>Group emails: {m.emails_unsubscribed_at ? `no, unsubscribed ${ukDate(m.emails_unsubscribed_at)}` : "yes"}</li>
+            <li>Club news by email: {m.emails_unsubscribed_at ? `no, unsubscribed ${ukDate(m.emails_unsubscribed_at)}` : "yes"}</li>
             <li>Listed in the member directory: {m.directory_opt_out ? "no" : "yes"}</li>
           </ul>
         )}

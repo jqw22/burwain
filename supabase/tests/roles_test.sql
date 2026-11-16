@@ -72,9 +72,9 @@ end $$;
 select pg_temp.expect_error($q$insert into people (household_id, first_name, last_name, auth_user_id) values ('10000000-0000-0000-0000-000000000001', 'Mal', 'Icious', '00000000-0000-0000-0000-00000000000e')$q$, 'Only an admin');
 select pg_temp.expect_error($q$insert into people (household_id, first_name, last_name) values ('10000000-0000-0000-0000-000000000002', 'Not', 'Mine')$q$, 'row-level security');
 do $$ begin
-  update people set news_consent = false where first_name = 'Alice';
-  update people set news_consent = true where first_name = 'Alice';
-  assert (select news_consent_at is not null from people where first_name = 'Alice'), 'consent should be time-stamped';
+  update people set emails_unsubscribed_at = now() where first_name = 'Alice';
+  assert (select emails_unsubscribed_at is not null from people where first_name = 'Alice'), 'members can turn off club news';
+  update people set emails_unsubscribed_at = null where first_name = 'Alice';
   insert into medical_records (person_id, details, consent_given_at) values ('20000000-0000-0000-0000-00000000000a', 'Asthma', now());
   assert (select count(*) from audit_log) = 0, 'members cannot read the change log';
 end $$;
@@ -242,7 +242,7 @@ begin
   res := import_members(rows, (select id from club_years where label = '2026'));
   assert res = '{"households": 0, "people": 0, "skipped": 6, "memberships": 0, "joined_filled": 0}', 're-run is harmless: ' || res;
   assert (select first_joined_on from people where first_name = 'Kit') = '2019-01-01', 'first joined imported';
-  assert (select news_consent from people where first_name = 'Kit'), 'club news starts as yes';
+  assert (select emails_unsubscribed_at is null from people where first_name = 'Kit'), 'club news starts as yes';
   -- Uploading again with a first joined date fills in a blank one, but leaves existing dates alone.
   res := import_members('[
     {"household_key":"bb11aa|3 shore lane","first_name":"Jo","last_name":"Import","date_of_birth":"1975-04-04","member_class":"F","first_joined_on":"2001-05-01"},
@@ -401,7 +401,7 @@ do $$ declare ivy uuid; jo uuid; hh uuid; m uuid; begin
   assert (select postcode from households where id = hh) = 'BB5 5AA', 'postcode tidied';
   assert (select email from people where id = ivy) = 'ivy@example.com', 'email lower case';
   assert (select first_joined_on from people where id = ivy) = club_today(), 'first joined today';
-  assert (select news_consent and news_consent_at is not null from people where id = ivy), 'news consent recorded';
+  assert (select emails_unsubscribed_at is null from people where id = ivy), 'club news on';
   assert (select details from get_medical_record(ivy)) = 'Asthma', 'medical saved';
   assert (select name from qualifications where person_id = ivy) = 'RYA Level 2', 'qualification saved';
   select m.id into m from memberships m join membership_people mp on mp.membership_id = m.id where mp.person_id = ivy;
@@ -732,7 +732,7 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';
 select pg_temp.expect_error($q$select admin_add_contact('{"first_name":"Cy","last_name":"Contact"}')$q$, 'email address is needed');
 do $$ declare c uuid; begin
   c := admin_add_contact('{"first_name":"Cy","last_name":"Contact","email":"Cy@Example.com","news_consent":true}');
-  assert (select is_contact and news_consent and household_id is null and email = 'cy@example.com' from people where id = c), 'contact added';
+  assert (select is_contact and emails_unsubscribed_at is null and household_id is null and email = 'cy@example.com' from people where id = c), 'contact added';
   assert not exists (select 1 from membership_people where person_id = c), 'no membership';
 end $$;
 reset role;
@@ -916,7 +916,7 @@ reset role;
   select 1/0;
 \endif
 do $$ begin
-  assert (select emails_unsubscribed_at is not null and not news_consent from people where email = 'cy@example.com'), 'unsubscribed';
+  assert (select emails_unsubscribed_at is not null from people where email = 'cy@example.com'), 'unsubscribed';
 end $$;
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a7';

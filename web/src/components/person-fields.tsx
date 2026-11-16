@@ -98,7 +98,7 @@ export function PersonFields({
           <h3 className="font-medium">Communication preferences</h3>
           {/* Both ticked to start with; after a failed save, keep what was chosen. */}
           <Checkbox
-            label="Happy to receive club news by email"
+            label="Club news by email"
             name={k("news_consent")}
             defaultChecked={submitted(values) ? v("news_consent") === "on" : true}
           />
