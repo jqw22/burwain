@@ -156,12 +156,15 @@ test("a member signs in with an email link and sees their membership", async ({ 
   const bar = page.getByRole("banner").getByRole("link");
   await expect(bar).toHaveText(["Home", "Member", "Directory", "Calendar", "Volunteer", "Handbook"]);
   await expect(page.getByRole("banner").getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
-  for (const [name, path] of [["Calendar", "/calendar"], ["Volunteer", "/volunteer"]]) {
-    await page.getByRole("banner").getByRole("link", { name }).click();
-    await expect(page).toHaveURL(new RegExp(`${path}$`));
-    await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
-    await expect(page.getByText("Coming soon")).toBeVisible();
-  }
+  await page.getByRole("banner").getByRole("link", { name: "Calendar" }).click();
+  await expect(page).toHaveURL(/\/calendar$/);
+  await expect(page.getByRole("heading", { name: "Calendar", exact: true })).toBeVisible();
+  await expect(page.getByText("Coming soon")).toBeVisible();
+  // Volunteer opens the Volunteering page with the jobs box.
+  await page.getByRole("banner").getByRole("link", { name: "Volunteer" }).click();
+  await expect(page).toHaveURL(/\/volunteer$/);
+  await expect(page.getByRole("heading", { name: "Volunteering", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Jobs that need doing..." })).toContainText("Simply click the + icon");
   // The Admin page sends members back to Home.
   await page.goto("/admin");
   await expect(page).toHaveURL(/localhost:3100\/$/);
