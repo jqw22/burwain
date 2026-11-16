@@ -1205,6 +1205,8 @@ test("a superadmin gives a member access and a club title, which shows at the to
   await page.goto("/directory");
   const officers = page.getByRole("table", { name: "Club officers" });
   await expect(officers.getByRole("row", { name: new RegExp(`Commodore ${run}`) })).toContainText(`Alex Tester${run}`);
+  // ...and aren't repeated in the member list below.
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Alex`) })).toHaveCount(0);
   await shot(page, "directory-officers");
   await ctx.close();
 
