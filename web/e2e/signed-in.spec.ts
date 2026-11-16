@@ -870,8 +870,8 @@ test("finance fills in a monthly budget in whole pounds with income and expendit
   // Clearing a cell removes the figure.
   await page.getByLabel("Insurance Jan 2031").fill("");
   await page.getByRole("button", { name: "Save budget" }).click();
-  await expect(page.getByText("Budget for 2031 saved.")).toBeVisible();
-  expect(sql(`select count(*) from budget_amounts where year = 2031`)).toBe("2");
+  // The "saved" message is still showing from the first save, so wait for the database instead.
+  await expect.poll(() => sql(`select count(*) from budget_amounts where year = 2031`)).toBe("2");
   sql(`delete from budget_amounts where year = 2031`);
 });
 
