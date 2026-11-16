@@ -403,7 +403,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await expect(page.getByRole("banner").getByRole("link")).toHaveText(["Home", "Directory", "Calendar", "Volunteer", "Handbook", "My Details", "Admin"]);
   await expect(page.getByRole("banner").getByRole("link", { name: "Admin" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: /^Welcome/ })).toHaveCount(0);
-  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Club titles", "Import", "Public join form"]);
+  expect(await links("Membership admin")).toEqual(["Members", "Applications", "Membership types", "Boats", "Club titles", "Import", "Public join form"]);
   expect(await links("Communications admin")).toEqual(["Send email", "Add contact", "Templates", "Email log"]);
   expect(await links("Finance admin")).toEqual(["Transactions", "Income", "Actual", "Budget", "Categories"]);
 
@@ -411,7 +411,7 @@ test("an admin's home page has Membership admin, Communications admin and Financ
   await section("Membership admin").getByRole("link", { name: "Members", exact: true }).click();
   const bar = page.getByRole("navigation", { name: "Membership admin" });
   await expect(page.getByRole("heading", { name: "Membership", exact: true })).toBeVisible();
-  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Club titles", "Import"]);
+  await expect(bar.getByRole("link")).toHaveText(["Members", "Applications", "Membership types", "Boats", "Club titles", "Import"]);
   // The heading row links between the three admin areas; the one you're in is the heading.
   const areas = page.getByRole("navigation", { name: "Admin areas" });
   await expect(areas.getByRole("link")).toHaveText(["Membership", "Communications", "Finance"]);
@@ -1236,6 +1236,7 @@ test("a finance login can look at Membership and Communications admin but not ch
     "Members",
     "Applications",
     "Membership types",
+    "Boats",
     "Club titles",
     "Public join form",
   ]);
@@ -1372,6 +1373,38 @@ test("an admin changes boat storage prices, and adds and removes boats on a memb
   // The admin's own Member page only shows their own family's boats, not the boat just added for someone else.
   await page.goto("/profile");
   await expect(page.getByText("Mirror 70001")).toHaveCount(0);
+});
+
+test("an admin sees every boat on the Boats list, sortable, with past paid-to dates in red", async ({ browser }) => {
+  const id = sql(`select id from people where email = '${leadEmail}'`);
+  const opt = sql(`select id from boat_storage_options where members_rate`);
+  sql(`insert into boat_storages (person_id, option_id, boat_class, sail_number, price_pence, status, starts_on, ends_on) values
+        ('${id}', '${opt}', 'Aero', 'B${run}', 3500, 'active', '2020-01-01', '2020-12-31'),
+        ('${id}', '${opt}', 'Aero', 'B${run}', 3500, 'active', '2099-01-01', '2099-12-31'),
+        ('${id}', '${opt}', 'Zest', 'P${run}', 3500, 'active', '2020-01-01', '2020-12-31'),
+        ('${id}', '${opt}', 'Albacore', 'U${run}', 3500, 'awaiting_payment', '2099-01-01', '2099-12-31')`);
+  const page = await adminPage(browser);
+  await page.goto("/admin/members");
+  await page.getByRole("link", { name: "Boats", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/boats$/);
+  // The same boat booked for two periods shows once, paid to its latest date.
+  const current = page.getByRole("row", { name: new RegExp(`B${run}`, "i") });
+  await expect(current).toHaveCount(1);
+  await expect(current.getByRole("cell").last()).toHaveText("31 Dec 2099");
+  await expect(current.getByRole("cell").last()).not.toHaveClass(/text-red/);
+  const past = page.getByRole("row", { name: new RegExp(`P${run}`, "i") }).getByRole("cell").last();
+  await expect(past).toHaveText("31 Dec 2020");
+  await expect(past).toHaveClass(/font-bold/);
+  await expect(past).toHaveClass(/text-red/);
+  const unpaid = page.getByRole("row", { name: new RegExp(`U${run}`, "i") }).getByRole("cell").last();
+  await expect(unpaid).toHaveText("Not paid");
+  await expect(unpaid).toHaveClass(/text-red/);
+  // Sorted by boat type: Aero, Albacore, Zest for this member.
+  await page.getByRole("link", { name: "Boat type" }).click();
+  await expect(page).toHaveURL(/sort=type/);
+  const sails = (await page.getByRole("row").allInnerTexts()).filter((t) => new RegExp(`\t[BPU]${run}\t`, "i").test(t)).map((t) => t.split("\t")[1]);
+  expect(sails).toEqual(["Aero", "Albacore", "Zest"]);
+  sql(`delete from boat_storages where sail_number in ('B${run}', 'P${run}', 'U${run}')`);
 });
 
 test("an admin adds a membership type, changes its price and makes it inactive", async ({ browser }) => {

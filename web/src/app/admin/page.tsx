@@ -43,6 +43,11 @@ export default async function AdminHomePage() {
               </Link>
             </li>
             <li>
+              <Link href="/admin/boats" className="text-sky-800 underline">
+                Boats
+              </Link>
+            </li>
+            <li>
               <Link href="/admin/titles" className="text-sky-800 underline">
                 Club titles
               </Link>
