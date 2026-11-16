@@ -12,6 +12,7 @@ type Row = {
   email: string | null;
   household_id: string | null;
   is_contact: boolean;
+  first_joined_on: string | null;
   households: { lead_person_id: string | null } | null;
 };
 type Held = {
@@ -19,6 +20,7 @@ type Held = {
   memberships: {
     id: string;
     status: string;
+    price_pence: number;
     membership_types: { name: string; code: string; annual_price_pence: number; starts_on: string; ends_on: string } | null;
   };
 };
@@ -151,7 +153,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
 
   let query = supabase
     .from("people")
-    .select("id, first_name, last_name, date_of_birth, email, household_id, is_contact, households!people_household_id_fkey(lead_person_id)")
+    .select("id, first_name, last_name, date_of_birth, email, household_id, is_contact, first_joined_on, households!people_household_id_fkey(lead_person_id)")
     .is("archived_at", null)
     .order("last_name")
     .order("first_name")
@@ -172,7 +174,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     query,
     supabase
       .from("membership_people")
-      .select("person_id, memberships!inner(id, status, membership_types(name, code, annual_price_pence, starts_on, ends_on))")
+      .select("person_id, memberships!inner(id, status, price_pence, membership_types(name, code, annual_price_pence, starts_on, ends_on))")
       .neq("memberships.status", "cancelled"),
     supabase.rpc("renewal_notice_days"),
     supabase.from("membership_types").select("code, annual_price_pence, starts_on").eq("is_open", true),
@@ -214,6 +216,10 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     byPerson.set(h.person_id, [...(byPerson.get(h.person_id) ?? []), h.memberships]);
   }
 
+  // "First joined" more than a year ago means they were a member before, even if earlier years aren't recorded.
+  const yearAgo = new Date(`${today}T00:00:00Z`);
+  yearAgo.setUTCFullYear(yearAgo.getUTCFullYear() - 1);
+  const joinedLongAgo = (d: string | null) => d !== null && d < yearAgo.toISOString().slice(0, 10);
   const everyone = ((people ?? []) as unknown as Row[]).map((p) => {
     const summary = summarise(byPerson.get(p.id) ?? [], today);
     return {
@@ -221,8 +227,12 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
       ...summary,
       status: (summary.status === "none" && p.is_contact ? "contact" : summary.status) as MembershipStatus,
       renewal: renewalOf(summary, today, noticeDays),
-      // New: their only membership is their first one, and it's running now or starts later.
-      isNew: (byPerson.get(p.id) ?? []).length === 1 && (summary.status === "active" || summary.status === "future"),
+      // New: their only membership is their first one, it's running now or starts later, and their
+      // "first joined" date is blank or within the last year.
+      isNew:
+        (byPerson.get(p.id) ?? []).length === 1 &&
+        (summary.status === "active" || summary.status === "future") &&
+        !joinedLongAgo(p.first_joined_on),
     };
   });
   // Contacts (email list only, no membership) aren't members, so they aren't listed here.
@@ -267,7 +277,8 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     ).length;
   // Money columns, worked out once per membership so a family isn't counted several times.
   // They appear on the first row for that membership (the main contact's, when sorted by name).
-  //   Expected - the fee if an outstanding membership is renewed as it is
+  //   Expected - what's still to pay on a membership awaiting payment (e.g. just added for next year),
+  //              otherwise the fee if an outstanding membership is renewed as it is
   //   Boats    - boat storage expected at renewal: boats stored with it x the members rate
   //   Paid     - received for their latest membership (next period's if renewed), boats included
   const moneyShown = new Set<string>();
@@ -277,10 +288,12 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
     moneyShown.add(latest.id);
     if (p.shown) moneyShown.add(p.shown.id);
     const due = isOutstanding(p.renewal) && p.shown;
+    const paid = paidFor.get(latest.id) ?? null;
+    const owed = latest.status === "awaiting_payment" ? Math.max(latest.price_pence - (paid ?? 0), 0) || null : null;
     return {
-      expected: due ? expectedFee(p.shown) : null,
+      expected: latest.status === "awaiting_payment" ? owed : due ? expectedFee(p.shown) : null,
       boats: due ? boatsFor(p, p.shown!) * boatPrice || null : null,
-      paid: paidFor.get(latest.id) ?? null,
+      paid,
     };
   };
   if (sort === "type") {
@@ -360,12 +373,16 @@ export default async function MembersPage({ searchParams }: PageProps<"/admin/me
           <div className="sm:col-span-2">
             <h2 className="font-medium text-slate-900">Money columns</h2>
             <ul className="mt-1 list-disc space-y-1 pl-5">
-              <li><strong>Expected</strong>: the membership fee if an outstanding renewal is renewed as it is.</li>
+              <li>
+                <strong>Expected</strong>: what&apos;s still to pay on a membership awaiting payment (e.g. someone just added for next
+                year), otherwise the membership fee if an outstanding renewal is renewed as it is.
+              </li>
               <li><strong>Boats</strong>: boat storage expected at renewal (boats stored now at the members&apos; rate).</li>
               <li><strong>Paid</strong>: received for their latest membership (next period&apos;s if they&apos;ve renewed), boat storage included.</li>
               <li>
                 Each is shown once per membership, on the main contact&apos;s row. The totals at the bottom follow the filters, e.g. Outstanding
-                (all) gives the money still to come and Renewal Paid gives renewal income received. <strong>New</strong> shows new members.
+                (all) gives the money still to come and Renewal Paid gives renewal income received. <strong>New</strong> shows new members: their first membership on record, with a &ldquo;first joined&rdquo; date that&apos;s
+                blank or in the last year.
               </li>
             </ul>
           </div>
