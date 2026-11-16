@@ -53,7 +53,7 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
             <TestNotice />
             <p className="text-sm text-slate-700">Your membership is now paid.</p>
             <Link href="/profile#renew" className="inline-block text-sky-800 underline">
-              Back to Member
+              Back to My Details
             </Link>
           </div>
         </Card>
@@ -120,7 +120,7 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
         <Card title="Nothing to pay">
           <p className="text-slate-700">You don&apos;t have any memberships waiting for payment.</p>
           <Link href="/profile#renew" className="mt-3 inline-block text-sky-800 underline">
-            Back to Member
+            Back to My Details
           </Link>
         </Card>
       ) : (
