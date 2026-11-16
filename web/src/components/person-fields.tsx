@@ -69,6 +69,11 @@ export function PersonFields({
             />
             <span className="mt-1 block text-xs text-slate-500">
               Anything the club should know in an emergency. Only the member, their family&apos;s main contact and club admins can see it.
+              See our{" "}
+              <a href="/privacy" target="_blank" className="underline">
+                privacy notice
+              </a>
+              .
             </span>
           </label>
           <Checkbox

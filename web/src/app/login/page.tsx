@@ -101,6 +101,11 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
               Join Burwain
             </Link>
           </p>
+          <p className="mt-2 text-sm text-slate-600">
+            <Link href="/privacy" className="text-sky-800 underline">
+              How we use your information
+            </Link>
+          </p>
         </>
       )}
     </div>

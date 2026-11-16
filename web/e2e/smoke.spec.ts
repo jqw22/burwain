@@ -35,3 +35,11 @@ for (const path of ["/profile", "/admin", "/calendar", "/volunteer", "/handbook"
     await expect(page).toHaveURL(/\/login$/);
   });
 }
+
+test("the privacy notice opens without a login, from the footer", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByRole("contentinfo").getByRole("link", { name: "Privacy notice" }).click();
+  await expect(page).toHaveURL(/\/privacy$/);
+  await expect(page.getByRole("heading", { name: "Privacy notice" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "4. Medical information" })).toBeVisible();
+});
