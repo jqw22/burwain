@@ -23,16 +23,25 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     ]);
     showAdmin = Boolean(isAdmin || isFinance);
   }
+  // The club logo from the email Templates page, shown at the left of the top bar if one has been uploaded.
+  const { data: logoId } = await supabase.rpc("club_logo_id");
+  const logo = typeof logoId === "string" ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={`/email-images/${logoId}`} alt="Burwain" className="-my-2 h-10 w-auto" />
+  ) : null;
   return (
     <html lang="en-GB" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         <header className="border-b border-slate-200 bg-white print:hidden">
           <nav className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-4">
             {signedIn ? (
-              <TopNav showAdmin={showAdmin} />
+              <>
+                {logo}
+                <TopNav showAdmin={showAdmin} />
+              </>
             ) : (
               <>
-                <span className="font-semibold text-sky-900">Burwain</span>
+                {logo ?? <span className="font-semibold text-sky-900">Burwain</span>}
                 <Link href="/login" className="text-sm text-slate-700 hover:text-sky-900">
                   Log in
                 </Link>

@@ -1618,6 +1618,14 @@ test("an admin sends a group email with a logo and a picture, and a contact unsu
   // Template previews show the logo too.
   await page.getByRole("link", { name: `Edit Club news ${run}` }).click();
   await expect(page.getByRole("region", { name: "Preview" }).getByRole("img", { name: "Burwain" })).toBeVisible();
+  // The logo is also at the left of the top bar, sized to fit it, for members and on the login page.
+  const barLogo = page.getByRole("banner").getByRole("img", { name: "Burwain" });
+  await expect(barLogo).toHaveAttribute("src", /^\/email-images\/[0-9a-f-]{36}$/);
+  expect((await barLogo.boundingBox())?.height).toBe(40);
+  const member = await leadPage(browser);
+  await member.goto("/");
+  await expect(member.getByRole("banner").getByRole("img", { name: "Burwain" })).toBeVisible();
+  await member.close();
 
   await page.getByRole("navigation", { name: "Communications admin" }).getByRole("link", { name: "Send email" }).click();
   await expect(page.getByRole("heading", { name: "Send a group email" })).toBeVisible();
