@@ -12,8 +12,10 @@ export default async function DirectoryPage({ searchParams }: PageProps<"/direct
   const q = (typeof params.q === "string" ? params.q : "").trim().slice(0, 100);
   const { supabase } = await requireMe();
   const [{ data }, { data: titleData }] = await Promise.all([supabase.rpc("member_directory"), supabase.rpc("directory_titles")]);
-  const all = (data ?? []) as Entry[];
   const allTitled = (titleData ?? []) as Titled[];
+  // Club officers are listed in their own box, so they aren't repeated in the member list.
+  const officerIds = new Set(allTitled.map((t) => t.id));
+  const all = ((data ?? []) as Entry[]).filter((e) => !officerIds.has(e.id));
   // Search matches any part of the name, mobile, email or membership type, ignoring case and spaces in numbers.
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const entries = all.filter((e) => {
