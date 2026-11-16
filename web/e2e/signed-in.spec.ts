@@ -491,18 +491,24 @@ test("an admin finds a member, edits them and views their medical details", asyn
      where p.email = '${leadEmail}' and current_date between t.starts_on and t.ends_on and m.status <> 'cancelled' limit 1`);
   const gbp = (pence: number) => `£${(pence / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const outstanding = renewal.startsWith("Due");
-  await expect(sam.getByRole("cell").nth(4)).toHaveText(outstanding ? gbp(Number(fee)) : "");
-  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) }).getByRole("cell").nth(4)).toHaveText("");
   // Paid: what was received for the latest membership (boats included), once per membership.
-  const paid = Number(sql(`
+  const [paid, latestStatus, latestPrice] = sql(`
     with latest as (
-      select m.id from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
+      select m.id, m.status, m.price_pence from people p join membership_people mp on mp.person_id = p.id join memberships m on m.id = mp.membership_id
         join membership_types t on t.id = m.membership_type_id
        where p.email = '${leadEmail}' and m.status <> 'cancelled' and t.ends_on >= current_date
        order by t.starts_on desc limit 1)
-    select coalesce(sum(rl.amount_pence), 0) from member_receipt_lines rl join member_receipts r on r.id = rl.receipt_id and r.status = 'paid'
+    select coalesce(sum(rl.amount_pence), 0) || '|' || (select status from latest) || '|' || (select price_pence from latest)
+      from member_receipt_lines rl join member_receipts r on r.id = rl.receipt_id and r.status = 'paid'
       left join boat_storages bs on bs.id = rl.boat_storage_id
-     where rl.membership_id in (select id from latest) or bs.membership_id in (select id from latest)`));
+     where rl.membership_id in (select id from latest) or bs.membership_id in (select id from latest)`)
+    .split("|")
+    .map((v, i) => (i === 1 ? v : Number(v))) as [number, string, number];
+  // A membership awaiting payment shows what's still to pay; otherwise an outstanding renewal shows the renewal fee.
+  const owed = Math.max(latestPrice - paid, 0);
+  const expected = latestStatus === "awaiting_payment" ? (owed ? gbp(owed) : "") : outstanding ? gbp(Number(fee)) : "";
+  await expect(sam.getByRole("cell").nth(4)).toHaveText(expected);
+  await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) }).getByRole("cell").nth(4)).toHaveText("");
   await expect(sam.getByRole("cell").nth(6)).toHaveText(paid ? gbp(paid) : "");
   await expect(page.getByRole("row", { name: new RegExp(`Tester${run}, Robin`) }).getByRole("cell").nth(6)).toHaveText("");
   // A totals row adds up the money columns for the people shown.
