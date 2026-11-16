@@ -21,6 +21,13 @@ export default async function JoinPage() {
           Fill in this form to apply for membership. You pay when you apply. The membership secretary will then
           check it, and once you&apos;re accepted you can log in with your email to see and update your details.
         </p>
+        <p className="text-sm text-slate-600">
+          Our{" "}
+          <a href="/privacy" target="_blank" className="text-sky-800 underline">
+            privacy notice
+          </a>{" "}
+          explains what we do with the information you give us.
+        </p>
       </div>
       {options.length === 0 ? (
         <p className="rounded border border-slate-200 bg-white p-4 text-slate-700">
