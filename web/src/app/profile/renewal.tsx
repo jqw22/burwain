@@ -58,10 +58,11 @@ export async function RenewalCard({
   const [{ data: membershipsData }, { data: dueData }, { data: boatData }] = await Promise.all([
     householdId ? query.eq("household_id", householdId) : query.eq("payer_person_id", personId),
     supabase.rpc("my_renewals"),
-    // The household's boats stored now or later (the page only shows the family's own).
+    // The household's own boats stored now or later. Admins can see every boat, so filter to this family.
     supabase
       .from("boat_storages")
       .select("id, boat_class, sail_number, price_pence, status, starts_on, ends_on")
+      .or(householdId ? `household_id.eq.${householdId},person_id.eq.${personId}` : `person_id.eq.${personId}`)
       .neq("status", "cancelled")
       .gte("ends_on", today)
       .order("starts_on")
