@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { supabaseKey, supabaseUrl } from "./env";
 
-const PUBLIC_PATHS = ["/login", "/auth/", "/join", "/unsubscribe", "/email-images/", "/privacy"];
+const PUBLIC_PATHS = ["/login", "/auth/", "/join", "/unsubscribe", "/email-images/", "/privacy", "/api/stripe/"];
 
 // Refreshes the login session on every request and sends signed-out visitors to /login.
 export async function updateSession(request: NextRequest) {

@@ -564,6 +564,25 @@ select submit_application(jsonb_build_object('type_id', (select type_id from joi
 select pg_temp.expect_error(format('select pay_application_test(%L, %L)', :'pia_submit_application', 'cash'), 'card or Direct Debit');
 select pay_application_test(:'pia_submit_application', 'direct_debit') > 0 as paid \gset
 select pg_temp.expect_error(format('select pay_application_test(%L, %L)', :'pia_submit_application', 'card'), 'can''t be paid');
+-- Card (Stripe): only the server confirms the payment.
+select submit_application(jsonb_build_object('type_id', (select type_id from join_options() where type_name = 'Club Membership' limit 1),
+  'address_line1', '6 Dam Rd', 'postcode', 'bb3 3cc',
+  'people', jsonb_build_array(jsonb_build_object('first_name', 'Cal', 'last_name', 'Card', 'date_of_birth', '1985-01-01', 'email', 'cal@example.com')))) \gset cal_
+select pg_temp.expect_error(format('select confirm_application_card(%L, %L, 1)', :'cal_submit_application', 'cs_x'), 'permission denied');
+select pg_temp.expect_error(format('select application_to_pay(%L)', :'cal_submit_application'), 'permission denied');
+reset role;
+set role service_role;
+select amount_pence as cal_amount from application_to_pay(:'cal_submit_application') \gset
+select pg_temp.expect_error(format('select confirm_application_card(%L, %L, %s)', :'cal_submit_application', 'cs_test_2', :cal_amount + 1), 'doesn''t match');
+select confirm_application_card(:'cal_submit_application', 'cs_test_2', :cal_amount) as ok \gset
+reset role;
+do $$ begin
+  assert (select paid_method::text = 'card' and provider_ref = 'cs_test_2' from membership_applications where contact_email = 'cal@example.com'), 'card payment held on application';
+end $$;
+set role service_role;
+do $$ begin
+  assert not exists (select 1 from application_to_pay((select id from membership_applications where contact_email = 'cal@example.com'))), 'nothing more to pay';
+end $$;
 reset role;
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
@@ -573,7 +592,7 @@ do $$ begin
 end $$;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
 do $$ declare ann uuid; hh uuid; begin
-  assert (select count(*) from pending_applications()) = 3, 'three waiting';
+  assert (select count(*) from pending_applications()) = 4, 'four waiting';
   assert (select paid_method::text from pending_applications() where contact_name = 'Pia Paid') = 'direct_debit', 'paid shown to admins';
   assert (select count(*) from transactions where party = 'Pia Paid') = 0,
     'paying on the join form doesn''t create a finance transaction (finance enters bank lines by hand)';
@@ -829,6 +848,48 @@ do $$ begin
            where rl.membership_id = current_setting('test.alice_m')::uuid) = 0, 'no finance transaction for the test payment';
 end $$;
 reset request.jwt.claim.sub;
+
+\echo 'Card payments (Stripe): a pending receipt first, marked paid only by the server'
+reset role;
+do $$ declare m uuid; begin
+  -- A fresh membership for Alice's household to pay for by card.
+  insert into memberships (club_year_id, membership_type_id, payer_person_id, household_id, price_pence, status)
+  select cy.id, t.id, '20000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-000000000001', 4200, 'awaiting_payment'
+    from membership_types t join club_years cy on cy.label = '2026' where t.code = 'IS' limit 1
+  returning id into m;
+  perform set_config('test.card_m', m::text, false);
+end $$;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';
+select pg_temp.expect_error($q$select start_my_card_payment(array[current_setting('test.card_m')::uuid])$q$, 'Only your own');
+select pg_temp.expect_error($q$select confirm_card_receipt(gen_random_uuid(), 'cs_x', 1)$q$, 'permission denied');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.expect_error($q$select confirm_card_receipt(gen_random_uuid(), 'cs_x', 1)$q$, 'permission denied');
+do $$ declare
+  m uuid := current_setting('test.card_m')::uuid;
+  r1 uuid; r2 uuid; amt int; em text;
+begin
+  select receipt_id into r1 from start_my_card_payment(array[m]);
+  select receipt_id, amount_pence, payer_email into r2, amt, em from start_my_card_payment(array[m]);   -- tried again
+  assert amt = 4200 and em = 'a@example.com', 'amount and email for Stripe';
+  assert (select status::text from member_receipts where id = r1) = 'failed', 'earlier unfinished attempt given up';
+  assert (select status::text from member_receipts where id = r2) = 'pending', 'pending until Stripe confirms';
+  assert (select status::text from memberships where id = m) = 'awaiting_payment', 'not paid yet';
+  perform set_config('test.card_r', r2::text, false);
+end $$;
+reset role;
+set role service_role;
+select pg_temp.expect_error($q$select confirm_card_receipt(current_setting('test.card_r')::uuid, 'cs_test_1', 999)$q$, 'doesn''t match');
+select confirm_card_receipt(current_setting('test.card_r')::uuid, 'cs_test_1', 4200) as ok \gset
+select confirm_card_receipt(current_setting('test.card_r')::uuid, 'cs_test_1', 4200) as ok \gset
+reset role;
+do $$ begin
+  assert (select status = 'paid' and provider_ref = 'cs_test_1' and paid_on is not null from member_receipts
+           where id = current_setting('test.card_r')::uuid), 'receipt paid by card';
+  assert (select status::text from memberships where id = current_setting('test.card_m')::uuid) = 'active', 'membership paid';
+  assert (select count(*) from member_receipts r join member_receipt_lines rl on rl.receipt_id = r.id
+           where rl.membership_id = current_setting('test.card_m')::uuid and r.status = 'paid') = 1, 'paid once';
+end $$;
 
 \echo 'Boat storage: added at checkout, up to 3 per membership, admins add and remove'
 set role authenticated;

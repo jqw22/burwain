@@ -4,7 +4,8 @@ import { MAX_BOATS, type Boat } from "@/lib/boats";
 import { CheckoutForm } from "./checkout-form";
 import { pounds, requireMe } from "@/lib/me";
 import { quote, typeDates, ukToday } from "@/lib/quote";
-import { payTest } from "./actions";
+import { cardPaymentsOn, getCheckout, recordCheckout } from "@/lib/stripe";
+import { payCard, payTest } from "./actions";
 
 type Membership = {
   id: string;
@@ -27,17 +28,53 @@ type Storage = {
 const METHOD: Record<string, string> = { card: "card", direct_debit: "Direct Debit" };
 
 // Checkout after renewing: what's owed for next year and a Pay button.
-// This is a TEST checkout. It doesn't take money, but it records the payment and marks the memberships as paid.
+// With the Stripe keys set, Pay goes to Stripe's secure card payment page and Stripe sends the member
+// back here with ?session_id=. Without them, it's a TEST checkout: no money is taken, but the payment
+// is recorded and the memberships are marked as paid.
 export default async function CheckoutPage({ searchParams }: PageProps<"/profile/checkout">) {
   const params = await searchParams;
   const { supabase, personId } = await requireMe();
+  const card = cardPaymentsOn();
 
-  if (typeof params.receipt === "string") {
+  let receiptId = typeof params.receipt === "string" ? params.receipt : null;
+  if (card && typeof params.session_id === "string") {
+    // Back from Stripe. Record the payment now rather than wait for Stripe's webhook.
+    let paid = false;
+    try {
+      const session = await getCheckout(params.session_id);
+      const done = await recordCheckout(session);
+      if (done?.kind === "receipt") {
+        receiptId = done.id;
+        paid = true;
+      }
+    } catch (e) {
+      console.error("Stripe return", e);
+    }
+    if (!paid) {
+      return (
+        <div className="space-y-6">
+          <h1 className="text-2xl font-semibold">Checkout</h1>
+          <Card title="Waiting for confirmation">
+            <p className="text-slate-700">
+              Thank you. We&apos;re waiting for confirmation of your card payment, which usually takes a few moments. Please
+              refresh this page shortly. If your membership still shows as awaiting payment later today, contact the
+              membership secretary.
+            </p>
+            <Link href="/profile#renew" className="mt-3 inline-block text-sky-800 underline">
+              Back to Member
+            </Link>
+          </Card>
+        </div>
+      );
+    }
+  }
+
+  if (receiptId) {
     const { data: receipt } = await supabase
       .from("member_receipts")
-      .select("amount_pence, method")
-      .eq("id", params.receipt)
-      .maybeSingle<{ amount_pence: number; method: string }>();
+      .select("amount_pence, method, provider_ref")
+      .eq("id", receiptId)
+      .maybeSingle<{ amount_pence: number; method: string; provider_ref: string | null }>();
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold">Checkout</h1>
@@ -50,7 +87,7 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
                 ? `Your payment of ${pounds(receipt.amount_pence)} by ${METHOD[receipt.method] ?? receipt.method} is confirmed.`
                 : "Your payment is confirmed."}
             </p>
-            <TestNotice />
+            {!receipt?.provider_ref && <TestNotice />}
             <p className="text-sm text-slate-700">Your membership is now paid.</p>
             <Link href="/profile#renew" className="inline-block text-sky-800 underline">
               Back to My Details
@@ -109,6 +146,11 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Checkout</h1>
       {params.renewed && <Notice message="Renewed. Here's what to pay." />}
+      {params.cancelled && (
+        <p className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-900" role="status">
+          Payment cancelled. Nothing has been taken. You can try again below.
+        </p>
+      )}
       {params.error && (
         <p className="rounded border border-red-300 bg-red-50 p-3 text-red-800" role="alert">
           {params.error === "boats"
@@ -125,7 +167,8 @@ export default async function CheckoutPage({ searchParams }: PageProps<"/profile
         </Card>
       ) : (
         <CheckoutForm
-          action={payTest}
+          action={card ? payCard : payTest}
+          card={card}
           lines={[
             ...owed.map((m) => ({
               id: m.id,

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { cardPaymentsOn } from "@/lib/stripe";
 import { JoinForm, type JoinOption } from "./join-form";
 
 export const metadata: Metadata = { title: "Join Burwain" };
@@ -34,7 +35,7 @@ export default async function JoinPage() {
           Joining isn&apos;t open at the moment. Please contact the membership secretary.
         </p>
       ) : (
-        <JoinForm options={options} boatPrice={Number(boatPrice) || 0} />
+        <JoinForm options={options} boatPrice={Number(boatPrice) || 0} card={cardPaymentsOn()} />
       )}
     </div>
   );
