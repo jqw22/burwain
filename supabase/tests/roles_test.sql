@@ -1230,4 +1230,95 @@ do $$ begin
   assert not (select whatsapp from people where first_name = 'Will'), 'removing the mobile turns WhatsApp off';
 end $$;
 
+\echo 'Volunteering: adults put themselves down, main contacts their family, names follow the Directory'
+-- Vic (main contact) with adult Val and junior Vin; Ola in another family and opted out of the Directory.
+insert into auth.users values ('00000000-0000-0000-0000-0000000000c1'), ('00000000-0000-0000-0000-0000000000c2'),
+  ('00000000-0000-0000-0000-0000000000c3'), ('00000000-0000-0000-0000-0000000000c4');
+insert into households (id, address_line1, postcode) values
+  ('10000000-0000-0000-0000-0000000000c1', '1 Volunteer Way', 'BB8 9VV'),
+  ('10000000-0000-0000-0000-0000000000c2', '2 Volunteer Way', 'BB8 9VW');
+insert into people (id, auth_user_id, household_id, first_name, last_name, date_of_birth, email, directory_opt_out) values
+  ('20000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-0000000000c1', 'Vic', 'Vol', '1975-01-01', 'vic@example.com', false),
+  ('20000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000c2', '10000000-0000-0000-0000-0000000000c1', 'Val', 'Vol', '1977-01-01', 'val@example.com', false),
+  ('20000000-0000-0000-0000-0000000000c3', '00000000-0000-0000-0000-0000000000c3', '10000000-0000-0000-0000-0000000000c1', 'Vin', 'Vol', '2015-01-01', 'vin@example.com', false),
+  ('20000000-0000-0000-0000-0000000000c4', '00000000-0000-0000-0000-0000000000c4', '10000000-0000-0000-0000-0000000000c2', 'Ola', 'Out', '1985-01-01', 'ola@example.com', true);
+update households set lead_person_id = '20000000-0000-0000-0000-0000000000c1' where id = '10000000-0000-0000-0000-0000000000c1';
+update households set lead_person_id = '20000000-0000-0000-0000-0000000000c4' where id = '10000000-0000-0000-0000-0000000000c2';
+with m as (
+  insert into memberships (club_year_id, membership_type_id, payer_person_id, household_id, status, price_pence)
+  select (select id from club_years where starts_on = '2026-01-01'), (select id from membership_types where code = 'IS' and starts_on = '2026-01-01'),
+         x.id, x.household_id, 'active', 0
+    from people x where x.id in ('20000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c2', '20000000-0000-0000-0000-0000000000c3', '20000000-0000-0000-0000-0000000000c4')
+  returning id, payer_person_id)
+insert into membership_people (membership_id, person_id) select id, payer_person_id from m;
+insert into volunteer_jobs (id, title, helpers_needed) values
+  ('30000000-0000-0000-0000-0000000000c1', 'Paint the boathouse', 3),
+  ('30000000-0000-0000-0000-0000000000c2', 'Clear the slipway', null);
+
+set role authenticated;
+-- Val (adult, not the main contact) can put down only herself.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c2';
+do $$ begin
+  assert (select array_agg(first_name) from my_volunteer_people()) = '{Val}', 'Val can put down only herself';
+  perform volunteer_sign_up('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c2');
+  perform volunteer_sign_up('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c2');  -- twice is fine
+  assert (select count(*) from volunteer_signups) = 0, 'members cannot read sign-ups directly';
+  assert (select count(*) from volunteer_signup_names()) = 1, 'one sign-up';
+end $$;
+select pg_temp.expect_error($q$select volunteer_sign_up('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c3')$q$, 'own family');
+select pg_temp.expect_error($q$insert into volunteer_signups (job_id, person_id) values ('30000000-0000-0000-0000-0000000000c2', '20000000-0000-0000-0000-0000000000c2')$q$, 'row-level security');
+select pg_temp.expect_error($q$insert into volunteer_jobs (title) values ('Sneaky job')$q$, 'row-level security');
+
+-- Vin (junior) can't put himself down, even with a login.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c3';
+do $$ begin assert (select count(*) from my_volunteer_people()) = 0, 'juniors cannot put themselves down'; end $$;
+select pg_temp.expect_error($q$select volunteer_sign_up('30000000-0000-0000-0000-0000000000c2', '20000000-0000-0000-0000-0000000000c3')$q$, 'own family');
+
+-- Vic, the main contact, puts down junior Vin.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c1';
+do $$ begin
+  assert (select array_agg(first_name order by first_name) from my_volunteer_people()) = '{Val,Vic,Vin}', 'main contact can put down the whole family';
+  assert (select first_name from my_volunteer_people() limit 1) = 'Vic', 'themselves first';
+  perform volunteer_sign_up('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c3');
+end $$;
+
+-- Ola (other family, opted out of the Directory) fills the last place; the job is then full.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c4';
+do $$ begin
+  perform volunteer_sign_up('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c4');
+  -- Ola sees Val (in the Directory) and herself, but not junior Vin's name.
+  assert (select count(*) from volunteer_signup_names() where job_id = '30000000-0000-0000-0000-0000000000c1') = 3, 'three helpers';
+  assert (select array_agg(first_name order by first_name) from volunteer_signup_names() where first_name is not null) = '{Ola,Val}', 'junior not named to others';
+end $$;
+select pg_temp.expect_error($q$select volunteer_withdraw('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c2')$q$, 'own family');
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c2';
+do $$ begin
+  -- Val sees her family (Vin) but not Ola, who is out of the Directory.
+  assert (select array_agg(first_name order by first_name) from volunteer_signup_names() where first_name is not null) = '{Val,Vin}', 'Ola hidden, family shown';
+end $$;
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c1';
+select pg_temp.expect_error($q$select volunteer_sign_up('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c1')$q$, 'all the helpers');
+do $$ begin
+  perform volunteer_withdraw('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c2');   -- main contact takes Val off
+  perform volunteer_sign_up('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c1');
+end $$;
+
+-- Dave (superadmin) sees every name, marks the job done; sign-ups stay for the record.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+do $$ begin
+  assert (select count(*) from volunteer_signups where job_id = '30000000-0000-0000-0000-0000000000c1') = 3, 'admins read sign-ups';
+  update volunteer_jobs set done_at = now() where id = '30000000-0000-0000-0000-0000000000c1';
+end $$;
+select pg_temp.expect_error($q$delete from volunteer_jobs where id = '30000000-0000-0000-0000-0000000000c1'$q$, 'foreign key');
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c1';
+select pg_temp.expect_error($q$select volunteer_sign_up('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c2')$q$, 'no longer open');
+select pg_temp.expect_error($q$select volunteer_withdraw('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c1')$q$, 'no longer open');
+do $$ begin assert (select count(*) from volunteer_signup_names()) = 0, 'finished jobs drop off the list'; end $$;
+reset role;
+reset request.jwt.claim.sub;
+do $$ begin assert (select count(*) from volunteer_signups) = 3, 'sign-ups kept on finished jobs'; end $$;
+
 \echo 'All database tests passed'
