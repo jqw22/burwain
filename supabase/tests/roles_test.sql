@@ -1000,6 +1000,40 @@ reset role;
   select 1/0;
 \endif
 
+\echo 'Club news: members read, only admins add, edit and delete'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+do $$ begin
+  insert into news_posts (title, body) values ('Work party', '<p>Saturday 10am.</p>');
+  update news_posts set pinned = true where title = 'Work party';
+  assert (select pinned from news_posts where title = 'Work party'), 'admins can edit news';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ begin
+  assert (select count(*) from news_posts where title = 'Work party') = 1, 'members read news';
+  update news_posts set title = 'changed by a member';
+  delete from news_posts;
+  assert (select count(*) from news_posts where title = 'Work party') = 1, 'members cannot change or delete news';
+  insert into news_posts (title) values ('member post');
+  assert false, 'members cannot add news';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+reset request.jwt.claim.sub;
+set role anon;
+select count(*) = 0 as news_hidden from news_posts \gset
+reset role;
+\if :news_hidden
+\else
+  \echo 'club news should not be public'
+  select 1/0;
+\endif
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+delete from news_posts where title = 'Work party';
+reset role;
+reset request.jwt.claim.sub;
+
 \echo 'Budget: finance enters monthly figures, admins only look, members see nothing'
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';

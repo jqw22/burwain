@@ -5,6 +5,8 @@ import { fillPlaceholders, groupEmailHtml, groupEmailText, unknownGroupPlacehold
 import { logoUrl } from "@/lib/email-images";
 import { sendEmails, type OutgoingEmail } from "@/lib/mailer";
 import { meWithRole } from "@/lib/me";
+import { forEveryone, newsHtmlFromEmail } from "@/lib/news";
+import { revalidatePath } from "next/cache";
 
 export type SendState = { ok: boolean; message: string; sentAt?: number } | null;
 
@@ -116,7 +118,22 @@ export async function sendGroupEmail(_prev: SendState, form: FormData): Promise<
   );
   const sent = results.filter((r) => r.ok).length;
   await supabase.from("email_campaigns").update({ sent_at: now, recipient_count: sent }).eq("id", campaign.id);
+
+  // Also posted on Club news when ticked, once at least one email has gone.
+  let posted = "";
+  if (form.get("post_news") === "on" && sent > 0) {
+    const { error: newsError } = await supabase.from("news_posts").insert({
+      title: forEveryone(subject).trim() || subject,
+      body: newsHtmlFromEmail(body),
+      email_campaign_id: campaign.id,
+      created_by: personId,
+      updated_by: personId,
+    });
+    posted = newsError ? " It couldn't be posted on Club news, so please add it there by hand." : " It's also on Club news.";
+    if (!newsError) revalidatePath("/");
+  }
+
   const failed = results.find((r) => !r.ok);
-  if (failed && !failed.ok) return { ok: false, message: `Sent ${sent} of ${list.length}. The rest weren't sent: ${failed.error}` };
-  return { ok: true, message: `Sent your email to ${sent} ${sent === 1 ? "person" : "people"}.`, sentAt: Date.now() };
+  if (failed && !failed.ok) return { ok: false, message: `Sent ${sent} of ${list.length}. The rest weren't sent: ${failed.error}.${posted}` };
+  return { ok: true, message: `Sent your email to ${sent} ${sent === 1 ? "person" : "people"}.${posted}`, sentAt: Date.now() };
 }
