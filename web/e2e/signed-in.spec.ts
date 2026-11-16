@@ -1845,8 +1845,10 @@ test("an admin adds a volunteering job; the main contact puts themselves and the
   const member = await leadPage(browser);
   await member.goto("/volunteer");
   const memberJob = member.getByRole("region", { name: `Paint the boathouse ${run}` });
+  // (Other tests may have added more people to Sam's family, so check these three rather than the full list.)
   const buttons = memberJob.getByRole("group", { name: `Volunteer for Paint the boathouse ${run}` }).getByRole("button");
-  await expect(buttons).toHaveText(["+ Sam (you)", "+ Alex", "+ Robin"]);
+  await expect(buttons.first()).toHaveText("+ Sam (you)");
+  for (const name of ["Alex", "Robin"]) await expect(buttons.filter({ hasText: `+ ${name}` })).toHaveCount(1);
   await expect(memberJob.getByRole("link", { name: /^Edit/ })).toHaveCount(0);
   await memberJob.getByRole("button", { name: `Put Sam down for Paint the boathouse ${run}` }).click();
   await expect(memberJob.getByRole("button", { name: `Take Sam off Paint the boathouse ${run}` })).toHaveText("✓ Sam (you)");
