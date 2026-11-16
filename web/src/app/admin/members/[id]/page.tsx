@@ -4,7 +4,7 @@ import { NotAllowed, STATUS_LABEL } from "@/components/admin";
 import { WhatsAppLink } from "@/components/whatsapp-link";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
 import { EditLink, FormButtons, Item, LINK } from "@/app/profile/ui";
-import { adminAccess, ageOn, PERSON_FIELDS, pounds, ukDate, type Person } from "@/lib/me";
+import { adminAccess, ageOn, PERSON_FIELDS, pounds, ukDate, WHATSAPP_NEEDS_MOBILE, type Person } from "@/lib/me";
 import { RenewForm, type RenewPerson, type RenewType } from "@/app/profile/renew-form";
 import { quote, typeDates, ukToday } from "@/lib/quote";
 import {
@@ -62,6 +62,7 @@ const SAVED: Record<string, string> = {
   title: "Club titles updated.",
 };
 const ERRORS: Record<string, string> = {
+  whatsapp: WHATSAPP_NEEDS_MOBILE,
   details: "We couldn't save those details. Please check them and try again.",
   address: "We couldn't save the address. Please try again.",
   lead: "We couldn't change the main contact. Please try again.",
@@ -82,6 +83,7 @@ const ERRORS: Record<string, string> = {
 };
 const SECTION: Record<string, string> = {
   details: "contact",
+  whatsapp: "contact",
   address: "address",
   lead: "family",
   medical: "medical",
@@ -206,6 +208,8 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
   const today = new Date().toISOString().slice(0, 10);
   const myHistory = ((history ?? []) as History[]).filter((h) => h.person_id === id);
   const relatives = (family ?? []) as Relative[];
+  // Everyone has a family group behind the scenes (it holds their address), so only show a family when there's more than one person in it.
+  const inFamily = Boolean(household) && relatives.length > 1;
   const qualifications = (quals ?? []) as Qual[];
   const addressLines = household
     ? [household.address_line1, household.address_line2, household.address_line3, household.address_line4, household.postcode].filter(Boolean)
@@ -382,10 +386,17 @@ export default async function AdminMemberPage({ params, searchParams }: PageProp
         )}
       </Card>
 
-      <Card id="family" title="Family" action={household && edit("family", "main contact")}>
+      <Card id="family" title="Family" action={inFamily && edit("family", "main contact")}>
         {messages("family")}
-        {!household ? (
-          <p className="text-slate-600">Not in a family group.</p>
+        {!household || !inFamily ? (
+          <>
+            <p className="text-slate-600">Not in a family group.</p>
+            {household && isAdmin && canAddToFamily && (
+              <Link href={`/admin/members/new?household=${household.id}`} className={`mt-3 inline-block ${LINK}`}>
+                Add a new member to this family
+              </Link>
+            )}
+          </>
         ) : (
           <>
             <ul className="divide-y divide-slate-100">

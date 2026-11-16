@@ -1,10 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireMe, text } from "@/lib/me";
+import { requireMe, text, whatsappWithoutMobile } from "@/lib/me";
 
 export async function saveDetails(form: FormData) {
   const { supabase, personId } = await requireMe();
+  if (whatsappWithoutMobile(form)) redirect("/profile?edit=contact&error=whatsapp#contact");
   const { error } = await supabase
     .from("people")
     .update({
@@ -104,6 +105,7 @@ export async function addFamilyMember(form: FormData) {
 export async function saveFamilyMember(form: FormData) {
   const { supabase } = await requireMe();
   const id = String(form.get("id"));
+  if (whatsappWithoutMobile(form)) redirect(`/profile/member/${id}?error=whatsapp`);
   const { error } = await supabase
     .from("people")
     .update({

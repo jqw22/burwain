@@ -234,6 +234,12 @@ test("the family lead sees the family on Your details and manages family members
   await page.getByRole("link", { name: `Edit Robin Tester${run}` }).click();
   // Wait for the page to finish loading, or the browser can reset a box typed into too early.
   await page.waitForLoadState("networkidle");
+  // WhatsApp needs a mobile number.
+  await page.getByLabel("Happy to be contacted on WhatsApp").check();
+  await page.getByRole("button", { name: "Save details" }).click();
+  await expect(page.getByText("To tick WhatsApp, please add a mobile number too.")).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Mobile", { exact: true }).fill("07700 900789");
   await page.getByLabel("Happy to be contacted on WhatsApp").check();
   await page.getByRole("button", { name: "Save details" }).click();
   await expect(page.getByText("Details saved.")).toBeVisible();

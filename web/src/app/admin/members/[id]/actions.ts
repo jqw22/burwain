@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { meWithRole, text } from "@/lib/me";
+import { meWithRole, text, whatsappWithoutMobile } from "@/lib/me";
 
 // Each save goes back to the box it came from, with a message inside it.
 function back(id: string, key: "saved" | "error", section: string, anchor: string, editAgain = false): never {
@@ -12,6 +12,7 @@ export async function adminSaveMember(form: FormData) {
   const { supabase, allowed } = await meWithRole("admin");
   const id = String(form.get("id"));
   if (!allowed) back(id, "error", "details", "contact", true);
+  if (whatsappWithoutMobile(form)) back(id, "error", "whatsapp", "contact", true);
   const { error } = await supabase
     .from("people")
     .update({

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Card, Checkbox, Field, Notice, SaveButton } from "@/components/fields";
-import { PERSON_FIELDS, ageOn, requireMe, ukDate, type Person } from "@/lib/me";
+import { PERSON_FIELDS, ageOn, requireMe, ukDate, WHATSAPP_NEEDS_MOBILE, type Person } from "@/lib/me";
 import {
   addQualification,
   removeQualification,
@@ -23,6 +23,7 @@ const SAVED: Record<string, string> = {
   renewed: "Renewed. It's shown below with the amount to pay. You can renew the others now, or pay first.",
 };
 const ERRORS: Record<string, string> = {
+  whatsapp: WHATSAPP_NEEDS_MOBILE,
   details: "We couldn't save your details. Please check them and try again.",
   preferences: "We couldn't save your preferences. Please try again.",
   medical: "We couldn't save your medical information. Please try again.",
@@ -48,6 +49,7 @@ const ERRORS: Record<string, string> = {
 
 const SECTION: Record<string, string> = {
   details: "contact",
+  whatsapp: "contact",
   add: "family",
   household: "family",
   address: "address",
@@ -194,6 +196,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
         )}
       </Card>
 
+      {family.length > 0 && (
       <Card
         id="family"
         title="Your family"
@@ -245,6 +248,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
           </>
         )}
       </Card>
+      )}
 
       {household && (
         <Card

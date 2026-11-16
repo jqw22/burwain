@@ -36,6 +36,13 @@ export function text(form: FormData, name: string): string | null {
   return v === "" ? null : v;
 }
 
+// WhatsApp ticked but no mobile number given (prefix is for the p0_, p1_... fields on Join and Add new member).
+export function whatsappWithoutMobile(form: FormData, prefix = ""): boolean {
+  return form.get(`${prefix}whatsapp`) === "on" && !text(form, `${prefix}mobile`);
+}
+
+export const WHATSAPP_NEEDS_MOBILE = "To tick WhatsApp, please add a mobile number too.";
+
 // The signed-in member plus whether they hold a role (superadmins pass every check).
 export async function meWithRole(role: "admin" | "finance" | "superadmin") {
   const me = await requireMe();
