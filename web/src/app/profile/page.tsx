@@ -196,7 +196,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
         )}
       </Card>
 
-      {family.length > 0 && (
+      {(!household || family.length > 0) && (
       <Card
         id="family"
         title="Your family"
