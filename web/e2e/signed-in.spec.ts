@@ -159,7 +159,7 @@ test("a member signs in with an email link and sees their membership", async ({ 
   await page.getByRole("banner").getByRole("link", { name: "Calendar" }).click();
   await expect(page).toHaveURL(/\/calendar$/);
   await expect(page.getByRole("heading", { name: "Calendar", exact: true })).toBeVisible();
-  await expect(page.getByText("Coming soon")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Past events" })).toBeVisible();
   // Volunteer opens the Volunteering page with the jobs box.
   await page.getByRole("banner").getByRole("link", { name: "Volunteer" }).click();
   await expect(page).toHaveURL(/\/volunteer$/);
@@ -1918,6 +1918,86 @@ test("an admin adds a volunteering job; the main contact puts themselves and the
   await member.goto("/volunteer");
   await expect(member.getByRole("region", { name: `Paint the boathouse ${run}` })).toHaveCount(0);
   await expect(member.getByRole("region", { name: "Finished jobs" })).toHaveCount(0);
+});
+
+test("an admin adds a sailing event with duties; members take a duty, say who's going, and see it on Home", async ({ browser }) => {
+  // Events a week and two weeks ahead (dates as the UK sees them).
+  const ahead = (days: number) => new Date(Date.now() + days * 864e5).toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+  const page = await adminPage(browser);
+  await page.goto("/calendar");
+  await page.getByRole("link", { name: "+ Add event" }).click();
+  await expect(page).toHaveURL(/\/calendar\/new$/);
+  await page.getByLabel("Type").selectOption("sailing");
+  await page.getByLabel("Title").fill(`Sunday racing ${run}`);
+  await page.getByLabel("Date").fill(ahead(7));
+  await page.getByLabel("Start time").fill("10:30");
+  // Sailing events have Officer and Assistant; the admin fills the Officer and leaves the Assistant empty.
+  await expect(page.getByLabel("Trainer")).toHaveCount(0);
+  await page.getByLabel("Officer").selectOption({ label: `Alex Tester${run}` });
+  await page.getByRole("button", { name: "Add event" }).click();
+  await expect(page.getByRole("status")).toContainText("Event saved.");
+  const event = page.getByRole("listitem", { name: `Sunday racing ${run}` });
+  await expect(event).toContainText("10:30");
+  await expect(event).toContainText("Sailing");
+  await expect(event).toContainText(`Officer: Alex Tester${run}`);
+  await expect(event).toContainText("Assistant: Needed");
+
+  // A training event needs a Trainer.
+  await page.getByRole("link", { name: "+ Add event" }).click();
+  await expect(page).toHaveURL(/\/calendar\/new$/);
+  await page.getByLabel("Type").selectOption("training");
+  await expect(page.getByLabel("Officer")).toHaveCount(0);
+  await expect(page.getByLabel("Trainer")).toBeVisible();
+  await page.getByLabel("Title").fill(`Capsize practice ${run}`);
+  await page.getByLabel("Date").fill(ahead(14));
+  await page.getByLabel("Start time").fill("14:00");
+  await page.getByRole("button", { name: "Add event" }).click();
+  await expect(page.getByRole("listitem", { name: `Capsize practice ${run}` })).toContainText("Trainer: Needed");
+
+  // The type filter shows only that type.
+  await page.getByRole("navigation", { name: "Event types" }).getByRole("link", { name: "Training" }).click();
+  await expect(page.getByRole("listitem", { name: `Capsize practice ${run}` })).toBeVisible();
+  await expect(page.getByRole("listitem", { name: `Sunday racing ${run}` })).toHaveCount(0);
+
+  // Sam (main contact) takes the Assistant duty and puts Sam and junior Robin down as going.
+  const member = await leadPage(browser);
+  await member.goto("/calendar");
+  const memberEvent = member.getByRole("listitem", { name: `Sunday racing ${run}` });
+  await expect(memberEvent.getByRole("link", { name: /^Edit/ })).toHaveCount(0);
+  await memberEvent.getByRole("button", { name: `Take Assistant for Sunday racing ${run}` }).click();
+  await expect(memberEvent).toContainText(`Assistant: Sam Tester${run}`);
+  await memberEvent.getByRole("button", { name: `Put Sam down for Sunday racing ${run}` }).click();
+  await expect(memberEvent.getByRole("button", { name: `Take Sam off Sunday racing ${run}` })).toHaveText("✓ Sam (you)");
+  await memberEvent.getByRole("button", { name: `Put Robin down for Sunday racing ${run}` }).click();
+  await expect(memberEvent).toContainText(`Going: 2 · Sam Tester${run} and Robin Tester${run}`);
+  await shot(member, "calendar");
+  await memberEvent.getByRole("button", { name: `Take Robin off Sunday racing ${run}` }).click();
+  await expect(memberEvent).toContainText(`Going: 1 · Sam Tester${run}`);
+  await member.goto("/calendar/new");
+  await expect(member.getByRole("heading", { name: "Admins only" })).toBeVisible();
+
+  // Home shows it in Coming up, linking to the calendar.
+  await member.goto("/");
+  const coming = member.getByRole("region", { name: "Coming up" });
+  await expect(coming.getByRole("link", { name: new RegExp(`Sunday racing ${run}`) })).toBeVisible();
+  await expect(coming.getByRole("link", { name: "Full calendar" })).toHaveAttribute("href", "/calendar");
+
+  // The admin moves it to a meeting (duties go), then deletes it.
+  await page.goto("/calendar");
+  await page.getByRole("listitem", { name: `Sunday racing ${run}` }).getByRole("link", { name: `Edit Sunday racing ${run}` }).click();
+  await expect(page).toHaveURL(/\/edit$/);
+  await expect(page.getByLabel("Assistant")).toHaveValue(/[0-9a-f-]{36}/);
+  await page.getByLabel("Type").selectOption("meeting");
+  await page.getByRole("button", { name: "Save event" }).click();
+  await expect(page.getByRole("status")).toContainText("Event saved.");
+  await expect(page.getByRole("listitem", { name: `Sunday racing ${run}` })).not.toContainText("Officer");
+  expect(sql(`select count(*) from calendar_duties d join calendar_events e on e.id = d.event_id where e.title = 'Sunday racing ${run}'`)).toBe("0");
+  await page.getByRole("listitem", { name: `Sunday racing ${run}` }).getByRole("link", { name: `Edit Sunday racing ${run}` }).click();
+  await expect(page).toHaveURL(/\/edit$/);
+  await page.getByRole("button", { name: "Delete this event" }).click();
+  await page.getByRole("button", { name: "Yes, delete" }).click();
+  await expect(page.getByRole("status")).toContainText("Event deleted.");
+  await expect(page.getByRole("listitem", { name: `Sunday racing ${run}` })).toHaveCount(0);
 });
 
 test("a member can't open the group email page or the email log", async ({ browser }) => {
