@@ -3,6 +3,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { recordSignIn } from "@/lib/supabase/record-sign-in";
 
 // Remembers which address the code went to, so the code screen can show it and check the code
 // against it. Kept on the server side of the browser (httpOnly) and dropped after an hour.
@@ -44,8 +45,9 @@ export async function verifyLoginCode(formData: FormData) {
   if (token.length !== 6) redirect("/login?sent=1&error=code");
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+  const { data, error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
   if (error) redirect("/login?sent=1&error=code");
+  await recordSignIn(data.session?.access_token, "code", (await headers()).get("user-agent"));
 
   store.delete({ name: EMAIL_COOKIE, path: "/login" });
   redirect("/");

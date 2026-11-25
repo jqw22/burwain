@@ -1223,6 +1223,41 @@ test("a superadmin gives a member access and a club title, which shows at the to
   sql(`delete from user_roles where person_id = '${alexId}'`);
 });
 
+test("a superadmin sees who signed in and when on Login activity; admins can't", async ({ browser }) => {
+  // The lead signed in with the code and the admin with the link earlier in this run.
+  const superEmail = `logins-${run}@example.test`;
+  sql(`
+    with s as (insert into people (first_name, last_name, date_of_birth, email) values ('Lou', 'Logins${run}', '1960-01-01', '${superEmail}') returning id)
+    insert into user_roles (person_id, role) select id, 'superadmin' from s;
+  `);
+  const ctx = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
+  const page = await ctx.newPage();
+  await signIn(page, superEmail);
+  await page.goto("/admin");
+  await page.getByRole("link", { name: "Login activity" }).click();
+  await expect(page).toHaveURL(/\/admin\/logins$/);
+  await expect(page.getByRole("navigation", { name: "Membership admin" }).getByRole("link", { name: "Login activity" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("row", { name: `Lou Logins${run}` }).first()).toContainText("Email code");
+  await expect(page.getByRole("row", { name: `Sam Tester${run}` }).first()).toContainText("Email code");
+  await expect(page.getByRole("row", { name: `Ada Admin${run}` }).first()).toContainText("Email link");
+  await expect(page.getByRole("row", { name: `Lou Logins${run}` }).first()).toContainText(/Chrome/);
+  // Search narrows the list to one person; the name links to their member page.
+  await page.getByLabel("Search login activity").fill(`Tester${run}`);
+  await expect(page.getByRole("row", { name: `Lou Logins${run}` })).toHaveCount(0);
+  await page.getByRole("link", { name: `Sam Tester${run}` }).first().click();
+  await expect(page).toHaveURL(/\/admin\/members\/[0-9a-f-]+$/);
+  await shot(page, "admin-login-activity");
+  await ctx.close();
+
+  // Admins (not superadmins) don't see the link and can't open the page.
+  const adminP = await adminPage(browser);
+  await expect(adminP.getByRole("link", { name: "Login activity" })).toHaveCount(0);
+  await adminP.goto("/admin/members");
+  await expect(adminP.getByRole("link", { name: "Login activity" })).toHaveCount(0);
+  await adminP.goto("/admin/logins");
+  await expect(adminP.getByText("This page is for superadmins.")).toBeVisible();
+});
+
 test("a finance login can look at Membership and Communications admin but not change them", async ({ browser }) => {
   const financeEmail = `finance-${run}@example.test`;
   sql(`

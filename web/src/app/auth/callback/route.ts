@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { supabaseKey, supabaseUrl } from "@/lib/supabase/env";
+import { recordSignIn } from "@/lib/supabase/record-sign-in";
 
 // The login email links here with a one-time code. We swap it for a session and write the
 // session cookies straight onto the redirect, so they reach the browser on every host
@@ -23,7 +24,8 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) return NextResponse.redirect(new URL("/login?error=link", request.url));
+  await recordSignIn(data.session?.access_token, "link", request.headers.get("user-agent"));
   return response;
 }

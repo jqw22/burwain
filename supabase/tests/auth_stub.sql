@@ -19,3 +19,5 @@ grant usage on schema public to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
+alter table auth.users add column if not exists email text;
+alter table auth.users add column if not exists last_sign_in_at timestamptz;
