@@ -30,7 +30,7 @@ const SECTIONS = {
   actual: "finance",
 } as const;
 // adminOnly: pages that only make changes, so finance logins (who can look but not change) don't see them.
-// superOnly: pages only superadmins see.
+// superOnly: pages only named superadmins see (Login activity).
 const LINKS: { key: keyof typeof SECTIONS; href: string; label: string; adminOnly?: boolean; superOnly?: boolean }[] = [
   { key: "members", href: "/admin/members", label: "Members" },
   { key: "applications", href: "/admin/applications", label: "Applications" },
@@ -65,7 +65,7 @@ export async function AdminNav({ current, heading = true }: { current: keyof typ
   const supabase = await createClient();
   const [{ data: isAdmin }, { data: isSuper }] = await Promise.all([
     supabase.rpc("has_role", { r: "admin" }),
-    supabase.rpc("has_role", { r: "superadmin" }),
+    supabase.rpc("can_view_login_activity"),
   ]);
   const areas = AREAS.map((a) => ({ ...a, href: isAdmin ? a.href : a.financeHref }));
   return (

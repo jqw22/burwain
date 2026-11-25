@@ -1411,7 +1411,16 @@ do $$ begin
 end $$;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
 do $$ begin
-  assert (select count(*) from login_activity) = 2, 'superadmin reads every sign-in';
+  assert (select count(*) from login_activity) = 0, 'a superadmin not on the viewers list cannot read the login log';
+  assert not can_view_login_activity(), 'Dave not a viewer yet';
+end $$;
+select pg_temp.expect_error($q$insert into login_activity_viewers values ('20000000-0000-0000-0000-00000000000d')$q$, 'permission denied');
+reset role;
+insert into login_activity_viewers values ('20000000-0000-0000-0000-00000000000d');
+set role authenticated;
+do $$ begin
+  assert can_view_login_activity(), 'Dave is a viewer';
+  assert (select count(*) from login_activity) = 2, 'a listed superadmin reads every sign-in';
   assert (select person_id from login_activity where method = 'code') = '20000000-0000-0000-0000-00000000000a', 'sign-in linked to Alice';
   assert (select email from login_activity where method = 'code') = 'a@example.com', 'email kept in lower case';
   assert (select device from login_activity where method = 'code') = 'iPhone · Safari', 'device kept';
