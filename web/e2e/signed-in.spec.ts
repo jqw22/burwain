@@ -1225,10 +1225,12 @@ test("a superadmin gives a member access and a club title, which shows at the to
 
 test("a superadmin sees who signed in and when on Login activity; admins can't", async ({ browser }) => {
   // The lead signed in with the code and the admin with the link earlier in this run.
+  // Only superadmins on the viewers list (James, for now) see it.
   const superEmail = `logins-${run}@example.test`;
   sql(`
-    with s as (insert into people (first_name, last_name, date_of_birth, email) values ('Lou', 'Logins${run}', '1960-01-01', '${superEmail}') returning id)
-    insert into user_roles (person_id, role) select id, 'superadmin' from s;
+    with s as (insert into people (first_name, last_name, date_of_birth, email) values ('Lou', 'Logins${run}', '1960-01-01', '${superEmail}') returning id),
+    r as (insert into user_roles (person_id, role) select id, 'superadmin' from s)
+    insert into login_activity_viewers (person_id) select id from s;
   `);
   const ctx = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
   const page = await ctx.newPage();
@@ -1249,13 +1251,25 @@ test("a superadmin sees who signed in and when on Login activity; admins can't",
   await shot(page, "admin-login-activity");
   await ctx.close();
 
-  // Admins (not superadmins) don't see the link and can't open the page.
+  // Admins, and superadmins not on the list, see no link and get "page not found".
   const adminP = await adminPage(browser);
   await expect(adminP.getByRole("link", { name: "Login activity" })).toHaveCount(0);
   await adminP.goto("/admin/members");
   await expect(adminP.getByRole("link", { name: "Login activity" })).toHaveCount(0);
-  await adminP.goto("/admin/logins");
-  await expect(adminP.getByText("This page is for superadmins.")).toBeVisible();
+  expect((await adminP.goto("/admin/logins"))?.status()).toBe(404);
+  const otherSuper = `logins2-${run}@example.test`;
+  sql(`
+    with s as (insert into people (first_name, last_name, date_of_birth, email) values ('Sue', 'Other${run}', '1961-01-01', '${otherSuper}') returning id)
+    insert into user_roles (person_id, role) select id, 'superadmin' from s;
+  `);
+  const ctx2 = await browser.newContext({ baseURL: "http://localhost:3100", locale: "en-GB", timezoneId: "Europe/London" });
+  const p2 = await ctx2.newPage();
+  await signIn(p2, otherSuper);
+  await p2.goto("/admin");
+  await expect(p2.getByRole("heading", { name: "Membership admin" })).toBeVisible();
+  await expect(p2.getByRole("link", { name: "Login activity" })).toHaveCount(0);
+  expect((await p2.goto("/admin/logins"))?.status()).toBe(404);
+  await ctx2.close();
 });
 
 test("a finance login can look at Membership and Communications admin but not change them", async ({ browser }) => {

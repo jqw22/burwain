@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { AdminNav, NotAllowed } from "@/components/admin";
+import { notFound } from "next/navigation";
+import { AdminNav } from "@/components/admin";
 import { Card, SaveButton } from "@/components/fields";
 import { LiveSearch } from "@/components/live-search";
 import { adminAccess } from "@/lib/me";
@@ -25,12 +26,15 @@ const when = (iso: string) =>
   new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
 const ukDay = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
-// Membership admin > Login activity: who signed in to the app and when, newest first. Superadmins only.
+// Membership admin > Login activity: who signed in to the app and when, newest first.
+// Only superadmins listed in login_activity_viewers (James, for now) can see it.
 // Sign-ins are recorded by the app as they happen; the log keeps the last 12 months.
 export default async function LoginActivityPage({ searchParams }: PageProps<"/admin/logins">) {
   const params = await searchParams;
-  const { supabase, isSuper } = await adminAccess();
-  if (!isSuper) return <NotAllowed who="superadmins" />;
+  const { supabase } = await adminAccess();
+  const { data: allowed } = await supabase.rpc("can_view_login_activity");
+  // Anyone else gets the ordinary "page not found", so they can't tell the page exists.
+  if (!allowed) notFound();
 
   const now = new Date();
   const today = isoDay(now);
@@ -69,7 +73,7 @@ export default async function LoginActivityPage({ searchParams }: PageProps<"/ad
     <div className="space-y-6">
       <AdminNav current="logins" />
       <p className="text-slate-700">
-        Every time someone signs in to the app, with the code or the link from their login email. Only superadmins can see this page.
+        Every time someone signs in to the app, with the code or the link from their login email. Only you can see this page.
         Sign-ins are kept for 12 months.
       </p>
 

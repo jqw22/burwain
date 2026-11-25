@@ -11,10 +11,10 @@ export default async function AdminHomePage() {
   // An unmatched login is explained on Home.
   if (!personId) redirect("/");
 
-  const [{ data: isAdmin }, { data: isFinance }, { data: isSuper }] = await Promise.all([
+  const [{ data: isAdmin }, { data: isFinance }, { data: seesLogins }] = await Promise.all([
     supabase.rpc("has_role", { r: "admin" }),
     supabase.rpc("has_role", { r: "finance" }),
-    supabase.rpc("has_role", { r: "superadmin" }),
+    supabase.rpc("can_view_login_activity"),
   ]);
   // This Admin page is for admin and finance logins; members go back to Home.
   if (!isAdmin && !isFinance) redirect("/");
@@ -60,7 +60,7 @@ export default async function AdminHomePage() {
               </Link>
             </li>
             )}
-            {isSuper && (
+            {seesLogins && (
             <li>
               <Link href="/admin/logins" className="text-sky-800 underline">
                 Login activity
