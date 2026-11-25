@@ -18,6 +18,7 @@ const SECTIONS = {
   boats: "membership",
   titles: "membership",
   import: "membership",
+  logins: "membership",
   send: "comms",
   emails: "comms",
   log: "comms",
@@ -29,13 +30,15 @@ const SECTIONS = {
   actual: "finance",
 } as const;
 // adminOnly: pages that only make changes, so finance logins (who can look but not change) don't see them.
-const LINKS: { key: keyof typeof SECTIONS; href: string; label: string; adminOnly?: boolean }[] = [
+// superOnly: pages only superadmins see.
+const LINKS: { key: keyof typeof SECTIONS; href: string; label: string; adminOnly?: boolean; superOnly?: boolean }[] = [
   { key: "members", href: "/admin/members", label: "Members" },
   { key: "applications", href: "/admin/applications", label: "Applications" },
   { key: "types", href: "/admin/types", label: "Membership types" },
   { key: "boats", href: "/admin/boats", label: "Boats" },
   { key: "titles", href: "/admin/titles", label: "Club titles" },
   { key: "import", href: "/admin/import", label: "Import", adminOnly: true },
+  { key: "logins", href: "/admin/logins", label: "Login activity", superOnly: true },
   { key: "send", href: "/admin/emails/send", label: "Send email", adminOnly: true },
   { key: "contacts", href: "/admin/contacts/new", label: "Add contact", adminOnly: true },
   { key: "emails", href: "/admin/emails", label: "Templates" },
@@ -59,7 +62,11 @@ const AREAS = [
 // heading: false on pages that have their own page title, so there's only one main heading.
 export async function AdminNav({ current, heading = true }: { current: keyof typeof SECTIONS; heading?: boolean }) {
   const section = SECTIONS[current];
-  const { data: isAdmin } = await (await createClient()).rpc("has_role", { r: "admin" });
+  const supabase = await createClient();
+  const [{ data: isAdmin }, { data: isSuper }] = await Promise.all([
+    supabase.rpc("has_role", { r: "admin" }),
+    supabase.rpc("has_role", { r: "superadmin" }),
+  ]);
   const areas = AREAS.map((a) => ({ ...a, href: isAdmin ? a.href : a.financeHref }));
   return (
     <div className="space-y-3 print:hidden">
@@ -85,7 +92,7 @@ export async function AdminNav({ current, heading = true }: { current: keyof typ
         })}
       </nav>
       <nav aria-label={SECTION_NAME[section]} className="flex flex-wrap gap-4 border-b border-slate-200 pb-2 text-sm">
-        {LINKS.filter((l) => SECTIONS[l.key] === section && (isAdmin || !l.adminOnly)).map((l) => (
+        {LINKS.filter((l) => SECTIONS[l.key] === section && (isAdmin || !l.adminOnly) && (isSuper || !l.superOnly)).map((l) => (
           <Link
             key={l.key}
             href={l.href}

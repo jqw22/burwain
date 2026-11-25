@@ -1393,4 +1393,35 @@ end $$;
 reset role;
 reset request.jwt.claim.sub;
 
+\echo 'Login activity: everyone''s sign-ins are recorded; only superadmins can read them'
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+set request.jwt.claims = '{"email": "A@example.com"}';
+do $$ begin
+  perform record_sign_in('code', 'iPhone · Safari');
+  assert (select count(*) from login_activity) = 0, 'members cannot read the login log';
+end $$;
+select pg_temp.expect_error($q$insert into login_activity (method) values ('code')$q$, 'permission denied');
+select pg_temp.expect_error($q$select record_sign_in('password')$q$, 'Unknown sign-in method');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+set request.jwt.claims = '{"email": "c@example.com"}';
+do $$ begin
+  perform record_sign_in('link');
+  assert (select count(*) from login_activity) = 0, 'finance cannot read the login log';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+do $$ begin
+  assert (select count(*) from login_activity) = 2, 'superadmin reads every sign-in';
+  assert (select person_id from login_activity where method = 'code') = '20000000-0000-0000-0000-00000000000a', 'sign-in linked to Alice';
+  assert (select email from login_activity where method = 'code') = 'a@example.com', 'email kept in lower case';
+  assert (select device from login_activity where method = 'code') = 'iPhone · Safari', 'device kept';
+end $$;
+select pg_temp.expect_error($q$delete from login_activity$q$, 'permission denied');
+reset role;
+reset request.jwt.claim.sub;
+reset request.jwt.claims;
+set role anon;
+select pg_temp.expect_error($q$select record_sign_in('code')$q$, 'permission denied');
+reset role;
+
 \echo 'All database tests passed'
